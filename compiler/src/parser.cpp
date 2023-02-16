@@ -259,7 +259,9 @@ Token * Parser::preprocessing(Token *tok)
             }
             else if (cur->kind == TokenKind::k_key_word_include) {
                 // TODO
-                if (pre->kind != TokenKind::k_symbol_no || !(cur->next && cur->next->kind == TokenKind::k_string)) abort();
+                if (pre->kind != TokenKind::k_symbol_no || !(cur->next && cur->next->kind == TokenKind::k_string)) {
+                    goto proc;
+                }
 
                 Token *ap = nullptr;
                 if (!incs.count(cur->strval)) {
@@ -289,7 +291,7 @@ Token * Parser::preprocessing(Token *tok)
                 end->next = apt;
                 cur = apt;
             }
-
+    proc:
         pre1 = pre;
         pre = cur;
         cur = cur->next;
@@ -308,6 +310,16 @@ Token * Parser::parse_file(const char *filename)
     while (!reader->is_eof()) {
         Token * t = reader->next();
         if (!t && !reader->is_eof()) {
+            Token *cur = reader->get_head();
+            while (cur) {
+                if (cur->kind == TokenKind::k_string) cout << '"';
+                cout << cur->strval;
+                if (cur->kind == TokenKind::k_string) cout << '"';
+
+                if (cur->is_space) cout << ' ';
+                if (cur->newline) cout << '\n';
+                cur = cur->next;
+            }
             std::cout << "unexpected\n";
             abort();
             break;
@@ -329,7 +341,10 @@ ExpressionVisitor * Parser::parse(const char *filename)
     Token *tok = parse_file(filename);
     Token *cur = preprocessing(tok);
     while (cur) {
+        if (cur->kind == TokenKind::k_string) cout << '"';
         cout << cur->strval;
+        if (cur->kind == TokenKind::k_string) cout << '"';
+
         if (cur->is_space) cout << ' ';
         if (cur->newline) cout << '\n';
         cur = cur->next;

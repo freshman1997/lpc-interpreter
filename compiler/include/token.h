@@ -48,6 +48,7 @@ enum class TokenKind
     k_symbol_co,                // ;
     k_symbol_sep,               // ,
     k_symbol_show,              // :
+    k_symbol_dot,               // .
     k_symbol_comment,           // //
     k_symbol_comment1,          // /*
     k_symbol_comment2,          // */
@@ -69,6 +70,9 @@ enum class TokenKind
     k_oper_mod_assign,          // %=
     k_oper_pointer,             // ->
 
+    k_oper_bin_and,             // &
+    k_oper_bin_or,              // |
+
     k_cmp_gt,                   // >
     k_cmp_gte,                  // >=
     k_cmp_lt,                   // <
@@ -76,6 +80,7 @@ enum class TokenKind
     k_cmp_not,                  // !
     k_cmp_neq,                  // !=
     k_cmp_eq,                   // ==
+   
     k_cmp_or,                   // ||
     k_cmp_and,                  // &&
     k_cmp_quetion,              // ?

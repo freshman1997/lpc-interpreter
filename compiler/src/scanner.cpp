@@ -58,6 +58,7 @@ void Scanner::init()
         assert(0);
     }
 
+    read_more();
     eof = false;
 }
 
@@ -66,8 +67,15 @@ bool Scanner::is_eof()
     return this->eof;
 }
 
+void Scanner::back()
+{
+    ++use;
+}
+
 void Scanner::read_more()
 {
+    if (use == 2) return;
+
     if (!input.is_open()) {
         cout << "input stream not open" << endl;
         assert(0);
@@ -86,9 +94,9 @@ void Scanner::read_more()
 
 luint8_t Scanner::peek()
 {
-    if (use == 0) read_more();
     if (use == 2) return one;
-    return two;
+    else if (use == 1) return two;
+    return 0;
 }
 
 luint8_t Scanner::peek1()
@@ -102,10 +110,12 @@ luint8_t Scanner::peek1()
 
 luint8_t Scanner::read()
 {
-    luint8_t res = 0;
-    if (use == 0) read_more();
     --use;
-    return peek();
+    if (use == 0) read_more();
+    luint8_t res = 0;
+    if (use == 1) res = two;
+    if (use == 2) res = one;
+    return res;
 }
 
 
@@ -159,8 +169,24 @@ static void skip_space(Scanner *scanner, int *line)
     }
 }
 
+static void skip_comment(Scanner *sc, string end)
+{
+    luint8_t ch = sc->read();
+    int c = 0, i = 0;
+    while (!sc->is_eof()) {
+        if (i == end.size()) break;
+
+        if (ch == end[i]) ++i;
+        else i = 0;
+
+        ch = sc->read();
+    }
+    ch = 0;
+}
+
 Token * TokenReader::next()
 {
+start:
     luint8_t ch = scanner->peek();
     while (is_blank(ch)) {
         ch = scanner->read();
@@ -201,147 +227,188 @@ Token * TokenReader::next()
         }
     }
     else if (is_alpha(ch)) {
-        scanner->read();
-        while ((is_alpha(scanner->peek()) || is_digit(scanner->peek())) && !is_eof()) {
-            luint8_t c = scanner->peek();
+        luint8_t c = scanner->read();
+        while ((is_alpha(c) || is_digit(c)) && !is_eof()) {
             t->strval.push_back(c);
-            scanner->read();
-        }
-
-        if (t->strval == "r1") {
-            cout << "hello";
+            c = scanner->read();
         }
 
         if (keywords.count(t->strval)) 
             t->kind = keywords[t->strval];
         else 
             t->kind = TokenKind::k_identity;
-        
     }
     else {
         switch (ch) {
             case '"': {
-                scanner->read();
                 t->strval.pop_back();
-                while (scanner->peek() != '"' && !is_eof()) {
-                    luint8_t c = scanner->peek();
+                luint8_t c = scanner->read();
+                while (c != '"' && !is_eof()) {
                     t->strval.push_back(c);
-                    scanner->read();
+                    c = scanner->read();
                 }
-                
+
                 t->kind = TokenKind::k_string;
                 break;
             }
             case '+': {
-                scanner->read();
-                luint8_t c = scanner->peek();
+                luint8_t c = scanner->read();
                 if (c == '=') {
                     t->strval.push_back(c);
                     t->kind = TokenKind::k_oper_plus_assign;
-                    scanner->read();
                 }
-                else t->kind = TokenKind::k_oper_plus;
+                else if (c == '+') {
+                    t->strval.push_back(c);
+                    t->kind = TokenKind::k_oper_plus_plus;
+                }
+                else {
+                    t->kind = TokenKind::k_oper_plus;
+                    scanner->back();
+                }
                 break;
             }
             case '-':{
-                scanner->read();
-                luint8_t c = scanner->peek();
+                luint8_t c = scanner->read();
                 if (c == '-') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_oper_sub_sub;
-                    scanner->read();
                 }
                 else if (c == '=') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_oper_minus_assign;
-                    scanner->read();
                 }
-                else t->kind = TokenKind::k_oper_minus;
+                else if (c == '>') {
+                    t->strval.push_back(c);
+                    t->kind = TokenKind::k_oper_pointer;
+                }
+                else {
+                    t->kind = TokenKind::k_oper_minus;
+                    scanner->back();
+                }
                 break;
             }
             case '*':{
-                scanner->read();
-                luint8_t c = scanner->peek();
+                luint8_t c = scanner->read();
                 if (c == '/') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_symbol_comment1;
-                    scanner->read();
                 }
                 else if (c == '=') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_oper_mul_assign;
-                    scanner->read();
                 }
-                else t->kind = TokenKind::k_oper_mul;
+                else {
+                    t->kind = TokenKind::k_oper_mul;
+                    scanner->back();
+                }
                 break;
             }
             case '/':{
-                scanner->read();
-                luint8_t c = scanner->peek();
-                
+                luint8_t c = scanner->read();
                 if (c == '/') {
-                    t->kind = TokenKind::k_oper_sub_sub;
-                    scanner->read();
+                    skip_comment(scanner, "\n");
+                    goto start;
                 }
                 else if (c == '*') {
-                    t->kind = TokenKind::k_symbol_comment2;
-                    scanner->read();
+                    skip_comment(scanner, "*/");
+                    goto start;
                 }
                 else if (c == '=') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_oper_div_assign;
-                    scanner->read();
                 }
-                else t->kind = TokenKind::k_oper_div;
+                else {
+                    t->kind = TokenKind::k_oper_div;
+                    scanner->back();
+                }
                 break;
             }
             case '%': {
-                scanner->read();
-                luint8_t c = scanner->peek();
+                luint8_t c = scanner->read();
                 if (c == '=') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_oper_mod_assign;
-                    scanner->read();
                 }
-                else t->kind = TokenKind::k_oper_mod;
+                else {
+                    t->kind = TokenKind::k_oper_mod;
+                    scanner->back();
+                }
                 break;
             }
             case '=': {
-                scanner->read();
-                luint8_t c = scanner->peek();
+                luint8_t c = scanner->read();
                 if (c == '=') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_cmp_eq;
-                    scanner->read();
                 }
                 else if (c == '=') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_oper_plus_assign;
-                    scanner->read();
                 }
-                else t->kind = TokenKind::k_oper_assign;
+                else {
+                    t->kind = TokenKind::k_oper_assign;
+                    scanner->back();
+                }
                 break;
             }
             case '>': {
-                scanner->read();
-                luint8_t c = scanner->peek();
+                luint8_t c = scanner->read();
                 if (c == '=') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_cmp_gte;
-                    scanner->read();
                 }
-                else t->kind = TokenKind::k_cmp_gt;
+                else {
+                    t->kind = TokenKind::k_cmp_gt;
+                    scanner->back();
+                }
                 break;
             }
             case '<': {
-                scanner->read();
-                luint8_t c = scanner->peek();
+                luint8_t c = scanner->read();
                 if (c == '=') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_cmp_lte;
-                    scanner->read();
                 }
-                else t->kind = TokenKind::k_cmp_lt;
+                else {
+                    t->kind = TokenKind::k_cmp_lt;
+                    scanner->back();
+                }
                 break;
             }
             case '!': {
-                scanner->read();
-                luint8_t c = scanner->peek();
+                luint8_t c = scanner->read();
                 if (c == '=') {
+                    t->strval.push_back(c);
                     t->kind = TokenKind::k_cmp_neq;
-                    scanner->read();
                 }
-                else t->kind = TokenKind::k_cmp_not;
+                else {
+                    t->kind = TokenKind::k_cmp_not;
+                    scanner->back();
+                }
+                break;
+            }
+            case '&': {
+                luint8_t c = scanner->read();
+                if (c == '=') {
+                    t->strval.push_back(c);
+                    t->kind = TokenKind::k_cmp_and;
+                }
+                else {
+                    t->kind = TokenKind::k_oper_bin_and;
+                    scanner->back();
+                }
+                break;
+            }
+            case '|': {
+                luint8_t c = scanner->read();
+                if (c == '=') {
+                    t->strval.push_back(c);
+                    t->kind = TokenKind::k_cmp_or;
+                }
+                else {
+                    t->kind = TokenKind::k_oper_bin_or;
+                    scanner->back();
+                }
                 break;
             }
             case '(': {
@@ -392,6 +459,11 @@ Token * TokenReader::next()
                 t->kind = TokenKind::k_symbol_co;
                 break;
             }
+            case '.': {
+                t->kind = TokenKind::k_symbol_dot;
+                break;
+            }
+            
             default: {
                 delete t;
                 return NULL;

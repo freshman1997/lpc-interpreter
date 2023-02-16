@@ -17,6 +17,7 @@ public:
 	luint8_t peek1();
 	luint8_t read();
 	bool is_eof();
+	void back();
 
 	void set_file(const char *file);
 private:
