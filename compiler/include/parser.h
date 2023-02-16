@@ -19,7 +19,6 @@ struct MacroParam
 
 struct MacroArg
 {
-    string name;
     bool is_var_args;
     Token *tok;
 };
@@ -32,19 +31,28 @@ struct Macro
     bool isobj_like;
     MacroParam *params;
     Token *body;
+    Token *end;
     macro_handler_fn *handler;
 };
+
+string get_cwd();
+string get_father();
 
 class Parser
 {
 public:
     void init_base_include(const vector<string> &includes);
-    void preprocessing(Token *);
+    Token * preprocessing(Token *);
     ExpressionVisitor * parse(const char *filename);
+    Token * parse_file(const char *filename);
+
+    void enter_dir();
+    void exit_dir();
 
 private:
     // 已经读取的头文件部分等缓存
-    vector<Token *> caches;
+    string cur_compile_dir;
+    unordered_map<string, Token *> incs;
     unordered_map<string, Macro *> macros;
 };
 

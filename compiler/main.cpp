@@ -6,6 +6,8 @@
 
 #endif
 
+#include "parser.h"
+
 using namespace std;
 
 #ifdef _POSIX_PATH_MAX
@@ -16,6 +18,16 @@ using namespace std;
 
 static string cwd;
 static string parent;
+
+string get_cwd()
+{
+	return cwd;
+}
+
+string get_father()
+{
+	return parent;
+}
 
 int main(int argc, char **argv)
 {
@@ -37,5 +49,7 @@ int main(int argc, char **argv)
 	}
 
 	cout << parent << endl;
+	Parser parser;
+	parser.parse("1.txt");
 	return 0;
 }

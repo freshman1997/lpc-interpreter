@@ -9,7 +9,32 @@ enum class TokenKind
     k_number,                   // 1002.2
     k_string,                   // ""
 
-    k_key_word,
+    k_key_word_int,
+    k_key_word_float,
+    k_key_word_mapping,
+    k_key_word_mixed,
+    k_key_word_string,
+    k_key_word_object,
+    k_key_word_void,
+    k_key_word_static,
+    k_key_word_private,
+    k_key_word_include,
+    k_key_word_define,
+    k_key_word_if,
+    k_key_word_else,
+    k_key_word_for,
+    k_key_word_foreach,
+    k_key_word_do,
+    k_key_word_while,
+    k_key_word_in,
+    k_key_word_or,
+    k_key_word_switch,
+    k_key_word_case,
+    k_key_word_break,
+    k_key_word_continue,
+    k_key_word_default,
+    k_key_word_return,
+
     k_identity,
 
     k_symbol_qs1,               // (
@@ -19,7 +44,7 @@ enum class TokenKind
     k_symbol_qg1,               // {
     k_symbol_qg2,               // }
     k_symbol_no,                // #
-    k_symbol_next,              // \\
+    k_symbol_next,              // \\ //
     k_symbol_co,                // ;
     k_symbol_sep,               // ,
     k_symbol_show,              // :
@@ -62,11 +87,13 @@ struct Token
     TokenKind kind;
     lint32_t ival;
     lfloat64_t dval;
-    std::string strval;
+    std::string strval = "";
 
     const char *filename;
     int lineno;
     int col;
+    bool is_space;
+    bool newline;
 
     // If this is expanded from a macro, the origin token
     Token *origin;

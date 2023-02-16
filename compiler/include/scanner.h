@@ -16,6 +16,7 @@ public:
 	luint8_t peek();
 	luint8_t peek1();
 	luint8_t read();
+	bool is_eof();
 
 	void set_file(const char *file);
 private:
@@ -41,6 +42,8 @@ public:
 
 	bool is_eof();
 private:
+	int line;
+	int col;
 	Token *head = nullptr;
 	Token *cur = nullptr;
     Scanner *scanner = nullptr;
