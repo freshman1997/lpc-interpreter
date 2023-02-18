@@ -29,6 +29,12 @@ string get_father()
 	return parent;
 }
 
+struct CompileFile
+{
+    bool isFile;
+    string path;
+};
+
 int main(int argc, char **argv)
 {
 	char buf[PATHNAME_MAX];
@@ -51,5 +57,15 @@ int main(int argc, char **argv)
 	cout << parent << endl;
 	Parser parser;
 	parser.parse("1.txt");
+
+	/*
+	// find all files
+	vector<CompileFile> files;
+	for (auto &it : files) {
+		if (it.isFile) {
+			
+		}
+	}
+	*/
 	return 0;
 }

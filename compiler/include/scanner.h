@@ -18,6 +18,7 @@ public:
 	luint8_t read();
 	bool is_eof();
 	void back();
+	~Scanner(){ if (input.is_open()) input.close(); }
 
 	void set_file(const char *file);
 private:

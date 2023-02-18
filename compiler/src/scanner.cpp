@@ -31,6 +31,13 @@ static unordered_map<string, TokenKind> keywords = {
     {"return", TokenKind::k_key_word_return},
     {"break", TokenKind::k_key_word_break},
     {"continue", TokenKind::k_key_word_continue},
+    {"varargs", TokenKind::k_key_word_varargs},
+    {"import", TokenKind::k_key_word_varargs},
+    {"as", TokenKind::k_key_word_varargs},
+    {"bool", TokenKind::k_key_word_bool},
+    {"true", TokenKind::k_key_word_true},
+    {"false", TokenKind::k_key_word_false},
+    {"class", TokenKind::k_key_word_class},
 };
 
 Scanner::Scanner(const char * file) : filename(file)
@@ -48,14 +55,15 @@ void Scanner::init()
 {
     if (!this->filename) {
         cout << "null point file path" << endl;
-        assert(0);
+        exit(0);
         return;
     }
 
     this->input.open(this->filename);
     if (!this->input.good()) {
         cout << "can not open file: " << this->filename << endl;
-        assert(0);
+        exit(0);
+        return;
     }
 
     read_more();
@@ -78,11 +86,17 @@ void Scanner::read_more()
 
     if (!input.is_open()) {
         cout << "input stream not open" << endl;
-        assert(0);
+        exit(-1);
         return;
     }
-    one = input.good() ? input.get() : 0;
-    two = input.good() ? input.get() : 0;
+    if (use == 1) {
+        one = two;
+        two = input.good() ? input.get() : 0;
+    }
+    else {
+        one = input.good() ? input.get() : 0;
+        two = input.good() ? input.get() : 0;
+    }
 
     if (!input.good()) {
         eof = true;
@@ -101,9 +115,8 @@ luint8_t Scanner::peek()
 
 luint8_t Scanner::peek1()
 {
-    if (use == 0) {
+    if (use < 2) {
         read_more();
-        return one;
     }
     return two;
 }
@@ -159,16 +172,6 @@ static bool is_blank(luint8_t ch)
     return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
 }
 
-static void skip_space(Scanner *scanner, int *line)
-{
-    luint8_t ch = scanner->peek();
-    while (is_blank(ch)) {
-        ch = scanner->read();
-        // TODO
-        if (ch == '\n') ++(*line);
-    }
-}
-
 static void skip_comment(Scanner *sc, string end)
 {
     luint8_t ch = sc->read();
@@ -181,7 +184,6 @@ static void skip_comment(Scanner *sc, string end)
 
         ch = sc->read();
     }
-    ch = 0;
 }
 
 Token * TokenReader::next()
@@ -190,11 +192,15 @@ start:
     luint8_t ch = scanner->peek();
     while (is_blank(ch)) {
         ch = scanner->read();
-        // TODO
-        if (ch == '\n') ++line;
+        cur->is_space = true;
+        if (ch == '\n') {
+            ++line;
+            cur->newline = true;
+        }
     }
 
-    Token * t = new Token;
+    Token *t = new Token;
+    t->lineno = line;
     t->strval.push_back(ch);
     
     if (is_digit(ch)) {
@@ -237,6 +243,10 @@ start:
             t->kind = keywords[t->strval];
         else 
             t->kind = TokenKind::k_identity;
+
+        scanner->peek1();
+        t->newline = scanner->peek() == '\n';
+        t->is_space = is_blank(scanner->peek());
     }
     else {
         switch (ch) {
@@ -247,7 +257,7 @@ start:
                     t->strval.push_back(c);
                     c = scanner->read();
                 }
-
+                scanner->peek1();
                 t->kind = TokenKind::k_string;
                 break;
             }
@@ -306,11 +316,15 @@ start:
             case '/':{
                 luint8_t c = scanner->read();
                 if (c == '/') {
+                    delete t;
                     skip_comment(scanner, "\n");
+                    cur->newline = true;
                     goto start;
                 }
                 else if (c == '*') {
+                    delete t;
                     skip_comment(scanner, "*/");
+                    scanner->read();
                     goto start;
                 }
                 else if (c == '=') {
@@ -470,6 +484,7 @@ start:
             }
         }
 
+        scanner->peek1();
         t->newline = scanner->peek() == '\n';
         t->is_space = is_blank(scanner->peek());
         scanner->read();

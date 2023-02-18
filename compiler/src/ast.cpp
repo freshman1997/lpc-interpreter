@@ -41,24 +41,67 @@ ExpressionType ValueExpression::get_type()
 {
     return ExpressionType::var_decl;
 }
-
 /////////////////////////////////////////////
-void OperationExpression::accept(Visitor *visitor)
+
+void ConstructExpression::accept(Visitor *visitor)
 {
     
 }
 
-string OperationExpression::get_name()
+string ConstructExpression::get_name()
 {
     return "DECL";
 }
 
-void OperationExpression::pre_print(int deep)
+void ConstructExpression::pre_print(int deep)
 {
 
 }
 
-ExpressionType OperationExpression::get_type()
+ExpressionType ConstructExpression::get_type()
+{
+    return ExpressionType::var_decl;
+}
+
+/////////////////////////////////////////////
+void BinaryExpression::accept(Visitor *visitor)
+{
+    
+}
+
+string BinaryExpression::get_name()
+{
+    return "DECL";
+}
+
+void BinaryExpression::pre_print(int deep)
+{
+
+}
+
+ExpressionType BinaryExpression::get_type()
+{
+    return ExpressionType::oper;
+}
+
+////////////////////////////////////////////
+
+void UnaryExpression::accept(Visitor *visitor)
+{
+    
+}
+
+string UnaryExpression::get_name()
+{
+    return "DECL";
+}
+
+void UnaryExpression::pre_print(int deep)
+{
+
+}
+
+ExpressionType UnaryExpression::get_type()
 {
     return ExpressionType::oper;
 }

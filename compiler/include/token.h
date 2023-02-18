@@ -5,6 +5,8 @@
 
 enum class TokenKind
 {
+    k_none,
+
     k_integer,                  // 100
     k_number,                   // 1002.2
     k_string,                   // ""
@@ -12,6 +14,7 @@ enum class TokenKind
     k_key_word_int,
     k_key_word_float,
     k_key_word_mapping,
+    k_key_word_bool,
     k_key_word_mixed,
     k_key_word_string,
     k_key_word_object,
@@ -34,6 +37,12 @@ enum class TokenKind
     k_key_word_continue,
     k_key_word_default,
     k_key_word_return,
+    k_key_word_varargs,
+    k_key_word_import,
+    k_key_word_as,
+    k_key_word_true,
+    k_key_word_false,
+    k_key_word_class,
 
     k_identity,
 

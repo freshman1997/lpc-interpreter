@@ -1,0 +1,9 @@
+lpc 语言的语法规则
+
+declKey := int | float | object | mapping | void | class
+decorateKey := static | private
+
+variableDelc := [decorateKey] declKey iden [ "=" initLists ] ";"
+funcDecl := [decorateKey] declKey ["*"] iden "(" args ")" "{" funcBody "}"
+classDecl := "class" iden "{" variableDelc*  "}"
+

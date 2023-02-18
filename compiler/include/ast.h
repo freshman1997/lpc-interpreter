@@ -4,6 +4,7 @@
 #include <string>
 
 #include "visitor.h"
+#include "token.h"
 
 using namespace std;
 
@@ -36,14 +37,9 @@ enum class DeclType
     float_,
     class_,
     bool_,
-
-};
-
-union Value
-{
-    int ival;
-    double dval;
-    const char *sval;
+    mapping_,
+    object_,
+    string_,
 };
 
 class ExpressionVisitor
@@ -60,10 +56,8 @@ public:
 class AbstractExpression : public ExpressionVisitor
 {
 public:
-    AbstractExpression() {}
-    AbstractExpression(ExpressionType t) : type(t) {}
-protected:
     ExpressionType type;
+    virtual ~AbstractExpression() {};
 };
 
 class VarDeclExpression : public AbstractExpression
@@ -73,10 +67,24 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
-    DeclType type;
+
+    bool is_static = false;
+    DeclType dtype;
     string type_name;
     string name;
+};
+
+class ConstructExpression : public AbstractExpression
+{
+public:
+    virtual void accept(Visitor *visitor);
+    virtual string get_name();
+    virtual void pre_print(int deep);
+    virtual ExpressionType get_type();
+    ~ConstructExpression() {}
+
+    int type;       // 0 数组， 1 哈希表
+    vector<AbstractExpression *> body;
 };
 
 class ValueExpression : public AbstractExpression
@@ -86,19 +94,42 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
-    Value *val = nullptr;
+    virtual ~ValueExpression(){};
+
+    union Value
+    {
+        int ival;
+        double dval;
+        Token *sval;
+        ~Value(){}
+    } val;
+
+    // 0 整形，1 浮点，2 字符串，3 布尔, 4 标识符
+    int valType;
 };
 
-class OperationExpression : public AbstractExpression
+class UnaryExpression : public AbstractExpression
 {
 public:
     virtual void accept(Visitor *visitor);
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
-    int oper = 0;
+
+    TokenKind op;
+    AbstractExpression *exp;
+};
+
+
+class BinaryExpression : public AbstractExpression
+{
+public:
+    virtual void accept(Visitor *visitor);
+    virtual string get_name();
+    virtual void pre_print(int deep);
+    virtual ExpressionType get_type();
+
+    TokenKind oper;
     AbstractExpression *l = nullptr;
     AbstractExpression *r = nullptr;
 };
@@ -110,7 +141,7 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
+
     AbstractExpression *l = nullptr;
     AbstractExpression *r = nullptr;
 };
@@ -205,7 +236,7 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
+
     AbstractExpression *cond;
     vector<AbstractExpression *> body;
 };
@@ -217,7 +248,7 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
+
     AbstractExpression *cond;
     vector<AbstractExpression *> body;
 };
@@ -229,7 +260,7 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
+
     AbstractExpression *caser;
     AbstractExpression *break_;
 };
@@ -241,7 +272,7 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
+
     AbstractExpression *selector;
     vector<AbstractExpression *> cases;
 };
@@ -253,7 +284,7 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
+
     vector<AbstractExpression *> fields;
 };
 
@@ -264,7 +295,8 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
+    ~DocumentExpression() {}
+
     string file_name;
     // funcs, fields
     vector<AbstractExpression *> contents;

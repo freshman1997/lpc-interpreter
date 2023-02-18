@@ -5,12 +5,6 @@
 #include "scanner.h"
 #include "ast.h"
 
-struct HidenSet
-{
-    string name;
-    HidenSet *next;
-};
-
 struct MacroParam
 {
     string name;
