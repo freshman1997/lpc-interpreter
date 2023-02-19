@@ -183,6 +183,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
     struct If {
+        int type;   // 0 if, 1 else if, 2 else
         AbstractExpression *cond;
         vector<AbstractExpression *> body;
     };

@@ -739,18 +739,18 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
         error();
     }
 
-    tok = tok->next;
     IfExpression *ifExp = new IfExpression;
+    int type = 0;
+    bool hasCond = false;
     while (tok) {
         if (tok->kind == TokenKind::k_symbol_qg2) {
             if (!tok->next || (tok->next && tok->next->kind != TokenKind::k_key_word_else))
                 break;
         }
 
-        bool hasCond = false;
         if (tok->kind == TokenKind::k_key_word_if) {
             tok = tok->next;
-            if (!tok || tok->kind != TokenKind::k_key_word_else) {
+            if (!tok || tok->kind != TokenKind::k_symbol_qs1) {
                 error();
             }
 
@@ -760,6 +760,9 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
 
         if (tok->kind == TokenKind::k_key_word_else) {
             tok = tok->next;
+            if (hasCond) type = 1;
+            else type = 2;
+            continue;
         }
 
         AbstractExpression *cond = nullptr;
@@ -773,9 +776,9 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
         tok = t->next;
         IfExpression::If if_;
         if_.cond = cond;
+        if_.type = type;
 
-        if (tok->kind != TokenKind::k_symbol_qg1) {
-            
+        if (tok->kind != TokenKind::k_symbol_qs2) {
             AbstractExpression *op = parse_binay(tok, -1, t);
             if (!op) {
                 error();
@@ -783,29 +786,18 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
             // TODO must be op exp
             if_.body.push_back(op);
         } else {
+            tok = tok->next;
             IfExpression::If *p = &if_;
             READ_BODY(p, tok)
-            /*tok = tok->next;
-            while (tok) {
-                if (tok->kind == TokenKind::k_symbol_qg2) {
-                    break;
-                }
-
-                AbstractExpression *element = parse_binay(tok, -1, t);
-                if (!element) {
-                    error();
-                }
-
-                if_.body.push_back(element);
-                tok = t->next;
-            }*/
         }
+
         tok = t->next;
         ifExp->exps.push_back(if_);
+        hasCond = false;
     }
 
     t->next = tok->next;
-    return nullptr;
+    return ifExp;
 }
 
 static unordered_map<TokenKind, DeclType> types = {
@@ -843,23 +835,9 @@ static AbstractExpression * parse_function_decl(Token *tok, Token *t)
     }
 
     READ_BODY(func, cur)
+
     cur = t->next;
-    /*cur = cur->next;
-    while (cur) {
-        if (cur->kind == TokenKind::k_symbol_qg2) {
-            break;
-        }
-
-        AbstractExpression *element = parse_binay(cur, -1, t);
-        if (!element) {
-            error();
-        }
-
-        func->body.push_back(element);
-        cur = t->next;
-    }*/
-
-    t->next = cur->next;
+    if (cur) t->next = cur->next;
     return func;
 }
 
@@ -886,6 +864,8 @@ static AbstractExpression * parse_import(Token *tok, Token *t)
 {
     return nullptr;
 }
+
+static AbstractExpression* parse_follow(AbstractExpression *exp, Token *tok, Token *t);
 
 static unordered_map<TokenKind, int> priority_map = {
     {TokenKind::k_oper_assign, 2},
@@ -963,23 +943,28 @@ pri_kw:
 
             case TokenKind::k_key_word_class: {
                 exp = parse_class_decl(tok, t);
+                tok = t->next;
                 break;
             }
             case TokenKind::k_key_word_import: {
                 exp = parse_import(tok, t);
+                tok = t->next;
                 break;
             }
 
             case TokenKind::k_key_word_if: {
                 exp = parse_if_exp(tok, t);
+                tok = t->next;
                 break;
             }
             case TokenKind::k_key_word_for: {
                 exp = parse_for(tok, t);
+                tok = t->next;
                 break;
             }
             case TokenKind::k_key_word_foreach: {
                 exp = parse_foreach(tok, t);
+                tok = t->next;
                 break;
             }
 
@@ -1014,6 +999,11 @@ pri_kw:
             id->valType = 4;
             id->val.sval = tok;
             exp = id;
+            if (tok->next && tok->next->kind == TokenKind::k_symbol_qs1) {
+                exp = parse_follow(id, tok->next, t);
+                if (t->next && t->next->kind == TokenKind::k_symbol_co) tok = t->next;
+                else tok = nullptr;
+            }
         } else {
             if (tok->next && tok->next->kind == TokenKind::k_symbol_qs1) {
                 exp = parse_function_decl(t->next, t);
@@ -1241,8 +1231,8 @@ ExpressionVisitor * Parser::parse(const char *filename)
     cout << '\n';
 
     // 正式开始处理
-    AbstractExpression *exp = do_parse(tok);
-    if (!exp) {
+    DocumentExpression *exp = dynamic_cast<DocumentExpression *>(do_parse(tok));
+    if (exp->contents.empty()) {
         cout << "[error] parse " << filename << " failed!\n";
         exit(-1);
     }
