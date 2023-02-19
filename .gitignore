@@ -1,4 +1,5 @@
 .vscode
 build
+.cache
 *.o
 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
