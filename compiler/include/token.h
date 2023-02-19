@@ -43,6 +43,7 @@ enum class TokenKind
     k_key_word_true,
     k_key_word_false,
     k_key_word_class,
+    k_key_word_fun,
 
     k_identity,
 

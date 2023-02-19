@@ -1,11 +1,14 @@
 #include <iostream>
 #include <set>
 
+#include "ast.h"
 #include "parser.h"
+#include "token.h"
 
 static void error()
 {
-
+    cout << "error found!\n";
+    exit(-1);
 }
 
 static void error_at()
@@ -413,6 +416,55 @@ Token * Parser::parse_file(const char *filename)
     return res;
 }
 
+#define CHECK_TYPE bool is_static = false; \
+    if (tok->kind == TokenKind::k_key_word_static || tok->kind == TokenKind::k_key_word_private) { \
+        is_static = true; \
+        tok = tok->next; \
+    } \
+    if (!types.count(tok->kind)) { \
+        error(); \
+    } \
+    DeclType retType = types[tok->kind]; \
+    tok = tok->next; \
+    bool is_arr = false; \
+    if (tok->kind == TokenKind::k_oper_mul) { \
+        is_arr = true; \
+        tok = tok->next; \
+    } \
+    if (tok->kind != TokenKind::k_identity) { \
+        error(); \
+    } \
+    const string &name = tok->strval; \
+    if (name.empty()) { \
+        error(); \
+    } \
+    Token *nameToken = tok; \
+
+#define READ_BODY(exp, tok) tok = tok->next; \
+            while (tok) { \
+                if (tok->kind == TokenKind::k_symbol_qg2) { \
+                    break; \
+                } \
+                \
+                AbstractExpression *element = parse_binay(tok, -1, t); \
+                if (!element) { \
+                    error(); \
+                } \
+                tok = t->next; \
+                if (element->type == ExpressionType::oper_) { \
+                    BinaryExpression *bin = dynamic_cast<BinaryExpression *>(element); \
+                    if (!bin) { \
+                        error(); \
+                    } \
+                    if (bin->oper == TokenKind::k_oper_assign) { \
+                        require_expect(tok, t, ";");\
+                        tok = t->next; \
+                    } \
+                }\
+                \
+                exp->body.push_back(element); \
+            }
+
 // 用于跳过作用域，尽可能发现更多错误
 static void skip(Token *tok, Token *t)
 {
@@ -421,7 +473,7 @@ static void skip(Token *tok, Token *t)
 
 static void require_expect(Token *tok, Token *t, string exp)
 {
-    if (tok->kind != TokenKind::k_string) {
+    if (tok->kind != TokenKind::k_string && tok->kind != TokenKind::k_symbol_co) {
         error();
     }
 
@@ -433,19 +485,94 @@ static void require_expect(Token *tok, Token *t, string exp)
     t->next = tok->next;
 }
 
+static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache);
+
 static AbstractExpression * parse_call(Token *tok, Token *t)
 {
-    return nullptr;
+    /*AbstractExpression *callee = parse_binay(tok, -1, t);
+    if (!callee) {
+        error();
+    }
+
+    tok = t->next;*/
+    if (tok->kind != TokenKind::k_symbol_qs1) {
+        error();
+    }
+
+    CallExpression *call = new CallExpression;
+    //call->callee = callee;
+
+    tok = tok->next;
+    while (tok) {
+        if (tok->kind == TokenKind::k_symbol_qs2) {
+            break;
+        }
+
+        if (tok->kind == TokenKind::k_symbol_sep) {
+            tok = tok->next;
+            continue;
+        }
+    
+        AbstractExpression *param = parse_binay(tok, -1, t);
+        if (!param) {
+            error();
+        }
+
+        // TODO check is call, value, iden, index, binary, unary, triple exp
+        call->params.push_back(param);
+        tok = t->next;
+    }
+
+    t->next = tok->next;
+    return call;
 }
 
 static AbstractExpression * parse_index(Token *tok, Token *t)
 {
-    return nullptr;
+    /*AbstractExpression *indexer = parse_binay(tok, -1, t);
+    if (!indexer) {
+        error();
+    }
+
+    tok = t->next;*/
+    if (tok->kind != TokenKind::k_symbol_qm1) {
+        error();
+    }
+
+    tok = tok->next;
+    AbstractExpression *param = parse_binay(tok, -1, t);
+    if (!param) {
+        error();
+    }
+
+    tok = t->next;
+    if (tok->kind != TokenKind::k_symbol_qm2) {
+        error();
+    }
+
+    IndexExpression *idx = new IndexExpression;
+    //idx->l = indexer;
+    idx->idx = param;
+
+    t->next = tok->next;
+    return idx;
 }
 
 static AbstractExpression * parse_return(Token *tok, Token *t)
 {
-    return nullptr;
+    if (tok->kind != TokenKind::k_key_word_return) {
+        error();
+    }
+
+    AbstractExpression *r = parse_binay(tok->next, -1, t);
+    if (!r) {
+        error();
+    }
+
+    ReturnExpression *ret = new ReturnExpression;
+    ret->ret = r;
+    require_expect(tok, t, ";");
+    return ret;
 }
 
 static AbstractExpression * parse_triple(Token *tok, Token *t)
@@ -458,29 +585,282 @@ static AbstractExpression * parse_switch_case(Token *tok, Token *t)
     return nullptr;
 }
 
+static void parse_parameter(vector<AbstractExpression *> &params, Token *tok, Token *t)
+{
+    while (tok) {
+        if (tok->kind == TokenKind::k_symbol_qs2) {
+            break;
+        }
+
+        if (tok->kind == TokenKind::k_symbol_sep) {
+            tok = tok->next;
+            continue;
+        }
+
+        AbstractExpression *param = parse_binay(tok, -1, t);
+        if (!param) {
+            error();
+        }
+
+        VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(param);
+        if (!var) {
+            error();
+        }
+
+        if (var->is_static) {
+            error();
+        }
+
+        params.push_back(param);
+        tok = t->next;
+    }
+
+    t->next = tok->next;
+}
+
 static AbstractExpression * parse_foreach(Token *tok, Token *t)
 {
-    return nullptr;
+    if (tok->kind != TokenKind::k_key_word_foreach) {
+        error();
+    }
+
+    tok = tok->next;
+    if (tok->kind != TokenKind::k_symbol_qs1) {
+        error();
+    }
+
+    tok = tok->next;
+    // foreach (xxx, xxx in xx)
+    ForeachExpression *foreach = new ForeachExpression;
+    parse_parameter(foreach->decls, tok, t);
+    tok = t->next;
+
+    if (tok->kind != TokenKind::k_key_word_in) {
+        error();
+    }
+
+    tok = tok->next;
+    AbstractExpression *container = parse_binay(tok, -1, t);
+    if (!container) {
+        error();
+    }
+
+    tok = t->next;
+    if (tok->kind != TokenKind::k_symbol_qs2) {
+        error();
+    }
+
+    tok = tok->next;
+    if (tok->kind != TokenKind::k_symbol_qg1) {
+        AbstractExpression *op = parse_binay(tok, -1, t);
+        if (!op) {
+            error();
+        }
+        // TODO check is op
+        foreach->body.push_back(op);
+    } else {
+        READ_BODY(foreach, tok)
+    }
+
+    tok = t->next;
+    t->next = tok->next;
+    return foreach;
+}
+
+static void for_part(Token *tok, Token *t, ForNormalExpression *for_, int i)
+{
+    while (tok) {
+        if (i == 2 && tok->kind == TokenKind::k_symbol_qs2) {
+            break;
+        }
+
+        if (tok->kind == TokenKind::k_symbol_co) {
+            break;
+        }
+        
+        if (tok->kind == TokenKind::k_symbol_sep) {
+            tok = tok->next;
+            continue;
+        }
+
+        AbstractExpression *init = parse_binay(tok, -1, t);
+        if (!init) {
+            error();
+        }
+        // TODO  check op, decl
+
+        if (i == 0) for_->inits.push_back(init);
+        else if (i == 1) for_->conditions.push_back(init);
+        else if (i == 2) for_->operations.push_back(init);
+        else error();
+
+        tok = t->next;
+    }
+
+    t->next = tok->next;
 }
 
 static AbstractExpression * parse_for(Token *tok, Token *t)
 {
+    if (tok->kind != TokenKind::k_key_word_for) {
+        error();
+    }
+
+    tok = tok->next;
+    if (tok->kind != TokenKind::k_symbol_qs1) {
+        error();
+    }
+
+    ForNormalExpression *for_ = new ForNormalExpression;
+    tok = tok->next;
+    for_part(tok, t, for_, 0);
+    for_part(tok, t, for_, 1);
+    for_part(tok, t, for_, 2);
+
+    if (tok->kind != TokenKind::k_symbol_qg1) {
+        AbstractExpression *op = parse_binay(tok, -1, t);
+        if (!op) {
+            error();
+        }
+
+        // TODO check is op
+        for_->body.push_back(op);
+    } else {
+        READ_BODY(for_, tok)
+    }
+    tok = t->next;
+    t->next = tok->next;
     return nullptr;
 }
 
 static AbstractExpression * parse_if_exp(Token *tok, Token *t)
 {
+    if (tok->kind != TokenKind::k_key_word_if) {
+        error();
+    }
+
+    tok = tok->next;
+    IfExpression *ifExp = new IfExpression;
+    while (tok) {
+        if (tok->kind == TokenKind::k_symbol_qg2) {
+            if (!tok->next || (tok->next && tok->next->kind != TokenKind::k_key_word_else))
+                break;
+        }
+
+        bool hasCond = false;
+        if (tok->kind == TokenKind::k_key_word_if) {
+            tok = tok->next;
+            if (!tok || tok->kind != TokenKind::k_key_word_else) {
+                error();
+            }
+
+            tok = tok->next;
+            hasCond = true;
+        }
+
+        if (tok->kind == TokenKind::k_key_word_else) {
+            tok = tok->next;
+        }
+
+        AbstractExpression *cond = nullptr;
+        if (hasCond) {
+            cond = parse_binay(tok, -1, t);
+            if (!cond) {
+                error();
+            }
+        }
+
+        tok = t->next;
+        IfExpression::If if_;
+        if_.cond = cond;
+
+        if (tok->kind != TokenKind::k_symbol_qg1) {
+            
+            AbstractExpression *op = parse_binay(tok, -1, t);
+            if (!op) {
+                error();
+            }
+            // TODO must be op exp
+            if_.body.push_back(op);
+        } else {
+            IfExpression::If *p = &if_;
+            READ_BODY(p, tok)
+            /*tok = tok->next;
+            while (tok) {
+                if (tok->kind == TokenKind::k_symbol_qg2) {
+                    break;
+                }
+
+                AbstractExpression *element = parse_binay(tok, -1, t);
+                if (!element) {
+                    error();
+                }
+
+                if_.body.push_back(element);
+                tok = t->next;
+            }*/
+        }
+        tok = t->next;
+        ifExp->exps.push_back(if_);
+    }
+
+    t->next = tok->next;
     return nullptr;
 }
 
-static AbstractExpression * parse_assignment(Token *tok, Token *t)
-{
-    return nullptr;
-}
+static unordered_map<TokenKind, DeclType> types = {
+    {TokenKind::k_key_word_void, DeclType::void_},
+    {TokenKind::k_key_word_int, DeclType::int_},
+    {TokenKind::k_key_word_float, DeclType::float_},
+    {TokenKind::k_key_word_string, DeclType::string_},
+    {TokenKind::k_key_word_object, DeclType::object_},
+    {TokenKind::k_key_word_mapping, DeclType::mapping_},
+    {TokenKind::k_key_word_mixed, DeclType::mixed_},
+    {TokenKind::k_key_word_fun, DeclType::func_},
+};
 
 static AbstractExpression * parse_function_decl(Token *tok, Token *t)
 {
-    return nullptr;
+    CHECK_TYPE
+
+    tok = tok->next;
+    if (tok->kind != TokenKind::k_symbol_qs1) {
+        error();
+    }
+
+    FunctionDeclExpression *func = new FunctionDeclExpression;
+    func->returnType = retType;
+    func->name = nameToken; 
+    func->is_static = is_static;
+    func->dtype = DeclType::func_;
+
+    tok = tok->next;
+    parse_parameter(func->params, tok, t);
+
+    Token *cur = t->next;
+    if (cur->kind != TokenKind::k_symbol_qg1) {
+        error();
+    }
+
+    READ_BODY(func, cur)
+    cur = t->next;
+    /*cur = cur->next;
+    while (cur) {
+        if (cur->kind == TokenKind::k_symbol_qg2) {
+            break;
+        }
+
+        AbstractExpression *element = parse_binay(cur, -1, t);
+        if (!element) {
+            error();
+        }
+
+        func->body.push_back(element);
+        cur = t->next;
+    }*/
+
+    t->next = cur->next;
+    return func;
 }
 
 static AbstractExpression * parse_class_decl(Token *tok, Token *t)
@@ -490,7 +870,16 @@ static AbstractExpression * parse_class_decl(Token *tok, Token *t)
 
 static AbstractExpression * parse_var_decl(Token *tok, Token *t)
 {
-    return nullptr;
+    CHECK_TYPE
+
+    VarDeclExpression *decl = new VarDeclExpression;
+    decl->dtype = retType;
+    decl->name = nameToken;
+    decl->is_static = is_static;
+    decl->is_arr = is_arr;
+
+    t->next = tok;
+    return decl;
 }
 
 static AbstractExpression * parse_import(Token *tok, Token *t)
@@ -532,20 +921,17 @@ static AbstractExpression * parse_primary(Token *tok, Token *t)
 {
     AbstractExpression *exp = nullptr;
     bool is_static = false;
-    TokenKind initType;
+    TokenKind initType = TokenKind::k_none;
 
 start:
     TokenKind k = tok->kind;
-    if (k >= TokenKind::k_key_word_int && k <= TokenKind::k_key_word_as) {
+    if (k >= TokenKind::k_key_word_int && k <= TokenKind::k_key_word_class) {
         switch (k) {
             case TokenKind::k_key_word_true: {
                 ValueExpression *falseVal = new ValueExpression;
                 falseVal->valType = 3;
                 falseVal->val.ival = 1;
                 exp = falseVal;
-
-                require_expect(tok->next, t, ";");
-                tok = t->next;
                 break;
             }
             case TokenKind::k_key_word_false: {
@@ -553,9 +939,6 @@ start:
                 falseVal->valType = 3;
                 falseVal->val.ival = 0;
                 exp = falseVal;
-
-                require_expect(tok->next, t, ";");
-                tok = t->next;
                 break;
             }
 
@@ -570,20 +953,10 @@ pri_kw:
             case TokenKind::k_key_word_bool: {
                 if (!is_static) t->next = tok;
 
+                initType = tok->kind;
                 Token *n = tok->next;
-                initType = n->kind;
-
-                if (n) {    // 数组
-                    switch (n->kind) {
-                        case TokenKind::k_oper_mul:{
-                            tok = n;
-                            break;
-                        }
-                        case TokenKind::k_identity:{
-                            tok = n;
-                            break;
-                        }
-                    }
+                if (n && (n->kind == TokenKind::k_oper_mul || n->kind == TokenKind::k_identity)) {    // 数组
+                    tok = n;
                     goto start;
                 }
             }
@@ -594,6 +967,19 @@ pri_kw:
             }
             case TokenKind::k_key_word_import: {
                 exp = parse_import(tok, t);
+                break;
+            }
+
+            case TokenKind::k_key_word_if: {
+                exp = parse_if_exp(tok, t);
+                break;
+            }
+            case TokenKind::k_key_word_for: {
+                exp = parse_for(tok, t);
+                break;
+            }
+            case TokenKind::k_key_word_foreach: {
+                exp = parse_foreach(tok, t);
                 break;
             }
 
@@ -610,6 +996,7 @@ pri_kw:
                         case TokenKind::k_key_word_mapping: 
                         case TokenKind::k_key_word_string: 
                         case TokenKind::k_key_word_mixed:
+                        case TokenKind::k_key_word_void:
                         case TokenKind::k_key_word_bool: {
                             tok = n;
                             goto pri_kw;
@@ -622,48 +1009,34 @@ pri_kw:
             }
         }
     } else if (k == TokenKind::k_identity) {
-        Token *n = tok->next;
-        if (n) {
-            if (n->kind == TokenKind::k_symbol_qs1) {               // (    func
+        if (initType == TokenKind::k_none) {
+            ValueExpression *id = new ValueExpression;
+            id->valType = 4;
+            id->val.sval = tok;
+            exp = id;
+        } else {
+            if (tok->next && tok->next->kind == TokenKind::k_symbol_qs1) {
                 exp = parse_function_decl(t->next, t);
-            } else if (n->kind == TokenKind::k_symbol_qm1) {        // [    index
-                exp = parse_index(t->next, t);
-            }
-        }
-
-        if (!exp) {
-            if (initType == TokenKind::k_none) {
-                ValueExpression *id = new ValueExpression;
-                id->valType = 4;
-                id->val.sval = tok;
-                exp = id;
             } else {
                 exp = parse_var_decl(t->next, t);
             }
+            tok = t->next;
         }
     } else if (k == TokenKind::k_integer) {
         ValueExpression *iVal = new ValueExpression;
         iVal->valType = 0;
         iVal->val.ival = tok->ival;
         exp = iVal;
-
-        require_expect(tok->next, t, ";");
-        tok = t->next;
     } else if (k == TokenKind::k_number) {
         ValueExpression *dVal = new ValueExpression;
         dVal->valType = 1;
         dVal->val.ival = tok->dval;
         exp = dVal;
-
-        require_expect(tok->next, t, ";");
-        tok = t->next;
     } else if (k == TokenKind::k_string) {
         ValueExpression *sVal = new ValueExpression;
         sVal->valType = 2;
         sVal->val.sval = tok;
         exp = sVal;
-
-        require_expect(tok->next, t, ";");
         tok = t->next;
     } else if (k == TokenKind::k_symbol_qm1 || k == TokenKind::k_symbol_qg1) {
         // 数组字面量
@@ -671,32 +1044,33 @@ pri_kw:
         con->type = k == TokenKind::k_symbol_qg1 ? 1 : 0;
         TokenKind endKind = (TokenKind)((int)k + 1);
 
-        Token *cur = tok->next;
-        while (cur) {
-            if (cur->kind == endKind) {
+        tok = tok->next;
+        while (tok) {
+            if (tok->kind == endKind) {
                 break;
             }
 
-            if (cur->kind == TokenKind::k_symbol_sep) {
+            if (tok->kind == TokenKind::k_symbol_sep || tok->kind == TokenKind::k_symbol_show) {
                 // consume
-                cur = cur->next;
+                tok = tok->next;
                 continue;
             }
 
-            AbstractExpression *element = parse_primary(cur, t);
-            con->body.push_back(element);
+            AbstractExpression *element = parse_binay(tok, -1, t);
+            if (!element) {
+                error();
+            }
 
-            cur = cur->next;
+            con->body.push_back(element);
+            tok = tok->next;
         }
-        
-        cur = cur->next;
-        require_expect(cur, t, ";");
-        tok = t->next;
+
+        exp = con;
     } else {
         error();
     }
 
-    t->next = tok->next;
+    if (tok) t->next = tok->next;
     return exp;
 }
 
@@ -718,17 +1092,19 @@ static AbstractExpression * parse_unary(Token *tok, Token *t)
     } else {
         AbstractExpression *exp = parse_primary(tok, t);
         tok = t->next;
-        k = tok->kind;
-        if (k == TokenKind::k_oper_plus_plus || k == TokenKind::k_oper_sub_sub) {
-            t->next = tok->next;
-            UnaryExpression *uExp = new UnaryExpression;
-            uExp->op = k;
-            uExp->exp = exp;
+        if (tok) {
+            k = tok->kind;
+            if (k == TokenKind::k_oper_plus_plus || k == TokenKind::k_oper_sub_sub) {
+                t->next = tok->next;
+                UnaryExpression *uExp = new UnaryExpression;
+                uExp->op = k;
+                uExp->exp = exp;
 
-            return uExp;
-        } else {
-            return exp;
+                return uExp;
+            }
         }
+
+        return exp;
     }
 }
 
@@ -738,17 +1114,61 @@ static int get_pre(TokenKind k)
     else return -1;
 }
 
+static AbstractExpression* parse_follow(AbstractExpression *exp, Token *tok, Token *t)
+{
+    AbstractExpression *last = exp;
+    while (tok)
+    {
+        if (tok->kind == TokenKind::k_symbol_qs1) {
+            AbstractExpression *c = parse_call(tok, t);
+            if (!c) {
+                error();
+            }
+
+            CallExpression *call = dynamic_cast<CallExpression *>(c);
+            if (!call) {
+                error();
+            }
+            call->callee = last;
+            last = call;
+        } else if (tok->kind == TokenKind::k_symbol_qm1) {
+            AbstractExpression *i = parse_index(tok, t);
+            if (!i) {
+                error();
+            }
+
+            IndexExpression *idx = dynamic_cast<IndexExpression *>(i);
+            if (!idx) {
+                error();
+            }
+            idx->l = last;
+            last = idx;
+        } else {
+            break;
+        }
+
+        tok = t->next;
+    }
+    return last;
+}
+
 static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
 {
     AbstractExpression *exp1 = parse_unary(tok, cache);
     tok = cache->next;
+    if (!tok) {
+        return exp1;
+    }
+
     int tprec = get_pre(tok->kind);
     while (tprec > pre) {
         tok = tok->next;
-        AbstractExpression *exp2 = parse_binay(tok->next, tprec, cache);
+        AbstractExpression *exp2 = parse_binay(tok, tprec, cache);
         if (!exp2) {
             error();
         }
+
+        exp2 = parse_follow(exp2, cache->next, cache);
 
         BinaryExpression *op = new BinaryExpression;
         op->oper = tok->kind;
@@ -769,10 +1189,32 @@ static AbstractExpression * do_parse(Token *tok)
     Token *cur = tok;
     Token t{};
     while (cur) {
-        AbstractExpression *exp = parse_primary(cur, &t);
-        doc->contents.push_back(exp);
+        AbstractExpression *exp = parse_binay(cur, -1, &t);
+        if (!exp) {
+            error();
+        }
+        
+        if (exp->get_type() != ExpressionType::oper_ && exp->get_type() != ExpressionType::func_decl_ && exp->get_type() != ExpressionType::var_decl_) {
+            error();
+        }
+
+        if (exp->get_type() == ExpressionType::oper_) {
+            BinaryExpression *bin = dynamic_cast<BinaryExpression *>(exp);
+            if (!bin || bin->l->get_type() != ExpressionType::var_decl_) {
+                error();
+            }
+        }
+
+        if (exp->get_type() == ExpressionType::oper_ || exp->get_type() == ExpressionType::var_decl_) {
+            require_expect(t.next, &t, ";");
+        }
+
+        if (cur->kind == TokenKind::k_symbol_co) {
+            t.next = cur->next;
+        }
 
         cur = t.next;
+        doc->contents.push_back(exp);
     }
 
     return doc;

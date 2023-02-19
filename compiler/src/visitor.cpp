@@ -3,11 +3,11 @@
 void ConcretVisitor::visit(AbstractExpression *exp)
 {
     switch (exp->get_type()) {
-        case ExpressionType::var_decl: {
+        case ExpressionType::var_decl_: {
 
             break;
         }
-        case ExpressionType::value: {
+        case ExpressionType::value_: {
             visit_value();
             break;
         }

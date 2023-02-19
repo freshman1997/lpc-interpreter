@@ -38,6 +38,7 @@ static unordered_map<string, TokenKind> keywords = {
     {"true", TokenKind::k_key_word_true},
     {"false", TokenKind::k_key_word_false},
     {"class", TokenKind::k_key_word_class},
+    {"fun", TokenKind::k_key_word_fun},
 };
 
 Scanner::Scanner(const char * file) : filename(file)
@@ -67,6 +68,11 @@ void Scanner::init()
     }
 
     read_more();
+    if (one == 0xef && two == 0xbb) {
+        use = 0;
+        read_more();
+        read();
+    }
     eof = false;
 }
 
@@ -192,10 +198,10 @@ start:
     luint8_t ch = scanner->peek();
     while (is_blank(ch)) {
         ch = scanner->read();
-        cur->is_space = true;
+        if (cur) cur->is_space = true;
         if (ch == '\n') {
             ++line;
-            cur->newline = true;
+            if (cur) cur->newline = true;
         }
     }
 

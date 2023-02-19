@@ -17,7 +17,7 @@ void VarDeclExpression::pre_print(int deep)
 
 ExpressionType VarDeclExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::var_decl_;
 }
 
 
@@ -39,7 +39,7 @@ void ValueExpression::pre_print(int deep)
 
 ExpressionType ValueExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::value_;
 }
 /////////////////////////////////////////////
 
@@ -60,7 +60,7 @@ void ConstructExpression::pre_print(int deep)
 
 ExpressionType ConstructExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::construct_;
 }
 
 /////////////////////////////////////////////
@@ -81,7 +81,7 @@ void BinaryExpression::pre_print(int deep)
 
 ExpressionType BinaryExpression::get_type()
 {
-    return ExpressionType::oper;
+    return ExpressionType::oper_;
 }
 
 ////////////////////////////////////////////
@@ -103,29 +103,29 @@ void UnaryExpression::pre_print(int deep)
 
 ExpressionType UnaryExpression::get_type()
 {
-    return ExpressionType::oper;
+    return ExpressionType::uop_;
 }
 
 ////////////////////////////////////////////
 
-void AssignExpression::accept(Visitor *visitor)
+void IfExpression::accept(Visitor *visitor)
 {
     
 }
 
-string AssignExpression::get_name()
+string IfExpression::get_name()
 {
     return "DECL";
 }
 
-void AssignExpression::pre_print(int deep)
+void IfExpression::pre_print(int deep)
 {
 
 }
 
-ExpressionType AssignExpression::get_type()
+ExpressionType IfExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::var_decl_;
 }
 
 /////////////////////////////////////
@@ -147,7 +147,7 @@ void FunctionDeclExpression::pre_print(int deep)
 
 ExpressionType FunctionDeclExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::func_decl_;
 }
 
 /////////////////////////////////////
@@ -169,7 +169,7 @@ void CallExpression::pre_print(int deep)
 
 ExpressionType CallExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::call_;
 }
 
 /////////////////////////////////////
@@ -191,7 +191,7 @@ void IndexExpression::pre_print(int deep)
 
 ExpressionType IndexExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::index_;
 }
 
 /////////////////////////////////////
@@ -213,7 +213,7 @@ void ForNormalExpression::pre_print(int deep)
 
 ExpressionType ForNormalExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::for_normal_;
 }
 
 /////////////////////////////////////
@@ -235,7 +235,7 @@ void ForeachExpression::pre_print(int deep)
 
 ExpressionType ForeachExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::foreach_;
 }
 
 /////////////////////////////////////
@@ -257,7 +257,7 @@ void ReturnExpression::pre_print(int deep)
 
 ExpressionType ReturnExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::return_;
 }
 
 /////////////////////////////////////
@@ -279,7 +279,7 @@ void BreakExpression::pre_print(int deep)
 
 ExpressionType BreakExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::break_;
 }
 
 /////////////////////////////////////
@@ -301,7 +301,7 @@ void whileExpression::pre_print(int deep)
 
 ExpressionType whileExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::while_;
 }
 
 /////////////////////////////////////
@@ -323,7 +323,7 @@ void DoWhileExpression::pre_print(int deep)
 
 ExpressionType DoWhileExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::do_while_;
 }
 
 /////////////////////////////////////
@@ -345,7 +345,7 @@ void CaseExpression::pre_print(int deep)
 
 ExpressionType CaseExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::case_;
 }
 
 /////////////////////////////////////
@@ -367,7 +367,7 @@ void SwitchCaseExpression::pre_print(int deep)
 
 ExpressionType SwitchCaseExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::switch_case_;
 }
 
 /////////////////////////////////////
@@ -389,7 +389,7 @@ void ClassExpression::pre_print(int deep)
 
 ExpressionType ClassExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::class_;
 }
 
 /////////////////////////////////////
@@ -411,5 +411,5 @@ void DocumentExpression::pre_print(int deep)
 
 ExpressionType DocumentExpression::get_type()
 {
-    return ExpressionType::var_decl;
+    return ExpressionType::document_;
 }

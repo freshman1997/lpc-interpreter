@@ -10,36 +10,40 @@ using namespace std;
 
 enum class ExpressionType
 {
-    var_decl,
-    value,
-    assign,
-    oper,
-    index,
+    var_decl_,
+    value_,
+    uop_,
+    oper_,
+    index_,
     new_,
-    pointor,
-    for_normal,
-    foreach,
+    pointor_,
+    for_normal_,
+    foreach_,
     while_,
-    do_while,
+    do_while_,
     break_,
-    switch_case,
+    switch_case_,
     case_,
-    func_decl,
-    call,
+    func_decl_,
+    call_,
     return_,
     class_,
-    document,
+    construct_,
+    document_,
 };
 
 enum class DeclType
 {
+    void_,
     int_,
     float_,
     class_,
     bool_,
     mapping_,
+    mixed_,
     object_,
     string_,
+    func_,
 };
 
 class ExpressionVisitor
@@ -68,10 +72,10 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
+    bool is_arr = false;
     bool is_static = false;
     DeclType dtype;
-    string type_name;
-    string name;
+    Token *name;
 };
 
 class ConstructExpression : public AbstractExpression
@@ -134,18 +138,6 @@ public:
     AbstractExpression *r = nullptr;
 };
 
-class AssignExpression : public AbstractExpression
-{
-public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
-
-    AbstractExpression *l = nullptr;
-    AbstractExpression *r = nullptr;
-};
-
 class FunctionDeclExpression : public VarDeclExpression
 {
 public:
@@ -153,8 +145,10 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
+
+    DeclType returnType = DeclType::void_;
     vector<AbstractExpression *> params;
+    vector<AbstractExpression *> body;
 };
 
 class CallExpression : public AbstractExpression
@@ -164,8 +158,8 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
-    string name;
+
+    AbstractExpression *callee;
     vector<AbstractExpression *> params;
 };
 
@@ -176,10 +170,25 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
+
     AbstractExpression *l;
     AbstractExpression *idx;
 };
+
+class IfExpression : public AbstractExpression
+{
+public:
+    virtual void accept(Visitor *visitor);
+    virtual string get_name();
+    virtual void pre_print(int deep);
+    virtual ExpressionType get_type();
+    struct If {
+        AbstractExpression *cond;
+        vector<AbstractExpression *> body;
+    };
+
+    vector<If> exps;
+}; 
 
 class ForNormalExpression : public AbstractExpression
 {
@@ -188,10 +197,10 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
-    AbstractExpression *inits;
-    AbstractExpression *conditions;
-    AbstractExpression *operations;
+
+    vector<AbstractExpression *> inits;
+    vector<AbstractExpression *> conditions;
+    vector<AbstractExpression *> operations;
     vector<AbstractExpression *> body;
 };
 
@@ -202,9 +211,8 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
-    AbstractExpression *one;
-    AbstractExpression *two;
+
+    vector<AbstractExpression*> decls;
     AbstractExpression *container;
     vector<AbstractExpression *> body;
 };
@@ -216,7 +224,7 @@ public:
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-private:
+
     AbstractExpression *ret;
 };
 
