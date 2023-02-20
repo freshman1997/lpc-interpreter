@@ -15,17 +15,20 @@ enum class ExpressionType
     uop_,
     oper_,
     index_,
-    new_,
+    call_,
     pointor_,
+    break_,
+    continue_,
+    new_,
+
+    if_,
     for_normal_,
     foreach_,
     while_,
     do_while_,
-    break_,
     switch_case_,
     case_,
     func_decl_,
-    call_,
     return_,
     class_,
     construct_,
@@ -34,6 +37,7 @@ enum class ExpressionType
 
 enum class DeclType
 {
+    none_,
     void_,
     int_,
     float_,
@@ -74,7 +78,7 @@ public:
 
     bool is_arr = false;
     bool is_static = false;
-    DeclType dtype;
+    DeclType dtype = DeclType::none_;
     Token *name;
 };
 
@@ -100,6 +104,7 @@ public:
     virtual ExpressionType get_type();
     virtual ~ValueExpression(){};
 
+    bool is_arr = false;    // for 连续声明
     union Value
     {
         int ival;

@@ -324,7 +324,7 @@ start:
                 if (c == '/') {
                     delete t;
                     skip_comment(scanner, "\n");
-                    cur->newline = true;
+                    if (cur) cur->newline = true;
                     goto start;
                 }
                 else if (c == '*') {
@@ -409,7 +409,7 @@ start:
             }
             case '&': {
                 luint8_t c = scanner->read();
-                if (c == '=') {
+                if (c == '&') {
                     t->strval.push_back(c);
                     t->kind = TokenKind::k_cmp_and;
                 }
@@ -421,7 +421,7 @@ start:
             }
             case '|': {
                 luint8_t c = scanner->read();
-                if (c == '=') {
+                if (c == '|') {
                     t->strval.push_back(c);
                     t->kind = TokenKind::k_cmp_or;
                 }

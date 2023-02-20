@@ -24,6 +24,7 @@ struct Macro
     string name;
     bool isobj_like;
     MacroParam *params;
+    int psize = 0;
     Token *body;
     Token *end;
     macro_handler_fn *handler;

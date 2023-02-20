@@ -125,7 +125,7 @@ void IfExpression::pre_print(int deep)
 
 ExpressionType IfExpression::get_type()
 {
-    return ExpressionType::var_decl_;
+    return ExpressionType::if_;
 }
 
 /////////////////////////////////////
