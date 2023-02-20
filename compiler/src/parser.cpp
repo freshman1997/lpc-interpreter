@@ -189,6 +189,7 @@ Token * Parser::preprocessing(Token *tok)
     Token *cur = tok;
     Token *pre = nullptr;
     Token *pre1 = nullptr;
+    Token *last = nullptr;
 
     while (cur) {
         if (cur->kind == TokenKind::k_identity) {
@@ -329,10 +330,16 @@ Token * Parser::preprocessing(Token *tok)
                 m->params = params;
                 macros[macroName->strval] = m;
 
+                if (h == pre) {
+                    h = cur->next;
+                }
+
                 if (pre1) {
-                    pre1->next = cur;
+                    pre1->next = cur->next;
                 } else {
                     h = cur->next;
+                    cur = cur->next;
+                    continue;
                 }
             }
             else if (cur->kind == TokenKind::k_key_word_include) {
@@ -418,17 +425,6 @@ Token * Parser::parse_file(const char *filename)
     return res;
 }
 
-/*if (element->get_type() == ExpressionType::oper_) { \
-                    BinaryExpression *bin = dynamic_cast<BinaryExpression *>(element); \
-                    if (!bin) { \
-                        error(); \
-                    } \
-                    if (bin->oper >= TokenKind::k_oper_plus_plus && bin->oper <= TokenKind::k_oper_pointer) { \
-                        require_expect(tok, t, ";");\
-                        tok = t->next; \
-                    } \
-                }*/
-
 #define CHECK_TYPE bool is_static = false; \
     if (tok->kind == TokenKind::k_key_word_static || tok->kind == TokenKind::k_key_word_private) { \
         is_static = true; \
@@ -473,11 +469,9 @@ static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExp
                         continue; \
                     } \
                 } \
-                cout << "type: " << (int)element->get_type() << endl;\
                 if (element->get_type() >= ExpressionType::var_decl_ && element->get_type() <= ExpressionType::new_) { \
                     require_expect(t->next, t, ";"); \
                     tok = t->next; \
-                    cout << "type1: " << tok->strval << endl;\
                 }\
                 exp->body.push_back(element); \
             }
@@ -782,10 +776,6 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
     bool skip = false;
     bool stop = false;
     while (tok && !stop) {
-        // TODO
-        if (!tok->next || (tok->next && tok->next->kind != TokenKind::k_key_word_else) || (tok->next && tok->kind == TokenKind::k_symbol_qg2))
-            break;
-
         if (tok->kind == TokenKind::k_key_word_if) {
             tok = tok->next;
             if (!tok || tok->kind != TokenKind::k_symbol_qs1) {
@@ -837,9 +827,8 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
 
             if (op->get_type() >= ExpressionType::var_decl_ && op->get_type() <= ExpressionType::new_) {
                 require_expect(t->next, t, ";");
-                tok = t->next; 
             }
-            // TODO must be op exp
+
             if_.body.push_back(op);
         } else {
             IfExpression::If *p = &if_;
@@ -850,7 +839,9 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
         tok = t->next;
         ifExp->exps.push_back(if_);
         hasCond = false;
-        
+
+        if (tok->kind != TokenKind::k_key_word_else || tok->kind == TokenKind::k_symbol_qg2)
+            break;
     }
 
     if (skip) t->next = tok->next;
@@ -1135,6 +1126,20 @@ pri_kw:
         exp = id;
 
         tok = n;
+    } else if (k == TokenKind::k_symbol_qs1) {
+        // (xxx)
+        tok = tok->next;
+        AbstractExpression *element = parse_binay(tok, -1, t);
+        if (!element) {
+            error();
+        }
+
+        if (t->next->kind != TokenKind::k_symbol_qs2) {
+            error();
+        }
+        
+        exp = element;
+        tok = t->next;
     } else {
         error();
     }

@@ -71,6 +71,7 @@ void Scanner::init()
     if (one == 0xef && two == 0xbb) {
         use = 0;
         read_more();
+        use = 1;
         read();
     }
     eof = false;
@@ -98,18 +99,19 @@ void Scanner::read_more()
     if (use == 1) {
         one = two;
         two = input.good() ? input.get() : 0;
+        if (two != 0) ++use;
     }
     else {
         one = input.good() ? input.get() : 0;
+        if (one != 0) ++use;
         two = input.good() ? input.get() : 0;
+        if (two != 0) ++use;
     }
 
     if (!input.good()) {
         eof = true;
         return;
     }
-
-    use = 2;
 }
 
 luint8_t Scanner::peek()
@@ -129,6 +131,8 @@ luint8_t Scanner::peek1()
 
 luint8_t Scanner::read()
 {
+    if (eof) return 0;
+
     --use;
     if (use == 0) read_more();
     luint8_t res = 0;
@@ -490,10 +494,12 @@ start:
             }
         }
 
-        scanner->peek1();
-        t->newline = scanner->peek() == '\n';
-        t->is_space = is_blank(scanner->peek());
-        scanner->read();
+        if (!scanner->is_eof()) {
+            scanner->peek1();
+            t->newline = scanner->peek() == '\n';
+            t->is_space = is_blank(scanner->peek());
+            scanner->read();
+        }
     }
 
     if (!t->is_space) t->is_space = is_blank(scanner->peek());

@@ -26,10 +26,10 @@ private:
 	void read_more();
 	const char *filename = nullptr;	
 	std::ifstream input;
-	luint8_t one;
-	luint8_t two;
-	luint8_t use;
-	bool eof;
+	luint8_t one = 0;
+	luint8_t two = 0;
+	luint8_t use = 0;
+	bool eof = false;
 };
 
 class TokenReader
