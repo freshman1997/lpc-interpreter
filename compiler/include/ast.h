@@ -17,8 +17,6 @@ enum class ExpressionType
     index_,
     call_,
     pointor_,
-    break_,
-    continue_,
     new_,
 
     if_,
@@ -30,6 +28,8 @@ enum class ExpressionType
     switch_case_,
     case_,
     func_decl_,
+    break_,
+    continue_,
     return_,
     class_,
     construct_,
@@ -49,6 +49,7 @@ enum class DeclType
     object_,
     string_,
     func_,
+    user_define_,
 };
 
 class ExpressionVisitor
@@ -80,6 +81,7 @@ public:
     bool is_arr = false;
     bool is_static = false;
     DeclType dtype = DeclType::none_;
+    Token *user_define_type;
     Token *name;
 };
 
@@ -181,6 +183,17 @@ public:
     AbstractExpression *idx;
 };
 
+class NewExpression : public AbstractExpression
+{
+public:
+    virtual void accept(Visitor *visitor);
+    virtual string get_name();
+    virtual void pre_print(int deep);
+    virtual ExpressionType get_type();
+
+    AbstractExpression *id;
+};
+
 class TripleExpression : public AbstractExpression
 {
 public:
@@ -249,6 +262,15 @@ public:
 };
 
 class BreakExpression : public AbstractExpression
+{
+public:
+    virtual void accept(Visitor *visitor);
+    virtual string get_name();
+    virtual void pre_print(int deep);
+    virtual ExpressionType get_type();
+};
+
+class ContinueExpression : public AbstractExpression
 {
 public:
     virtual void accept(Visitor *visitor);

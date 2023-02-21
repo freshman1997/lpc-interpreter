@@ -434,3 +434,46 @@ ExpressionType DocumentExpression::get_type()
 {
     return ExpressionType::document_;
 }
+
+/////////////////////////////////////
+
+void ContinueExpression::accept(Visitor *visitor)
+{
+    
+}
+
+string ContinueExpression::get_name()
+{
+    return "continue";
+}
+
+void ContinueExpression::pre_print(int deep)
+{
+
+}
+
+ExpressionType ContinueExpression::get_type()
+{
+    return ExpressionType::continue_;
+}
+/////////////////////////////////////
+
+void NewExpression::accept(Visitor *visitor)
+{
+    
+}
+
+string NewExpression::get_name()
+{
+    return "continue";
+}
+
+void NewExpression::pre_print(int deep)
+{
+
+}
+
+ExpressionType NewExpression::get_type()
+{
+    return ExpressionType::new_;
+}

@@ -39,6 +39,7 @@ static unordered_map<string, TokenKind> keywords = {
     {"false", TokenKind::k_key_word_false},
     {"class", TokenKind::k_key_word_class},
     {"fun", TokenKind::k_key_word_fun},
+    {"new", TokenKind::k_key_word_new},
 };
 
 Scanner::Scanner(const char * file) : filename(file)
@@ -191,7 +192,7 @@ static void skip_comment(Scanner *sc, string end)
 
         if (ch == end[i]) ++i;
         else i = 0;
-
+        cout << "ch: " << ch << endl;
         ch = sc->read();
     }
 }

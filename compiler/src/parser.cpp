@@ -351,7 +351,7 @@ Token * Parser::preprocessing(Token *tok)
                         state = 2;
                     }
 
-                    tok1 = tok1->next;
+                    if (state) tok1 = tok1->next;
                 }
 
                 if (pre1) {
@@ -455,6 +455,7 @@ Token * Parser::parse_file(const char *filename)
         error(); \
     } \
     DeclType retType = types[tok->kind]; \
+    Token *user_define_type = retType == DeclType::user_define_ ? tok : nullptr; \
     tok = tok->next; \
     bool is_arr = false; \
     if (tok->kind == TokenKind::k_oper_mul) { \
@@ -505,16 +506,22 @@ static void skip(Token *tok, Token *t)
 
 static void require_expect(Token *tok, Token *t, string exp)
 {
-    if (tok->kind != TokenKind::k_string && tok->kind != TokenKind::k_symbol_co) {
-        error();
+    Token *cur = tok;
+    while (cur) {
+        if (cur->strval != exp) {
+            break;
+        }
+
+        cur = cur->next;
     }
 
-    if (tok->strval != exp) {
+    // must be match at least one token
+    if (cur == tok) {
         error();
     }
 
     // consume
-    t->next = tok->next;
+    t->next = cur;
 }
 
 static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache);
@@ -735,6 +742,89 @@ static AbstractExpression * parse_foreach(Token *tok, Token *t)
     return foreach;
 }
 
+static AbstractExpression * parse_while(Token *tok, Token *t)
+{
+    if (tok->kind != TokenKind::k_key_word_while) {
+        error();
+    }
+
+    tok = tok->next;
+    if (!tok || tok->kind != TokenKind::k_symbol_qs1) {
+        error();
+    }
+
+    AbstractExpression *exp = parse_binay(tok->next, -1, t);
+    if (!exp) {
+        error();
+    }
+
+    tok = t->next;
+    if (!tok || tok->next->kind != TokenKind::k_symbol_qs2) {
+        error();
+    }
+
+    if (!tok->next) {
+        error();
+    }
+
+    bool skip = false;
+    whileExpression *w = new whileExpression;
+    if (tok->next->kind != TokenKind::k_symbol_qg1) {
+        AbstractExpression *op = parse_binay(tok, -1, t);
+        if (!op) {
+            error();
+        }
+
+        if (op->get_type() >= ExpressionType::var_decl_ && op->get_type() <= ExpressionType::new_) {
+            require_expect(t->next, t, ";");
+            tok = t->next; 
+        }
+        w->body.push_back(op);
+    } else {
+        READ_BODY(w, tok)
+        skip = true;
+    }
+
+    if (skip) t->next = tok->next;
+    else t->next = tok;
+
+    return w;
+}
+
+static AbstractExpression * parse_do_while(Token *tok, Token *t)
+{
+    if (!tok || tok->kind != TokenKind::k_key_word_do) {
+        error();
+    }
+
+    tok = tok->next;
+    if (!tok || tok->kind != TokenKind::k_symbol_qg1) {
+        error();
+    }
+
+    DoWhileExpression *dw = new DoWhileExpression;
+
+    READ_BODY(dw, tok)
+
+    if (!tok || tok->kind != TokenKind::k_symbol_qg2) {
+        error();
+    }
+
+    tok = tok->next;
+    if (!tok || tok->kind != TokenKind::k_symbol_qs1) {
+        error();
+    }
+
+    AbstractExpression *cond = parse_binay(tok, -1, t);
+    if (!cond) {
+        error();
+    }
+
+    require_expect(t->next, t, ";");
+
+    return dw;
+}
+
 static void for_part(Token *tok, Token *t, ForNormalExpression *for_, int i)
 {
     while (tok) {
@@ -886,8 +976,17 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
         ifExp->exps.push_back(if_);
         hasCond = false;
 
-        if (tok->kind != TokenKind::k_key_word_else || tok->kind == TokenKind::k_symbol_qg2)
+        if (tok->kind == TokenKind::k_symbol_qg2) {
+            if (tok->next && tok->next->kind != TokenKind::k_key_word_else) {
+                break;
+            }
+        } else if (tok->kind != TokenKind::k_key_word_else) {
             break;
+        }
+
+        if (type != 2 && skip) {
+            tok = tok->next;
+        }
     }
 
     if (skip) t->next = tok->next;
@@ -905,6 +1004,7 @@ static unordered_map<TokenKind, DeclType> types = {
     {TokenKind::k_key_word_mapping, DeclType::mapping_},
     {TokenKind::k_key_word_mixed, DeclType::mixed_},
     {TokenKind::k_key_word_fun, DeclType::func_},
+    {TokenKind::k_identity, DeclType::user_define_},
 };
 
 static AbstractExpression * parse_function_decl(Token *tok, Token *t)
@@ -921,6 +1021,7 @@ static AbstractExpression * parse_function_decl(Token *tok, Token *t)
     func->name = nameToken; 
     func->is_static = is_static;
     func->dtype = DeclType::func_;
+    func->user_define_type = user_define_type;
 
     tok = tok->next;
     parse_parameter(func->params, tok, t);
@@ -951,6 +1052,7 @@ static AbstractExpression * parse_var_decl(Token *tok, Token *t)
     decl->name = nameToken;
     decl->is_static = is_static;
     decl->is_arr = is_arr;
+    decl->user_define_type = user_define_type;
 
     t->next = tok;
     return decl;
@@ -1002,7 +1104,7 @@ static AbstractExpression * parse_primary(Token *tok, Token *t)
 
 start:
     TokenKind k = tok->kind;
-    if (k >= TokenKind::k_key_word_int && k <= TokenKind::k_key_word_class) {
+    if (k >= TokenKind::k_key_word_int && k <= TokenKind::k_key_word_fun) {
         switch (k) {
             case TokenKind::k_key_word_true: {
                 ValueExpression *falseVal = new ValueExpression;
@@ -1032,8 +1134,14 @@ pri_kw:
 
                 initType = tok->kind;
                 Token *n = tok->next;
-                if (n && (n->kind == TokenKind::k_oper_mul || n->kind == TokenKind::k_identity)) {    // 数组
-                    tok = n;
+                if (n) {    // 数组
+                    if (n->kind == TokenKind::k_oper_mul) {
+                        tok = n->next;
+                    } else if (n->kind == TokenKind::k_identity) {
+                        tok = n;
+                    } else {
+                        error();
+                    }
                     goto start;
                 }
             }
@@ -1064,8 +1172,63 @@ pri_kw:
                 tok = nullptr;
                 break;
             }
+
+            case TokenKind::k_key_word_while: {
+                exp = parse_while(tok, t);
+                tok = nullptr;
+                break;
+            }
+
+            case TokenKind::k_key_word_do: {
+                exp = parse_do_while(tok, t);
+                tok = nullptr;
+                break;
+            }
+
+            case TokenKind::k_key_word_new: {
+                if (!tok->next || tok->next->kind != TokenKind::k_identity) {
+                    error();
+                }
+
+                tok = tok->next;
+                ValueExpression *id = new ValueExpression;
+                id->valType = 4;
+                id->val.sval = tok;
+
+                NewExpression *new_ = new NewExpression;
+                new_->id = id;
+                exp = new_;
+
+                tok = nullptr;
+                break;
+            }
+
             case TokenKind::k_key_word_return: {
                 exp = parse_return(tok, t);
+                tok = nullptr;
+                break;
+            }
+
+            case TokenKind::k_key_word_break: {
+                BreakExpression *b = new BreakExpression;
+                if (!tok->next || tok->next->kind != TokenKind::k_symbol_co) {
+                    error();
+                }
+
+                exp = b;
+                require_expect(tok->next, t, ";");
+                tok = nullptr;
+                break;
+            }
+
+            case TokenKind::k_key_word_continue: {
+                ContinueExpression *c = new ContinueExpression;
+                if (!tok->next || tok->next->kind != TokenKind::k_symbol_co) {
+                    error();
+                }
+
+                exp = c;
+                require_expect(tok->next, t, ";");
                 tok = nullptr;
                 break;
             }
@@ -1088,14 +1251,39 @@ pri_kw:
                             tok = n;
                             goto pri_kw;
                         }
+                        case TokenKind::k_identity: {
+                            initType = tok->kind;
+                            if (n->next && n->next->kind == TokenKind::k_oper_mul) {
+                                tok = n->next;
+                            } else {
+                                tok = n;
+                            }
+                            goto start;
+                        }
                     }
                 } else {
                     error();
                 }
                 break;
             }
+            default: {
+                error();
+                break;
+            }
         }
     } else if (k == TokenKind::k_identity) {
+        Token *n = tok->next;
+        if (n && n->kind == TokenKind::k_oper_mul) {
+            t->next = tok;
+            initType = tok->kind;
+            tok = n->next;
+        } else {
+            if (n->next && n->next->kind == TokenKind::k_symbol_qs1) {
+                tok = n;
+                initType = tok->kind;
+            }
+        }
+
         if (initType == TokenKind::k_none) {
             ValueExpression *id = new ValueExpression;
             id->valType = 4;
@@ -1114,7 +1302,6 @@ pri_kw:
                 tok = t->next;
             }
             //tok = t->next;
-            
         }
     } else if (k == TokenKind::k_integer) {
         ValueExpression *iVal = new ValueExpression;
@@ -1159,20 +1346,6 @@ pri_kw:
         }
 
         exp = con;
-    } else if (k == TokenKind::k_oper_mul) {
-        // 一定得是数组声明
-        Token *n = tok->next;
-        if (!n || n->kind != TokenKind::k_identity) {
-            error();
-        }
-
-        ValueExpression *id = new ValueExpression;
-        id->valType = 4;
-        id->val.sval = n;
-        id->is_arr = true;
-        exp = id;
-
-        tok = n;
     } else if (k == TokenKind::k_symbol_qs1) {
         // (xxx)
         tok = tok->next;
@@ -1432,6 +1605,7 @@ static AbstractExpression * do_parse(Token *tok)
         if (exp->get_type() == ExpressionType::oper_) {
             BinaryExpression *bin = dynamic_cast<BinaryExpression *>(exp);
             if (!bin || bin->l->get_type() != ExpressionType::var_decl_) {
+                cout << "type: " << (int)bin->l->get_type() << endl;
                 error();
             }
         }
