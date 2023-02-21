@@ -477,3 +477,25 @@ ExpressionType NewExpression::get_type()
 {
     return ExpressionType::new_;
 }
+
+/////////////////////////////////////
+
+void DefaultExpression::accept(Visitor *visitor)
+{
+    
+}
+
+string DefaultExpression::get_name()
+{
+    return "default";
+}
+
+void DefaultExpression::pre_print(int deep)
+{
+
+}
+
+ExpressionType DefaultExpression::get_type()
+{
+    return ExpressionType::default_;
+}

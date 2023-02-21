@@ -73,7 +73,7 @@ void Scanner::init()
         use = 0;
         read_more();
         use = 1;
-        read();
+        read_more();
     }
     eof = false;
 }
@@ -192,7 +192,6 @@ static void skip_comment(Scanner *sc, string end)
 
         if (ch == end[i]) ++i;
         else i = 0;
-        cout << "ch: " << ch << endl;
         ch = sc->read();
     }
 }

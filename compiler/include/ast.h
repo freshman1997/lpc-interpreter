@@ -27,6 +27,7 @@ enum class ExpressionType
     do_while_,
     switch_case_,
     case_,
+    default_,
     func_decl_,
     break_,
     continue_,
@@ -42,13 +43,13 @@ enum class DeclType
     void_,
     int_,
     float_,
-    class_,
     bool_,
     mapping_,
     mixed_,
     object_,
     string_,
     func_,
+    class_,
     user_define_,
 };
 
@@ -315,6 +316,18 @@ public:
     AbstractExpression *break_;
 };
 
+class DefaultExpression : public AbstractExpression
+{
+public:
+    virtual void accept(Visitor *visitor);
+    virtual string get_name();
+    virtual void pre_print(int deep);
+    virtual ExpressionType get_type();
+
+    AbstractExpression *caser;
+    AbstractExpression *break_;
+};
+
 class SwitchCaseExpression : public AbstractExpression
 {
 public:
@@ -335,6 +348,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
+    Token *className= nullptr;
     vector<AbstractExpression *> fields;
 };
 

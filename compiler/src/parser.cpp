@@ -473,7 +473,7 @@ Token * Parser::parse_file(const char *filename)
 
 static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExpression *exp, Token *t);
 
-#define READ_BODY(exp, tok) tok = tok->next; \
+#define READ_BODY(exp, tok) tok = tok->next; t->next = tok;\
             while (tok) { \
                 if (tok->kind == TokenKind::k_symbol_qg2) { \
                     break; \
@@ -643,8 +643,33 @@ static AbstractExpression * parse_triple(Token *tok, Token *t)
     return triple;
 }
 
+static AbstractExpression * parse_case(Token *tok, Token *t)
+{
+    return nullptr;
+}
+
 static AbstractExpression * parse_switch_case(Token *tok, Token *t)
 {
+    if (tok->kind != TokenKind::k_key_word_switch) {
+        error();
+    }
+
+    tok = tok->next;
+    if (tok->kind != TokenKind::k_symbol_qg1) {
+        error();
+    }
+
+    tok = tok->next;
+    while (tok) {
+        if (tok->kind == TokenKind::k_symbol_qg2 || tok->kind == TokenKind::k_key_word_default) {
+            break;
+        }
+
+
+
+        tok = t->next;
+    }
+
     return nullptr;
 }
 
@@ -910,8 +935,7 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
     int type = 0;
     bool hasCond = false;
     bool skip = false;
-    bool stop = false;
-    while (tok && !stop) {
+    while (tok) {
         if (tok->kind == TokenKind::k_key_word_if) {
             tok = tok->next;
             if (!tok || tok->kind != TokenKind::k_symbol_qs1) {
@@ -984,7 +1008,7 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
             break;
         }
 
-        if (type != 2 && skip) {
+        if (skip) {
             tok = tok->next;
         }
     }
@@ -999,6 +1023,7 @@ static unordered_map<TokenKind, DeclType> types = {
     {TokenKind::k_key_word_void, DeclType::void_},
     {TokenKind::k_key_word_int, DeclType::int_},
     {TokenKind::k_key_word_float, DeclType::float_},
+    {TokenKind::k_key_word_bool, DeclType::bool_},
     {TokenKind::k_key_word_string, DeclType::string_},
     {TokenKind::k_key_word_object, DeclType::object_},
     {TokenKind::k_key_word_mapping, DeclType::mapping_},
@@ -1022,16 +1047,18 @@ static AbstractExpression * parse_function_decl(Token *tok, Token *t)
     func->is_static = is_static;
     func->dtype = DeclType::func_;
     func->user_define_type = user_define_type;
-
     tok = tok->next;
     parse_parameter(func->params, tok, t);
 
     Token *cur = t->next;
-    if (cur->kind != TokenKind::k_symbol_qg1) {
-        error();
+    if (cur->kind == TokenKind::k_symbol_qg1) {
+        READ_BODY(func, cur)
+    } else {
+        // 前置声明
+        if (cur->kind != TokenKind::k_symbol_co) {
+            error();
+        }
     }
-
-    READ_BODY(func, cur)
 
     cur = t->next;
     if (cur) t->next = cur->next;
@@ -1040,7 +1067,42 @@ static AbstractExpression * parse_function_decl(Token *tok, Token *t)
 
 static AbstractExpression * parse_class_decl(Token *tok, Token *t)
 {
-    return nullptr;
+    if (tok->kind != TokenKind::k_key_word_class) {
+        error();
+    }
+
+    tok = tok->next;
+    if (!tok || tok->kind != TokenKind::k_identity) {
+        error();
+    }
+
+    ClassExpression *clazz = new ClassExpression;
+    clazz->className = tok;
+
+    tok = tok->next;
+    if (!tok || tok->kind != TokenKind::k_symbol_qg1) {
+        error();
+    }
+
+    tok = tok->next;
+    while (tok) {
+        if (tok->kind == TokenKind::k_symbol_qg2) {
+            break;
+        }
+
+        AbstractExpression *item = parse_binay(tok, -1, t);
+        if (!item) {
+            error();
+        }
+
+        require_expect(t->next, t, ";");
+
+        clazz->fields.push_back(item);
+        tok = t->next;
+    }
+
+    t->next = tok->next;
+    return clazz;
 }
 
 static AbstractExpression * parse_var_decl(Token *tok, Token *t)
@@ -1198,8 +1260,6 @@ pri_kw:
                 NewExpression *new_ = new NewExpression;
                 new_->id = id;
                 exp = new_;
-
-                tok = nullptr;
                 break;
             }
 
@@ -1278,9 +1338,14 @@ pri_kw:
             initType = tok->kind;
             tok = n->next;
         } else {
-            if (n->next && n->next->kind == TokenKind::k_symbol_qs1) {
-                tok = n;
+            if (n->kind == TokenKind::k_identity) {                                 // 变量声明
                 initType = tok->kind;
+                t->next = tok;
+
+                // hello_t hell()
+                if (n->next && n->next->kind == TokenKind::k_symbol_qs1) {
+                    tok = n;
+                }
             }
         }
 
