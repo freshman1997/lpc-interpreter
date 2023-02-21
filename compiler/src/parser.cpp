@@ -267,80 +267,101 @@ Token * Parser::preprocessing(Token *tok)
         }
         else if (pre && pre->kind == TokenKind::k_symbol_no && cur->kind == TokenKind::k_key_word_define) {
                 // read params and body and insert new macro
+                Token *tok1 = pre;
+                int state = 1;
+                while (tok1) {
+                    if (state == 0) break;
 
-                // 名称
-                cur = cur->next;
-                Token *macroName = nullptr;
-                if (cur->kind != TokenKind::k_identity) {
-                    abort();
-                }
-
-                macroName = cur;
-                if (macros.count(macroName->strval)) {
-                    cout << "redefine macro: " << macroName->strval << "\n";
-                    exit(-1);
-                }
-
-                if (!cur->is_space) cur = cur->next;
-
-                Macro *m = new Macro;
-                m->handler = nullptr;
-
-                Token tmp{};
-                MacroParam *params = read_macro_params(cur, &tmp);
-                m->psize = tmp.ival;
-                if (!params) {  // object like
-                    m->isobj_like = true;
-                }
-
-                cur = tmp.next;
-                
-                Token *from = nullptr;
-                Token *c = nullptr;
-
-                while (cur) {
-                    Token *t = new Token;
-                    *t = *cur;
-                    t->next = nullptr;
-
-                    if (!c) {
-                        from = t;
-                        c = t;
-                    }
-                    else {
-                        c->next = t;
-                        c = t;
-                    }
-
-                    if (cur->newline) {
-                        if (cur->kind == TokenKind::k_symbol_next) {
-                            cur = cur->next;
-                            continue;
+                    if (state == 2) {
+                        Token *macroName = nullptr;
+                        if (tok1->kind != TokenKind::k_identity) {
+                            error();
                         }
 
-                        c->newline = false;
-                        cur->newline = true;
-                        break;
+                        macroName = tok1;
+                        if (macros.count(macroName->strval)) {
+                            cout << "redefine macro: " << macroName->strval << "\n";
+                            exit(-1);
+                        }
+
+                        if (!tok1->is_space) tok1 = tok1->next;
+
+                        Macro *m = new Macro;
+                        m->handler = nullptr;
+
+                        Token tmp{};
+                        MacroParam *params = read_macro_params(tok1, &tmp);
+                        m->psize = tmp.ival;
+                        if (!params) {  // object like
+                            m->isobj_like = true;
+                        }
+
+                        tok1 = tmp.next;
+                        
+                        Token *from = nullptr;
+                        Token *c = nullptr;
+
+                        while (tok1) {
+                            Token *t = new Token;
+                            *t = *tok1;
+                            t->next = nullptr;
+
+                            if (!c) {
+                                from = t;
+                                c = t;
+                            }
+                            else {
+                                c->next = t;
+                                c = t;
+                            }
+
+                            if (tok1->newline) {
+                                if (tok1->kind == TokenKind::k_symbol_next) {
+                                    tok1 = tok1->next;
+                                    continue;
+                                }
+
+                                c->newline = false;
+                                tok1->newline = true;
+                                break;
+                            }
+
+                            tok1 = tok1->next;
+                        }
+
+                        m->body = from;
+                        m->params = params;
+                        macros[macroName->strval] = m;
+
+                        state = 0;
+                        tok1 = tok1->next;
+
+                        if (!tok1) break;
+                    }
+                    
+                    if (tok1->kind == TokenKind::k_symbol_no) {
+                        state = 1;
+                    } 
+
+                    if (tok1->kind == TokenKind::k_key_word_define) {
+                        if (state != 1) {
+                            error();
+                        }
+
+                        state = 2;
                     }
 
-                    cur = cur->next;
-                }
-
-                m->body = from;
-                m->params = params;
-                macros[macroName->strval] = m;
-
-                if (h == pre) {
-                    h = cur->next;
+                    tok1 = tok1->next;
                 }
 
                 if (pre1) {
-                    pre1->next = cur->next;
+                    pre1->next = tok1;
                 } else {
-                    h = cur->next;
-                    cur = cur->next;
-                    continue;
+                    h = tok1;
                 }
+                
+                cur = tok1;
+                continue;
             }
             else if (cur->kind == TokenKind::k_key_word_include) {
                 // TODO
@@ -587,7 +608,32 @@ static AbstractExpression * parse_return(Token *tok, Token *t)
 
 static AbstractExpression * parse_triple(Token *tok, Token *t)
 {
-    return nullptr;
+    if (tok->kind != TokenKind::k_cmp_quetion) {
+        error();
+    }
+    tok = tok->next;
+
+    AbstractExpression *first = parse_binay(tok, -1, t);
+    if (!first) {
+        error();
+    }
+
+    tok = t->next;
+    if (!tok || tok->kind != TokenKind::k_symbol_show) {
+        error();
+    }
+
+    tok = tok->next;
+    AbstractExpression *second = parse_binay(tok, -1, t);
+    if (!second) {
+        error();
+    }
+
+    TripleExpression *triple = new TripleExpression;
+    triple->first = first;
+    triple->second = second;
+
+    return triple;
 }
 
 static AbstractExpression * parse_switch_case(Token *tok, Token *t)
@@ -944,6 +990,7 @@ static unordered_map<TokenKind, int> priority_map = {
     {TokenKind::k_oper_div, 13},
     {TokenKind::k_oper_mod, 13},
 
+    {TokenKind::k_key_word_or, 14},
     {TokenKind::k_oper_pointer, 14},
 };
 
@@ -1216,6 +1263,19 @@ static AbstractExpression* parse_follow(AbstractExpression *exp, Token *tok, Tok
             }
             idx->l = last;
             last = idx;
+        } else if (tok->kind == TokenKind::k_cmp_quetion) {
+            AbstractExpression *triple = parse_triple(tok, t);
+            if (!triple) {
+                error();
+            }
+
+            TripleExpression *tp = dynamic_cast<TripleExpression *>(triple);
+            if (!tp || !exp) {
+                error();
+            }
+            
+            tp->cond = exp;
+            last = tp;
         } else {
             break;
         }

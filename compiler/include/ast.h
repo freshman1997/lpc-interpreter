@@ -22,6 +22,7 @@ enum class ExpressionType
     new_,
 
     if_,
+    triple_,
     for_normal_,
     foreach_,
     while_,
@@ -178,6 +179,19 @@ public:
 
     AbstractExpression *l;
     AbstractExpression *idx;
+};
+
+class TripleExpression : public AbstractExpression
+{
+public:
+    virtual void accept(Visitor *visitor);
+    virtual string get_name();
+    virtual void pre_print(int deep);
+    virtual ExpressionType get_type();
+
+    AbstractExpression *cond;
+    AbstractExpression *first;
+    AbstractExpression *second;
 };
 
 class IfExpression : public AbstractExpression

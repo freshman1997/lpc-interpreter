@@ -379,7 +379,7 @@ void ClassExpression::accept(Visitor *visitor)
 
 string ClassExpression::get_name()
 {
-    return "DECL";
+    return "switch";
 }
 
 void ClassExpression::pre_print(int deep)
@@ -394,6 +394,27 @@ ExpressionType ClassExpression::get_type()
 
 /////////////////////////////////////
 
+void TripleExpression::accept(Visitor *visitor)
+{
+    
+}
+
+string TripleExpression::get_name()
+{
+    return "switch";
+}
+
+void TripleExpression::pre_print(int deep)
+{
+
+}
+
+ExpressionType TripleExpression::get_type()
+{
+    return ExpressionType::class_;
+}
+/////////////////////////////////////
+
 void DocumentExpression::accept(Visitor *visitor)
 {
     
@@ -401,7 +422,7 @@ void DocumentExpression::accept(Visitor *visitor)
 
 string DocumentExpression::get_name()
 {
-    return "DECL";
+    return "document";
 }
 
 void DocumentExpression::pre_print(int deep)
