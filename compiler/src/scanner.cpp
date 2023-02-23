@@ -32,8 +32,7 @@ static unordered_map<string, TokenKind> keywords = {
     {"break", TokenKind::k_key_word_break},
     {"continue", TokenKind::k_key_word_continue},
     {"varargs", TokenKind::k_key_word_varargs},
-    {"import", TokenKind::k_key_word_varargs},
-    {"as", TokenKind::k_key_word_varargs},
+    {"import", TokenKind::k_key_word_import},
     {"bool", TokenKind::k_key_word_bool},
     {"true", TokenKind::k_key_word_true},
     {"false", TokenKind::k_key_word_false},
@@ -183,23 +182,43 @@ static bool is_blank(luint8_t ch)
     return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
 }
 
-static void skip_comment(Scanner *sc, string end)
+static void read_hex(Scanner *sc, Token *t)
+{
+    luint8_t c = sc->peek();
+    while (true) {
+        if (!is_digit(c) && c != '_' && !(c >= 'a' && c <= 'f') && !(c >= 'A' && c <= 'F')) {
+            break;
+        }
+        t->strval.push_back(c);
+        c = sc->read();
+    }
+
+    int res = stoi(t->strval.c_str(), 0, 16);
+    t->ival = res;
+}
+
+static int skip_comment(Scanner *sc, string end)
 {
     luint8_t ch = sc->read();
-    int c = 0, i = 0;
+    int c = 0, i = 0, line = 0;
+    if (ch == '\n') ++line;
     while (!sc->is_eof()) {
+        
         if (i == end.size()) break;
 
         if (ch == end[i]) ++i;
         else i = 0;
         ch = sc->read();
+        if (ch == '\n') ++line;
     }
+    return line;
 }
 
 Token * TokenReader::next()
 {
 start:
     luint8_t ch = scanner->peek();
+    if (ch == '\n') ++line;
     while (is_blank(ch)) {
         ch = scanner->read();
         if (cur) cur->is_space = true;
@@ -218,6 +237,19 @@ start:
         scanner->read();
         while (true) {
             luint8_t c = scanner->peek();
+            // 0x1212
+            if (c == 'x' || c == 'X') {
+                if (dot) {
+                    cout << "invalid number!\n";
+                    exit(-1);
+                }
+
+                t->strval.push_back(c);
+                scanner->read();
+                read_hex(scanner, t);
+                break;
+            }
+
             if (dot && c == '.') {
                 // TODO error
                 break;
@@ -233,6 +265,14 @@ start:
             scanner->read();
         }
         
+        if (dot && scanner->peek() == '.') {
+            if (!t->strval.empty()) {
+                t->strval.pop_back();
+                scanner->back();
+                dot = false;
+            }
+        }
+
         if (dot) {
             t->dval = std::atof(t->strval.c_str());
             t->kind = TokenKind::k_number;
@@ -328,12 +368,14 @@ start:
                 if (c == '/') {
                     delete t;
                     skip_comment(scanner, "\n");
+                    ++line;
                     if (cur) cur->newline = true;
+                    
                     goto start;
                 }
                 else if (c == '*') {
                     delete t;
-                    skip_comment(scanner, "*/");
+                    line += skip_comment(scanner, "*/");
                     scanner->read();
                     goto start;
                 }
@@ -381,7 +423,10 @@ start:
                     t->strval.push_back(c);
                     t->kind = TokenKind::k_cmp_gte;
                 }
-                else {
+                else if (c == '>') {
+                    t->strval.push_back(c);
+                    t->kind = TokenKind::k_oper_bin_rm;
+                } else {
                     t->kind = TokenKind::k_cmp_gt;
                     scanner->back();
                 }
@@ -393,7 +438,10 @@ start:
                     t->strval.push_back(c);
                     t->kind = TokenKind::k_cmp_lte;
                 }
-                else {
+                else if (c == '<') {
+                    t->strval.push_back(c);
+                    t->kind = TokenKind::k_oper_bin_lm;
+                } else {
                     t->kind = TokenKind::k_cmp_lt;
                     scanner->back();
                 }
@@ -484,7 +532,34 @@ start:
                 break;
             }
             case '.': {
-                t->kind = TokenKind::k_symbol_dot;
+                luint8_t c = scanner->read();
+                if (c == '.') {
+                    t->strval.push_back(c);
+                    c = scanner->read();
+                    if (c == '.') {
+                        t->strval.push_back(c);
+                        t->kind = TokenKind::k_symbol_var_arg;
+                    } else {
+                        t->kind = TokenKind::k_symbol_sub_arr;
+                        scanner->back();
+                    }
+                }
+                else {
+                    t->kind = TokenKind::k_symbol_dot;
+                    scanner->back();
+                }
+                break;
+            }
+            case '\'': {
+                t->strval.clear();
+                luint8_t c = scanner->read();
+                t->strval.push_back(c);
+                t->kind = TokenKind::k_identity;
+                c = scanner->read();
+                if (c != '\'') {
+                    cout << "invalid character!\n";
+                    exit(-1);
+                }
                 break;
             }
             

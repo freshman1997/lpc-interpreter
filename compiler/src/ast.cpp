@@ -499,3 +499,25 @@ ExpressionType DefaultExpression::get_type()
 {
     return ExpressionType::default_;
 }
+
+/////////////////////////////////////
+
+void ImportExpression::accept(Visitor *visitor)
+{
+    
+}
+
+string ImportExpression::get_name()
+{
+    return "import";
+}
+
+void ImportExpression::pre_print(int deep)
+{
+
+}
+
+ExpressionType ImportExpression::get_type()
+{
+    return ExpressionType::import_;
+}

@@ -17,7 +17,7 @@ struct MacroArg
     Token *tok;
 };
 
-typedef Token *macro_handler_fn(Token *);
+typedef void macro_handler_fn(Token *, Token *);
 
 struct Macro
 {
@@ -43,11 +43,16 @@ public:
 
     void enter_dir();
     void exit_dir();
+    void set_compile_file(const char *filename);
+    void add_built_in_macro();
 
 private:
     // 已经读取的头文件部分等缓存
     string cur_compile_dir;
+    string cur_file;
+    string sys_inc_dir;
     unordered_map<string, Token *> incs;
+    unordered_map<string, Macro *> builtInMacro;
     unordered_map<string, Macro *> macros;
 };
 

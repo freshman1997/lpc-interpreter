@@ -23,6 +23,7 @@ enum class TokenKind
     k_key_word_private,
     k_key_word_include,
     k_key_word_define,
+    k_key_word_undef,
     k_key_word_if,
     k_key_word_else,
     k_key_word_for,
@@ -60,6 +61,8 @@ enum class TokenKind
     k_symbol_sep,               // ,
     k_symbol_show,              // :
     k_symbol_dot,               // .
+    k_symbol_sub_arr,           // ..
+    k_symbol_var_arg,           // ...
     k_symbol_comment,           // //
     k_symbol_comment1,          // /*
     k_symbol_comment2,          // */
@@ -83,6 +86,9 @@ enum class TokenKind
 
     k_oper_bin_and,             // &
     k_oper_bin_or,              // |
+    k_oper_bin_lm,              // <<
+    k_oper_bin_rm,              // >>
+
 
     k_cmp_gt,                   // >
     k_cmp_gte,                  // >=

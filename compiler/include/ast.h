@@ -34,6 +34,7 @@ enum class ExpressionType
     return_,
     class_,
     construct_,
+    import_,
     document_,
 };
 
@@ -66,9 +67,6 @@ public:
 
 class AbstractExpression : public ExpressionVisitor
 {
-public:
-    ExpressionType type;
-    virtual ~AbstractExpression() {};
 };
 
 class VarDeclExpression : public AbstractExpression
@@ -109,6 +107,7 @@ public:
     virtual ~ValueExpression(){};
 
     bool is_arr = false;    // for 连续声明
+    bool is_var_arg = false;
     union Value
     {
         int ival;
@@ -155,6 +154,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
+    bool is_varargs = false;
     DeclType returnType = DeclType::void_;
     vector<AbstractExpression *> params;
     vector<AbstractExpression *> body;
@@ -180,8 +180,10 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
+    bool toend = false;
     AbstractExpression *l;
     AbstractExpression *idx;
+    AbstractExpression *idx1; // for sub array
 };
 
 class NewExpression : public AbstractExpression
@@ -193,6 +195,18 @@ public:
     virtual ExpressionType get_type();
 
     AbstractExpression *id;
+};
+
+class ImportExpression : public AbstractExpression
+{
+public:
+    virtual void accept(Visitor *visitor);
+    virtual string get_name();
+    virtual void pre_print(int deep);
+    virtual ExpressionType get_type();
+
+    vector<Token *> path;
+    Token *asName;
 };
 
 class TripleExpression : public AbstractExpression
@@ -313,7 +327,7 @@ public:
     virtual ExpressionType get_type();
 
     AbstractExpression *caser;
-    AbstractExpression *break_;
+    vector<AbstractExpression *> body;
 };
 
 class DefaultExpression : public AbstractExpression
@@ -324,8 +338,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    AbstractExpression *caser;
-    AbstractExpression *break_;
+    vector<AbstractExpression *> body;
 };
 
 class SwitchCaseExpression : public AbstractExpression
