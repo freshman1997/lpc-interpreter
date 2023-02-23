@@ -112,7 +112,7 @@ struct Token
     std::string strval = "";
 
     const char *filename;
-    int lineno;
+    int lineno = 0;
     int col;
     bool is_space;
     bool newline;

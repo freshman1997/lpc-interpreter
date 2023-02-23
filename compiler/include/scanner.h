@@ -44,8 +44,8 @@ public:
 
 	bool is_eof();
 private:
-	int line;
-	int col;
+	int line = 0;
+	int col = 0;
 	Token *head = nullptr;
 	Token *cur = nullptr;
     Scanner *scanner = nullptr;

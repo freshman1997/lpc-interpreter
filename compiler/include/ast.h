@@ -80,8 +80,8 @@ public:
     bool is_arr = false;
     bool is_static = false;
     DeclType dtype = DeclType::none_;
-    Token *user_define_type;
-    Token *name;
+    Token *user_define_type = nullptr;
+    Token *name = nullptr;
 };
 
 class ConstructExpression : public AbstractExpression
@@ -112,7 +112,7 @@ public:
     {
         int ival;
         double dval;
-        Token *sval;
+        Token *sval = nullptr;
         ~Value(){}
     } val;
 
@@ -128,8 +128,8 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    TokenKind op;
-    AbstractExpression *exp;
+    TokenKind op = TokenKind::k_none;
+    AbstractExpression *exp = nullptr;
 };
 
 
@@ -141,7 +141,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    TokenKind oper;
+    TokenKind oper = TokenKind::k_none;
     AbstractExpression *l = nullptr;
     AbstractExpression *r = nullptr;
 };
@@ -168,7 +168,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    AbstractExpression *callee;
+    AbstractExpression *callee = nullptr;
     vector<AbstractExpression *> params;
 };
 
@@ -181,9 +181,9 @@ public:
     virtual ExpressionType get_type();
 
     bool toend = false;
-    AbstractExpression *l;
-    AbstractExpression *idx;
-    AbstractExpression *idx1; // for sub array
+    AbstractExpression *l = nullptr;
+    AbstractExpression *idx = nullptr;
+    AbstractExpression *idx1 = nullptr; // for sub array
 };
 
 class NewExpression : public AbstractExpression
@@ -194,7 +194,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    AbstractExpression *id;
+    AbstractExpression *id = nullptr;
 };
 
 class ImportExpression : public AbstractExpression
@@ -206,7 +206,7 @@ public:
     virtual ExpressionType get_type();
 
     vector<Token *> path;
-    Token *asName;
+    Token *asName = nullptr;
 };
 
 class TripleExpression : public AbstractExpression
@@ -217,9 +217,9 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    AbstractExpression *cond;
-    AbstractExpression *first;
-    AbstractExpression *second;
+    AbstractExpression *cond = nullptr;
+    AbstractExpression *first = nullptr;
+    AbstractExpression *second = nullptr;
 };
 
 class IfExpression : public AbstractExpression
@@ -231,7 +231,7 @@ public:
     virtual ExpressionType get_type();
     struct If {
         int type;   // 0 if, 1 else if, 2 else
-        AbstractExpression *cond;
+        AbstractExpression *cond = nullptr;
         vector<AbstractExpression *> body;
     };
 
@@ -261,7 +261,7 @@ public:
     virtual ExpressionType get_type();
 
     vector<AbstractExpression*> decls;
-    AbstractExpression *container;
+    AbstractExpression *container = nullptr;
     vector<AbstractExpression *> body;
 };
 
@@ -273,7 +273,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    AbstractExpression *ret;
+    AbstractExpression *ret = nullptr;
 };
 
 class BreakExpression : public AbstractExpression
@@ -302,7 +302,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    AbstractExpression *cond;
+    AbstractExpression *cond = nullptr;
     vector<AbstractExpression *> body;
 };
 
@@ -314,7 +314,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    AbstractExpression *cond;
+    AbstractExpression *cond = nullptr;
     vector<AbstractExpression *> body;
 };
 
@@ -326,7 +326,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    AbstractExpression *caser;
+    AbstractExpression *caser = nullptr;
     vector<AbstractExpression *> body;
 };
 
@@ -349,7 +349,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
-    AbstractExpression *selector;
+    AbstractExpression *selector = nullptr;
     vector<AbstractExpression *> cases;
 };
 

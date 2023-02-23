@@ -29,12 +29,7 @@ static void error(Token *tok)
     print_space(5);
     for (int i = 0; i < 4; ++i) cerr << '~';
     cerr << "^\n";
-    exit(-1);
-}
-
-static void error_at()
-{
-
+    throw "\t An error occured!\n";
 }
 
 static string build_include_path(const string &headerName)
@@ -68,27 +63,41 @@ void Parser::set_compile_file(const char *filename)
     this->cur_file = filename;
 }
 
-static void proc_file(Token *pre, Token *tok)
+static void proc_file(Token *pre, Token *tok, Token *temp)
+{
+    Token *t = new Token;
+    t->kind = TokenKind::k_string;
+    t->lineno = tok->lineno;
+    t->strval = "test.c";
+    if (pre) pre->next = t;
+    else temp->next = t;
+    t->next = tok->next;
+    delete tok;
+}
+
+static void proc_line(Token *pre, Token *tok, Token *temp)
+{
+    Token *t = new Token;
+    t->kind = TokenKind::k_integer;
+    t->ival = tok->lineno;
+    t->lineno = tok->lineno;
+    if (pre) pre->next = t;
+    else temp->next = t;
+    t->next = tok->next;
+    delete tok;
+}
+
+static void proc_time(Token *pre, Token *tok, Token *t)
 {
 
 }
 
-static void proc_line(Token *pre, Token *tok)
+static void proc_date(Token *pre, Token *tok, Token *t)
 {
 
 }
 
-static void proc_time(Token *pre, Token *tok)
-{
-
-}
-
-static void proc_date(Token *pre, Token *tok)
-{
-
-}
-
-static void proc_func(Token *pre, Token *tok)
+static void proc_func(Token *pre, Token *tok, Token *t)
 {
 
 }
@@ -271,6 +280,12 @@ static void read_macro_args(MacroArg *arg, Token *tok, Token *end, string &q)
     arg->tok = list;
 }
 
+pair<bool, Macro *> Parser::find_macro(const string &id)
+{
+    if (macros.count(id)) return {true, macros[id]};
+    else if (builtInMacro.count(id)) return {true, builtInMacro[id]};
+    else return {false, nullptr};
+}
 
 Token * Parser::preprocessing(Token *tok)
 {
@@ -283,19 +298,26 @@ Token * Parser::preprocessing(Token *tok)
     while (cur) {
         if (cur->kind == TokenKind::k_identity) {
             // 替换原来的Token，copy macro 然后链接起来
-            if (macros.count(cur->strval)) {
-                Macro *macro = macros[cur->strval];
+            pair<bool, Macro *> p = find_macro(cur->strval);
+            if (p.first) {
+                Macro *macro = p.second;
                 // built in macro
                 if (macro->handler) {
-                    macro->handler(pre, cur);
-                    continue;
+                    Token temp{};
+                    macro->handler(pre, cur, &temp);
+                    if (!pre) {
+                        h = temp.next;
+                        cur = h;
+                    } else {
+                        cur = pre->next;
+                    }
+                    goto proc;
                 }
 
                 unordered_map<string, MacroArg*> args;
                 int i = 0, lineno = cur->lineno + 1;
                 // 入参
                 if (cur->next && cur->next->kind == TokenKind::k_symbol_qs1) {
-                    // TODO 读取入参
                     Token *at = cur;
                     at = at->next;
                     string q;
@@ -349,9 +371,9 @@ Token * Parser::preprocessing(Token *tok)
                     error(cur);
                 }
 
-                Token *h = copy_macro(macro->body, &args, lineno);
-                pre->next = h;
-                h->origin->next = cur->next;
+                Token *h1 = copy_macro(macro->body, &args, lineno);
+                if (pre) pre->next = h1;
+                h1->origin->next = cur->next;
             }
         }
         else if (pre && pre->kind == TokenKind::k_symbol_no && cur->kind == TokenKind::k_key_word_define) {
@@ -592,8 +614,8 @@ static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExp
                 } \
                 \
                 AbstractExpression *element = parse_binay(tok, -1, t); \
-                if (!element) { \
-                    error(tok); \
+                if (!element || element->get_type() == ExpressionType::func_decl_) { \
+                    error(t->next); \
                 } \
                 tok = t->next; \
                 if (element->get_type() == ExpressionType::oper_ || element->get_type() == ExpressionType::var_decl_) { \
@@ -613,7 +635,15 @@ static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExp
 // 用于跳过作用域，尽可能发现更多错误
 static void skip(Token *tok, Token *t)
 {
+    while (tok) {
+        if (tok->kind == TokenKind::k_symbol_qg2) {
+            break;
+        }
 
+        tok = tok->next;
+    }
+
+    t = tok->next;
 }
 
 static void require_expect(Token *tok, Token *t, string exp)
@@ -907,6 +937,10 @@ static void parse_parameter(vector<AbstractExpression *> &params, Token *tok, To
     while (tok) {
         if (tok->kind == TokenKind::k_symbol_qs2) {
             break;
+        }
+
+        if (tok->kind == TokenKind::k_symbol_qg1) {
+            error(tok);
         }
 
         if (t->ival == -1 && tok->kind == TokenKind::k_key_word_in) {
@@ -2004,18 +2038,51 @@ static AbstractExpression * do_parse(Token *tok)
     return doc;
 }
 
+static void on_compile_success(Parser *parser)
+{
+    unordered_map<string, Macro *> *macros = parser->get_macros();
+    for (auto &it : *macros) {
+        Macro *m = it.second;
+        if (m) {
+            Token *tok = m->body;
+            while (tok) {
+                Token *t = tok->next;
+                delete tok;
+                tok = t;
+            }
+        }
+    }
+}
+
+unordered_map<string, Macro *> * Parser::get_macros()
+{
+    return &this->macros;
+}
+
 ExpressionVisitor * Parser::parse(const char *filename)
 {
+    // TODO Check filename is file or directory
+    add_built_in_macro();
     set_compile_file(filename);
     Token *tok = parse_file(filename);
     Token *cur = preprocessing(tok);
 
-    // 正式开始处理
-    DocumentExpression *exp = dynamic_cast<DocumentExpression *>(do_parse(cur));
-    if (exp->contents.empty()) {
-        cout << "[error] parse " << filename << " failed!\n";
+    DocumentExpression *exp = nullptr;
+    // 用这个 try catch 的好处是可以跳回到开始点
+    try {
+        // 正式开始处理
+        exp = dynamic_cast<DocumentExpression *>(do_parse(cur));
+        if (exp->contents.empty()) {
+            cout << "[error] parse " << filename << " failed!\n";
+            exit(-1);
+        }
+    } catch(const char *e) {
+        cout << e << endl;
+        // TODO
         exit(-1);
     }
 
+    on_compile_success(this);
+    cout << "[success] " << filename << "\n";
     return exp;
 }
