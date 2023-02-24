@@ -21,10 +21,11 @@ public:
 	~Scanner(){ if (input.is_open()) input.close(); }
 
 	void set_file(const char *file);
+	const char *filename = nullptr;	
+	
 private:
 	void init();
 	void read_more();
-	const char *filename = nullptr;	
 	std::ifstream input;
 	luint8_t one = 0;
 	luint8_t two = 0;

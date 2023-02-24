@@ -229,6 +229,7 @@ start:
     }
 
     Token *t = new Token;
+    t->filename = scanner->filename;
     t->lineno = line;
     t->strval.push_back(ch);
     

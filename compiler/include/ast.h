@@ -154,6 +154,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
+    bool lambda = false;
     bool is_varargs = false;
     DeclType returnType = DeclType::void_;
     vector<AbstractExpression *> params;

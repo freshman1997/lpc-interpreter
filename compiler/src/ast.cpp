@@ -147,6 +147,9 @@ void FunctionDeclExpression::pre_print(int deep)
 
 ExpressionType FunctionDeclExpression::get_type()
 {
+    if (lambda) {
+        return ExpressionType::value_;
+    }
     return ExpressionType::func_decl_;
 }
 
