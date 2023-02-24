@@ -1895,11 +1895,18 @@ static AbstractExpression * parse_unary(Token *tok, Token *t)
             error(tok);
         }
 
-        if (exp->get_type() == ExpressionType::oper_ || exp->get_type() == ExpressionType::index_ || exp->get_type() == ExpressionType::call_ || exp->get_type() == ExpressionType::triple_) {
+        if (exp->get_type() == ExpressionType::oper_ || exp->get_type() == ExpressionType::index_ || exp->get_type() == ExpressionType::call_ || exp->get_type() == ExpressionType::triple_ || exp->get_type() == ExpressionType::value_) {
             tok = t->next;
             if (tok) {
                 k = tok->kind;
                 if (k == TokenKind::k_oper_plus_plus || k == TokenKind::k_oper_sub_sub) {
+                    if (exp->get_type() == ExpressionType::value_) {
+                        ValueExpression *v = dynamic_cast<ValueExpression *>(exp);
+                        if (!v || !t->next || v->valType != 4) {
+                            error(t->next);
+                        }
+                    }
+
                     t->next = tok->next;
                     UnaryExpression *uExp = new UnaryExpression;
                     uExp->op = k;
