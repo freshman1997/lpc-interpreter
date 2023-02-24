@@ -19,8 +19,8 @@ enum class ExpressionType
     pointor_,
     new_,
 
-    if_,
     triple_,
+    if_,
     for_normal_,
     foreach_,
     while_,
@@ -77,6 +77,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
+    bool varargs = false;
     bool is_arr = false;
     bool is_static = false;
     DeclType dtype = DeclType::none_;
@@ -328,18 +329,17 @@ public:
     virtual ExpressionType get_type();
 
     AbstractExpression *caser = nullptr;
+    vector<vector<AbstractExpression *>> bodys;
     vector<AbstractExpression *> body;
 };
 
-class DefaultExpression : public AbstractExpression
+class DefaultExpression : public CaseExpression
 {
 public:
     virtual void accept(Visitor *visitor);
     virtual string get_name();
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
-
-    vector<AbstractExpression *> body;
 };
 
 class SwitchCaseExpression : public AbstractExpression

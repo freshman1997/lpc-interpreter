@@ -147,9 +147,6 @@ void FunctionDeclExpression::pre_print(int deep)
 
 ExpressionType FunctionDeclExpression::get_type()
 {
-    if (lambda) {
-        return ExpressionType::value_;
-    }
     return ExpressionType::func_decl_;
 }
 
@@ -404,7 +401,7 @@ void TripleExpression::accept(Visitor *visitor)
 
 string TripleExpression::get_name()
 {
-    return "switch";
+    return "triple";
 }
 
 void TripleExpression::pre_print(int deep)
@@ -414,7 +411,7 @@ void TripleExpression::pre_print(int deep)
 
 ExpressionType TripleExpression::get_type()
 {
-    return ExpressionType::class_;
+    return ExpressionType::triple_;
 }
 /////////////////////////////////////
 
@@ -468,7 +465,7 @@ void NewExpression::accept(Visitor *visitor)
 
 string NewExpression::get_name()
 {
-    return "continue";
+    return "new";
 }
 
 void NewExpression::pre_print(int deep)

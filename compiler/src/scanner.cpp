@@ -39,6 +39,7 @@ static unordered_map<string, TokenKind> keywords = {
     {"class", TokenKind::k_key_word_class},
     {"fun", TokenKind::k_key_word_fun},
     {"new", TokenKind::k_key_word_new},
+    {"inherit", TokenKind::k_key_word_inherit},
 };
 
 Scanner::Scanner(const char * file) : filename(file)

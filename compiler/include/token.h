@@ -45,6 +45,7 @@ enum class TokenKind
     k_key_word_false,
     k_key_word_class,
     k_key_word_new,
+    k_key_word_inherit,
     k_key_word_fun,
 
     k_identity,
