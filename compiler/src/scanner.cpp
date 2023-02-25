@@ -80,6 +80,7 @@ void Scanner::init()
 
 bool Scanner::is_eof()
 {
+    if (use) return false;
     return this->eof;
 }
 
@@ -90,22 +91,25 @@ void Scanner::back()
 
 void Scanner::read_more()
 {
-    if (use == 2) return;
+    if (use == 2 || eof) return;
 
     if (!input.is_open()) {
         cout << "input stream not open" << endl;
         exit(-1);
         return;
     }
+
+    lint8_t c = 0;
+
     if (use == 1) {
         one = two;
-        two = input.good() ? input.get() : 0;
+        two = (c = input.get()) == EOF ? 0 : c;
         if (two != 0) ++use;
     }
     else {
-        one = input.good() ? input.get() : 0;
+        one = (c = input.get()) == EOF ? 0 : c;
         if (one != 0) ++use;
-        two = input.good() ? input.get() : 0;
+        two = (c = input.get()) == EOF ? 0 : c;
         if (two != 0) ++use;
     }
 
@@ -117,6 +121,7 @@ void Scanner::read_more()
 
 luint8_t Scanner::peek()
 {
+    if (eof && use == 1) return one;
     if (use == 2) return one;
     else if (use == 1) return two;
     return 0;
@@ -132,9 +137,8 @@ luint8_t Scanner::peek1()
 
 luint8_t Scanner::read()
 {
+    if (use) --use;
     if (eof) return 0;
-
-    --use;
     if (use == 0) read_more();
     luint8_t res = 0;
     if (use == 1) res = two;
@@ -220,13 +224,18 @@ Token * TokenReader::next()
 start:
     luint8_t ch = scanner->peek();
     if (ch == '\n') ++line;
-    while (is_blank(ch)) {
+    while (ch != 0 && is_blank(ch) && !is_eof()) {
         ch = scanner->read();
         if (cur) cur->is_space = true;
         if (ch == '\n') {
             ++line;
             if (cur) cur->newline = true;
         }
+    }
+
+    if (is_eof() || ch == 0) {
+        scanner->read();
+        return nullptr;
     }
 
     Token *t = new Token;
@@ -567,7 +576,7 @@ start:
             
             default: {
                 delete t;
-                return NULL;
+                return nullptr;
             }
         }
 

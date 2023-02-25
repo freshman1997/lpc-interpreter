@@ -52,6 +52,7 @@ public:
 private:
     // 已经读取的头文件部分等缓存
     string cur_compile_dir;
+    string sys_dir = "include";
     string cur_file;
     string sys_inc_dir;
     int error_try = 3;

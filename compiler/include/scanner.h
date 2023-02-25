@@ -22,7 +22,7 @@ public:
 
 	void set_file(const char *file);
 	const char *filename = nullptr;	
-	
+
 private:
 	void init();
 	void read_more();

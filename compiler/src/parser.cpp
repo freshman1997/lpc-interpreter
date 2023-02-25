@@ -12,6 +12,11 @@ static void print_space(int n)
 
 static void error(Token *tok)
 {
+    if (!tok) {
+        cerr << "unexpected in file end!\n";
+        throw "\t An error occured!\n";
+    }
+
     cerr << "\n\t error found near line "<< tok->lineno << ", file: " << tok->filename << "\n";
     Token *cur = tok;
     int len = 10, sum = 0;
@@ -36,7 +41,6 @@ static string build_include_path(const string &headerName)
 {
     const string &cwd = get_cwd();
     string res = cwd + "/" + headerName;
-    std::cout << res << '\n';
     return res;
 }
 
@@ -87,14 +91,59 @@ static void proc_line(Token *pre, Token *tok, Token *temp)
     delete tok;
 }
 
-static void proc_time(Token *pre, Token *tok, Token *t)
+static std::string GetFormatTime()
 {
+	time_t currentTime;
+	time(&currentTime);
+	tm* t_tm = localtime(&currentTime);
 
+	char formatTime[64] = {0};
+	snprintf(formatTime, 64, "%04d-%02d-%02d %02d:%02d:%02d", 
+							t_tm->tm_year + 1900,
+							t_tm->tm_mon + 1,
+							t_tm->tm_mday,
+							t_tm->tm_hour,
+							t_tm->tm_min,
+							t_tm->tm_sec);
+	return std::string(formatTime);
 }
 
-static void proc_date(Token *pre, Token *tok, Token *t)
+static std::string GetFormatDate()
 {
+	time_t currentTime;
+	time(&currentTime);
+	tm* t_tm = localtime(&currentTime);
 
+	char formatDate[64] = {0};
+	snprintf(formatDate, 64, "%04d-%02d-%02d", 
+							t_tm->tm_year + 1900,
+							t_tm->tm_mon + 1,
+							t_tm->tm_mday);
+	return std::string(formatDate);
+}
+
+static void proc_time(Token *pre, Token *tok, Token *temp)
+{
+    Token *t = new Token;
+    t->kind = TokenKind::k_string;
+    t->strval = GetFormatTime();
+    t->lineno = tok->lineno;
+    if (pre) pre->next = t;
+    else temp->next = t;
+    t->next = tok->next;
+    delete tok;
+}
+
+static void proc_date(Token *pre, Token *tok, Token *temp)
+{
+    Token *t = new Token;
+    t->kind = TokenKind::k_string;
+    t->strval = GetFormatDate();
+    t->lineno = tok->lineno;
+    if (pre) pre->next = t;
+    else temp->next = t;
+    t->next = tok->next;
+    delete tok;
 }
 
 static void proc_func(Token *pre, Token *tok, Token *t)
@@ -286,6 +335,8 @@ pair<bool, Macro *> Parser::find_macro(const string &id)
     else if (builtInMacro.count(id)) return {true, builtInMacro[id]};
     else return {false, nullptr};
 }
+
+// TODO #if #endif #ifndef #ifdef
 
 Token * Parser::preprocessing(Token *tok)
 {
@@ -495,13 +546,45 @@ Token * Parser::preprocessing(Token *tok)
                 delete t;
             } else if (cur->kind == TokenKind::k_key_word_include) {
                 // TODO
-                if (pre->kind != TokenKind::k_symbol_no || !(cur->next && cur->next->kind == TokenKind::k_string)) {
-                    goto proc;
+                if (!pre || pre->kind != TokenKind::k_symbol_no) {
+                    error(cur);
                 }
 
+                string name;
+                bool is_sys = false;
+                Token *sysApt = nullptr;
+                if (cur->next) {
+                    if (cur->next->kind == TokenKind::k_string) {
+                        name = cur->next->strval;
+                    } else if (cur->next->kind == TokenKind::k_cmp_lt) {
+                        Token *n = cur->next->next;
+                        if (!n || n->kind != TokenKind::k_identity) {
+                            error(cur->next);
+                        }
+
+                        while (n) {
+                            if (n->kind == TokenKind::k_cmp_gt) {
+                                break;
+                            }
+
+                            name += n->strval;
+                            n = n->next;
+                        }
+
+                        is_sys = true;
+                        sysApt = n->next;
+                    }
+                } 
+
                 Token *ap = nullptr;
-                if (!incs.count(cur->strval)) {
-                    Token *t = parse_file(build_include_path(cur->next->strval).c_str());
+                if (!incs.count(name)) {
+                    Token *t = nullptr;
+                    if (is_sys) {
+                        t = parse_file((get_cwd() + "/" + sys_dir + "/" + name).c_str());
+                    } else {
+                        t = parse_file((get_cwd() + "/" + cur_compile_dir + "/" + name).c_str());
+                    }
+
                     if (!t) {
                         abort();
                     }
@@ -511,26 +594,39 @@ Token * Parser::preprocessing(Token *tok)
                         abort();
                     }
 
-                    incs[cur->next->strval] = t;
+                    incs[name] = t;
                 }
 
-                ap = incs[cur->next->strval];
+                ap = incs[name];
 
                 Token *head = copy_macro(ap, nullptr, cur->lineno);
-                Token *apt = cur->next->next;
                 Token *end = head->origin;
+                Token *apt = nullptr;
 
-                delete pre;
-                delete cur->next;
-                delete cur;
+                if (is_sys) {
+                    apt = sysApt;
+                    Token *temp = pre;
+                    while (temp != apt) {
+                        Token *t1 = temp;
+                        temp = t1->next;
+                        delete t1;
+                    }
+                } else {
+                    apt = cur->next->next;
+                    delete pre;
+                    delete cur->next;
+                    delete cur;
+                }
 
                 if (pre1) {
                     pre1->next = head;
                 }
-                else h = head;
-                
+                else {
+                    h = head;
+                }
+
                 end->next = apt;
-                cur = apt;
+                cur = end;
             }
     proc:
         pre1 = pre;
@@ -1775,7 +1871,8 @@ pri_kw:
                             initType = tok->kind;
                             t->next = tok;
                             tok = n;
-                        } else if (n->next->kind == TokenKind::k_oper_assign || n->next->kind == TokenKind::k_symbol_co || n->next->kind == TokenKind::k_key_word_in) {
+                        } else if (n->next->kind == TokenKind::k_oper_assign || n->next->kind == TokenKind::k_symbol_co 
+                            || n->next->kind == TokenKind::k_key_word_in || n->next->kind == TokenKind::k_symbol_qs2 || n->next->kind == TokenKind::k_symbol_sep) {
                             initType = tok->kind;
                             t->next = tok;
                         }
@@ -2004,6 +2101,10 @@ static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
 
         exp1 = op;
         tok = cache->next;
+        if (!tok) {
+            break;
+        }
+
         tprec = get_pre(tok->kind);
     }
 
@@ -2184,7 +2285,6 @@ ExpressionVisitor * Parser::parse(const char *filename)
     set_compile_file(filename);
     Token *tok = parse_file(filename);
     Token *cur = preprocessing(tok);
-
     DocumentExpression *exp = nullptr;
     // 用这个 try catch 的好处是可以跳回到开始点
     try {
