@@ -234,6 +234,7 @@ start:
         }
     }
 
+    ch = scanner->peek();
     if (is_eof() || ch == 0) {
         scanner->read();
         return nullptr;
@@ -306,7 +307,7 @@ start:
         else 
             t->kind = TokenKind::k_identity;
 
-        scanner->peek1();
+        //scanner->peek1();
         t->newline = scanner->peek() == '\n';
         t->is_space = is_blank(scanner->peek());
     }

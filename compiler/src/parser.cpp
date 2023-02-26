@@ -751,9 +751,8 @@ static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExp
                         if (bin->l->get_type() == ExpressionType::var_decl_) { \
                             VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(bin->l); \
                             if (!var || var->is_static) { \
-                            if (!var)cout << "xxxxxxxxxxxxxxxx\n";\
                                 error(tok); \
-                            } \
+                            }\
                         } \
                     } else {\
                         VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(element); \
@@ -769,7 +768,7 @@ static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExp
                 } \
                 t->origin = tok; \
                 REQUIRE_CO(element) { \
-                    require_expect(t->next, t, ";"); \
+                    require_expect(tok, t, ";"); \
                     tok = t->next; \
                 }\
                 con.push_back(element); \
