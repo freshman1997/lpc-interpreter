@@ -17,6 +17,14 @@ enum class value_type
     closure_,
 };
 
+class LpcString;
+class LpcArray;
+class LpcMapping;
+class LpcFunction;
+class LpcClosure;
+class LpcObject;
+class LpcBuffer;
+
 struct lpc_value_t
 {
     value_type type;
@@ -25,7 +33,14 @@ struct lpc_value_t
     {
         float real;
         int number;
-        
+
+        LpcString   *str;
+        LpcArray    *arr;
+        LpcMapping  *map;
+        LpcFunction *fun;
+        LpcClosure  *clo;
+        LpcObject   *obj;
+        LpcBuffer   *buf;
     };
 
     value val;

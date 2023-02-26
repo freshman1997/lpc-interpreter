@@ -197,6 +197,7 @@ public:
     virtual ExpressionType get_type();
 
     AbstractExpression *id = nullptr;
+    vector<AbstractExpression *> inits;
 };
 
 class ImportExpression : public AbstractExpression

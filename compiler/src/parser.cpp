@@ -1,5 +1,6 @@
 #include <iostream>
 #include <set>
+#include <ctime>
 
 #include "ast.h"
 #include "parser.h"
@@ -93,10 +94,17 @@ static void proc_line(Token *pre, Token *tok, Token *temp)
 
 static std::string GetFormatTime()
 {
-	time_t currentTime;
+#ifdef _WIN32
+    time_t currentTime;
+	currentTime = time(NULL);
+    struct tm time_sct;
+    localtime_s(&time_sct,&currentTime);
+    struct tm *t_tm = &time_sct;
+#else
+    time_t currentTime;
 	time(&currentTime);
 	tm* t_tm = localtime(&currentTime);
-
+#endif
 	char formatTime[64] = {0};
 	snprintf(formatTime, 64, "%04d-%02d-%02d %02d:%02d:%02d", 
 							t_tm->tm_year + 1900,
@@ -419,215 +427,218 @@ Token * Parser::preprocessing(Token *tok)
 
                 // replace and insert body, and chain them
                 if (!pre || i != macro->psize) {
-                    error(cur);
+                    error(pre);
                 }
 
                 Token *h1 = copy_macro(macro->body, &args, lineno);
                 if (pre) pre->next = h1;
                 h1->origin->next = cur->next;
             }
-        }
-        else if (pre && pre->kind == TokenKind::k_symbol_no && cur->kind == TokenKind::k_key_word_define) {
-                // read params and body and insert new macro
-                Token *tok1 = pre;
-                int state = 1;
-                while (tok1) {
-                    if (state == 0) break;
+        } else if (pre && pre->kind == TokenKind::k_symbol_no && cur->kind == TokenKind::k_key_word_define) {
+            // read params and body and insert new macro
+            Token *tok1 = pre;
+            int state = 1;
+            while (tok1) {
+                if (state == 0) break;
 
-                    if (state == 2) {
-                        Token *macroName = nullptr;
-                        if (tok1->kind != TokenKind::k_identity) {
-                            error(tok);
-                        }
-
-                        macroName = tok1;
-                        if (macros.count(macroName->strval)) {
-                            cout << "redefine macro: " << macroName->strval << "\n";
-                            exit(-1);
-                        }
-
-                        if (!tok1->is_space) tok1 = tok1->next;
-
-                        Macro *m = new Macro;
-                        m->handler = nullptr;
-
-                        Token tmp{};
-                        MacroParam *params = read_macro_params(tok1, &tmp);
-                        m->psize = tmp.ival;
-                        if (!params) {  // object like
-                            m->isobj_like = true;
-                        }
-
-                        tok1 = tmp.next;
-                        
-                        Token *from = nullptr;
-                        Token *c = nullptr;
-
-                        while (tok1) {
-                            if (tok1->kind == TokenKind::k_symbol_next) {
-                                tok1 = tok1->next;
-                                continue;
-                            }
-                            
-                            Token *t = new Token;
-                            *t = *tok1;
-                            t->next = nullptr;
-
-                            if (!c) {
-                                from = t;
-                                c = t;
-                            }
-                            else {
-                                c->next = t;
-                                c = t;
-                            }
-
-                            if (tok1->newline) {
-                                c->newline = false;
-                                t->newline = true;
-                                break;
-                            }
-
-                            tok1 = tok1->next;
-                        }
-
-                        m->body = from;
-                        m->params = params;
-                        macros[macroName->strval] = m;
-
-                        state = 0;
-                        tok1 = tok1->next;
-
-                        if (!tok1) break;
+                if (state == 2) {
+                    Token *macroName = nullptr;
+                    if (tok1->kind != TokenKind::k_identity) {
+                        error(tok1);
                     }
+
+                    macroName = tok1;
+                    if (macros.count(macroName->strval)) {
+                        cout << "redefine macro: " << macroName->strval << "\n";
+                        exit(-1);
+                    }
+
+                    if (!tok1->is_space) tok1 = tok1->next;
+
+                    Macro *m = new Macro;
+                    m->handler = nullptr;
+
+                    Token tmp{};
+                    MacroParam *params = read_macro_params(tok1, &tmp);
+                    m->psize = tmp.ival;
+                    if (!params) {  // object like
+                        m->isobj_like = true;
+                    }
+
+                    tok1 = tmp.next;
                     
-                    if (tok1->kind == TokenKind::k_symbol_no) {
-                        state = 1;
-                    } 
+                    Token *from = nullptr;
+                    Token *c = nullptr;
 
-                    if (tok1->kind == TokenKind::k_key_word_define) {
-                        if (state != 1) {
-                            error(tok);
+                    while (tok1) {
+                        if (tok1->kind == TokenKind::k_symbol_next) {
+                            tok1 = tok1->next;
+                            continue;
+                        }
+                        
+                        Token *t = new Token;
+                        *t = *tok1;
+                        t->next = nullptr;
+
+                        if (!c) {
+                            from = t;
+                            c = t;
+                        }
+                        else {
+                            c->next = t;
+                            c = t;
                         }
 
-                        state = 2;
+                        if (tok1->newline) {
+                            c->newline = false;
+                            t->newline = true;
+                            break;
+                        }
+
+                        tok1 = tok1->next;
                     }
 
-                    if (state) tok1 = tok1->next;
-                }
+                    m->body = from;
+                    m->params = params;
+                    macros[macroName->strval] = m;
 
-                if (pre1) {
-                    pre1->next = tok1;
-                } else {
-                    h = tok1;
+                    state = 0;
+                    tok1 = tok1->next;
+
+                    if (!tok1) break;
                 }
                 
-                cur = tok1;
-                continue;
-            }
-            else if (pre && pre->kind == TokenKind::k_symbol_no && cur->kind == TokenKind::k_key_word_undef) {
-                Token *macroName = nullptr;
-                Token *tok1 = cur->next;
-                if (!tok1  || tok1->kind != TokenKind::k_identity || !pre1) {
-                    error(tok);
-                }
-
-                if (!macros.count(tok1->strval)) {
-                    error(tok);
-                }
-
-                Token *t = cur;                
-                free_macro(macros[tok1->strval]);
-                macros.erase(tok1->strval);
-                cur = cur->next;
-                pre1->next = cur;
-                delete pre;
-                delete tok1;
-                delete t;
-            } else if (cur->kind == TokenKind::k_key_word_include) {
-                // TODO
-                if (!pre || pre->kind != TokenKind::k_symbol_no) {
-                    error(cur);
-                }
-
-                string name;
-                bool is_sys = false;
-                Token *sysApt = nullptr;
-                if (cur->next) {
-                    if (cur->next->kind == TokenKind::k_string) {
-                        name = cur->next->strval;
-                    } else if (cur->next->kind == TokenKind::k_cmp_lt) {
-                        Token *n = cur->next->next;
-                        if (!n || n->kind != TokenKind::k_identity) {
-                            error(cur->next);
-                        }
-
-                        while (n) {
-                            if (n->kind == TokenKind::k_cmp_gt) {
-                                break;
-                            }
-
-                            name += n->strval;
-                            n = n->next;
-                        }
-
-                        is_sys = true;
-                        sysApt = n->next;
-                    }
+                if (tok1->kind == TokenKind::k_symbol_no) {
+                    state = 1;
                 } 
 
-                Token *ap = nullptr;
-                if (!incs.count(name)) {
-                    Token *t = nullptr;
-                    if (is_sys) {
-                        t = parse_file((get_cwd() + "/" + sys_dir + "/" + name).c_str());
-                    } else {
-                        t = parse_file((get_cwd() + "/" + cur_compile_dir + "/" + name).c_str());
+                if (tok1->kind == TokenKind::k_key_word_define) {
+                    if (state != 1) {
+                        error(tok1);
                     }
 
-                    if (!t) {
-                        abort();
-                    }
-
-                    t = preprocessing(t);
-                    if (!t) {
-                        abort();
-                    }
-
-                    incs[name] = t;
+                    state = 2;
                 }
 
-                ap = incs[name];
-
-                Token *head = copy_macro(ap, nullptr, cur->lineno);
-                Token *end = head->origin;
-                Token *apt = nullptr;
-
-                if (is_sys) {
-                    apt = sysApt;
-                    Token *temp = pre;
-                    while (temp != apt) {
-                        Token *t1 = temp;
-                        temp = t1->next;
-                        delete t1;
-                    }
-                } else {
-                    apt = cur->next->next;
-                    delete pre;
-                    delete cur->next;
-                    delete cur;
-                }
-
-                if (pre1) {
-                    pre1->next = head;
-                }
-                else {
-                    h = head;
-                }
-
-                end->next = apt;
-                cur = end;
+                if (state) tok1 = tok1->next;
             }
+
+            if (pre1) {
+                pre1->next = tok1;
+            } else {
+                h = tok1;
+            }
+            
+            cur = tok1;
+            continue;
+        } else if (pre && pre->kind == TokenKind::k_symbol_no && cur->kind == TokenKind::k_key_word_undef) {
+            Token *tok1 = cur->next;
+            if (!tok1  || tok1->kind != TokenKind::k_identity || !pre1) {
+                error(tok1);
+            }
+
+            if (!macros.count(tok1->strval)) {
+                error(tok1);
+            }
+
+            Token *t = cur;
+            Token *t1 = pre;                
+            free_macro(macros[tok1->strval]);
+            macros.erase(tok1->strval);
+
+            cur = tok1->next;
+            pre1->next = cur;
+            pre = cur;
+            cur = cur->next;
+
+            delete t1;
+            delete tok1;
+            delete t;
+
+            continue;
+        } else if (cur->kind == TokenKind::k_key_word_include) {
+            if (!pre || pre->kind != TokenKind::k_symbol_no) {
+                error(pre);
+            }
+
+            string name;
+            bool is_sys = false;
+            Token *sysApt = nullptr;
+            if (cur->next) {
+                if (cur->next->kind == TokenKind::k_string) {
+                    name = cur->next->strval;
+                } else if (cur->next->kind == TokenKind::k_cmp_lt) {
+                    Token *n = cur->next->next;
+                    if (!n || n->kind != TokenKind::k_identity) {
+                        error(n);
+                    }
+
+                    while (n) {
+                        if (n->kind == TokenKind::k_cmp_gt) {
+                            break;
+                        }
+
+                        name += n->strval;
+                        n = n->next;
+                    }
+
+                    is_sys = true;
+                    sysApt = n->next;
+                }
+            } 
+
+            Token *ap = nullptr;
+            if (!incs.count(name)) {
+                Token *t = nullptr;
+                if (is_sys) {
+                    t = parse_file((get_cwd() + "/" + sys_dir + "/" + name).c_str());
+                } else {
+                    t = parse_file((get_cwd() + "/" + cur_compile_dir + "/" + name).c_str());
+                }
+
+                if (!t) {
+                    abort();
+                }
+
+                t = preprocessing(t);
+                if (!t) {
+                    abort();
+                }
+
+                incs[name] = t;
+            }
+
+            ap = incs[name];
+
+            Token *head = copy_macro(ap, nullptr, cur->lineno);
+            Token *end = head->origin;
+            Token *apt = nullptr;
+
+            if (is_sys) {
+                apt = sysApt;
+                Token *temp = pre;
+                while (temp != apt) {
+                    Token *t1 = temp;
+                    temp = t1->next;
+                    delete t1;
+                }
+            } else {
+                apt = cur->next->next;
+                delete pre;
+                delete cur->next;
+                delete cur;
+            }
+
+            if (pre1) {
+                pre1->next = head;
+            }
+            else {
+                h = head;
+            }
+
+            end->next = apt;
+            cur = end;
+        }
     proc:
         pre1 = pre;
         pre = cur;
@@ -658,14 +669,17 @@ Token * Parser::parse_file(const char *filename)
                 cur = cur->next;
             }
 
-            std::cout << "unexpected!!!\n";
+            std::cout << "\nunexpected!!!\n";
             abort();
             break;
         }
     }
 
     Token *res = reader->get_head();
-    reader->get_cur()->next = nullptr;
+    if (reader->get_cur()->next) {
+        reader->get_cur()->next = nullptr;
+    }
+    
     delete sc;
     delete reader;
 
@@ -673,12 +687,16 @@ Token * Parser::parse_file(const char *filename)
 }
 
 #define CHECK_TYPE bool is_static = false; bool is_var_args = false;\
-if (tok->kind == TokenKind::k_key_word_varargs) { \
+    if (tok->kind == TokenKind::k_key_word_varargs) { \
         is_var_args = true; \
         tok = tok->next; \
     } \
     if (tok->kind == TokenKind::k_key_word_static || tok->kind == TokenKind::k_key_word_private) { \
         is_static = true; \
+        tok = tok->next; \
+    } \
+    if (tok->kind == TokenKind::k_key_word_varargs) { \
+        is_var_args = true; \
         tok = tok->next; \
     } \
     if (!types.count(tok->kind)) { \
@@ -733,7 +751,8 @@ static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExp
                         if (bin->l->get_type() == ExpressionType::var_decl_) { \
                             VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(bin->l); \
                             if (!var || var->is_static) { \
-                                error(t->origin); \
+                            if (!var)cout << "xxxxxxxxxxxxxxxx\n";\
+                                error(tok); \
                             } \
                         } \
                     } else {\
@@ -1152,16 +1171,14 @@ static AbstractExpression * parse_foreach(Token *tok, Token *t)
 
         REQUIRE_CO(op) {
             require_expect(t->next, t, ";");
-            tok = t->next; 
         }
         // TODO check is op
         foreach->body.push_back(op);
     } else {
         READ_BODY(foreach->body, tok)
+        t->next = tok->next;
     }
 
-    tok = t->next;
-    t->next = tok->next;
     return foreach;
 }
 
@@ -1390,6 +1407,18 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
             }
 
             if_.body.push_back(op);
+
+            if (type == 2) {
+                skip = false;
+                tok = t->next;
+                break;
+            }
+
+            if (t->next && t->next->kind != TokenKind::k_key_word_else) {
+                tok = t->next;
+                skip = false;
+                break;
+            }
         } else {
             IfExpression::If *p = &if_;
             READ_BODY(p->body, tok)
@@ -1768,7 +1797,73 @@ pri_kw:
 
                 NewExpression *new_ = new NewExpression;
                 new_->id = id;
+
+                Token *n = tok->next;
+                if (n && n->kind == TokenKind::k_symbol_qs1) {
+                    Token *pre = n;
+                    n = n->next;
+                    bool start = false;
+                    while (n) {
+                        if (n->kind == TokenKind::k_symbol_qs2) {
+                            break;
+                        }
+
+                        if (start) {
+                            if (n->kind != TokenKind::k_symbol_sep) {
+                                error(n);
+                            }
+                        }
+
+                        if (n->kind == TokenKind::k_symbol_sep) {
+                            n = n->next;
+                            if (!n || n->kind == TokenKind::k_symbol_qs2) {
+                                error(pre);
+                            }
+
+                            start = false;
+                            continue;
+                        }
+
+                        if (n->kind != TokenKind::k_identity) {
+                            error(n);
+                        }
+                        
+                        ValueExpression *key = new ValueExpression;
+                        key->valType = 4;
+                        key->val.sval = n;
+                        new_->inits.push_back(key);
+
+                        pre = tok;
+                        n = n->next;
+                        if (!n || n->kind != TokenKind::k_symbol_show) {
+                            error(pre);
+                        }
+
+                        pre = n;
+                        n = n->next;
+                        if (!n) {
+                            error(pre);
+                        }
+
+                        AbstractExpression *val = parse_binay(n, -1, t);
+                        if (!val) {
+                            error(n);
+                        }
+
+                        new_->inits.push_back(val);
+                        n = t->next;
+                        pre = n;
+                        start = true;
+                    }
+
+                    tok = n->next;
+                } else {
+                    tok = n;
+                }
+
+                t->next = tok;
                 exp = new_;
+                tok = nullptr;
                 break;
             }
 
@@ -1828,6 +1923,13 @@ pri_kw:
                                 tok = n;
                             }
                             goto start;
+                        }
+                        case TokenKind::k_key_word_varargs:{
+                            tok = n->next;
+                            goto pri_kw;
+                        }
+                        default: {
+                            error(tok);
                         }
                     }
                 } else {
@@ -1963,6 +2065,9 @@ pri_kw:
         tok = t->next;
     } else if (k == TokenKind::k_symbol_no) {
         exp = parse_import(tok, t);
+        tok = nullptr;
+    } else if (k == TokenKind::k_cmp_quetion) {
+        exp = parse_triple(tok, t);
         tok = nullptr;
     } else {
         error(tok);
@@ -2223,7 +2328,7 @@ static AbstractExpression * do_parse(Token *tok)
             error(cur);
         }
         
-        if (exp->get_type() != ExpressionType::oper_ && exp->get_type() != ExpressionType::func_decl_ && exp->get_type() != ExpressionType::var_decl_ && exp->get_type() != ExpressionType::import_) {
+        if (exp->get_type() != ExpressionType::oper_ && exp->get_type() != ExpressionType::func_decl_ && exp->get_type() != ExpressionType::var_decl_ && exp->get_type() != ExpressionType::import_ && exp->get_type() != ExpressionType::class_) {
             cout << "etype: " << (int) exp->get_type() << endl;
             error(cur);
         }

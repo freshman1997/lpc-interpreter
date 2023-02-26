@@ -1,7 +1,7 @@
 #include <iostream>
 #include <ctime>
 
-#include "os.h"
+#include "os/os.h"
 
 using namespace std;
 

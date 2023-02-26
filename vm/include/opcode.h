@@ -67,7 +67,8 @@ enum class OpCode
     op_enter_block,             // for for loop, foreach loop block
     op_exit_block,
 
-    op_switch,                  // TODO
+    op_switch_select,
+    op_switch,                  // TODO  table switch implement
 
     op_foreach_step1,           // setup iterator
     op_foreach_step2,           // assign

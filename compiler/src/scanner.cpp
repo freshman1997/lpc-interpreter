@@ -17,6 +17,7 @@ static unordered_map<string, TokenKind> keywords = {
     {"private", TokenKind::k_key_word_private},
     {"include", TokenKind::k_key_word_include},
     {"define", TokenKind::k_key_word_define},
+    {"undef", TokenKind::k_key_word_undef},
     {"if", TokenKind::k_key_word_if},
     {"else", TokenKind::k_key_word_else},
     {"for", TokenKind::k_key_word_for},
