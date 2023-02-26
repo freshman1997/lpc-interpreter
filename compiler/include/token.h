@@ -106,11 +106,11 @@ enum class TokenKind
 
 struct Token
 {
-    Token *next;
+    Token *next = nullptr;
     TokenKind kind;
     lint32_t ival;
     lfloat64_t dval;
-    std::string strval = "";
+    std::string strval;
 
     const char *filename;
     int lineno = 0;
@@ -119,7 +119,7 @@ struct Token
     bool newline;
 
     // If this is expanded from a macro, the origin token
-    Token *origin;
+    Token *origin = nullptr;
 };
 
 

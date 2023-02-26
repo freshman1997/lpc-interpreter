@@ -235,7 +235,7 @@ start:
     }
 
     ch = scanner->peek();
-    if (is_eof() || ch == 0) {
+    if (is_eof() || ch == 0 || ch == '\n') {
         scanner->read();
         return nullptr;
     }
