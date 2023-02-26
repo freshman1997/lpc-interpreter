@@ -3,7 +3,7 @@
 #if LUNIX
 #include <unistd.h>
 #else
-
+#include <direct.h>
 #endif
 
 #include "parser.h"
@@ -37,16 +37,25 @@ struct CompileFile
 
 int main(int argc, char **argv)
 {
-	char buf[PATHNAME_MAX];
 #if LUNIX
+	char buf[PATHNAME_MAX];
 	if (NULL == getcwd(buf, sizeof(buf))) {
         perror("getcwd error");
         exit(1);
     }
-#else
 
-#endif
 	cwd = buf;
+#else
+	char *buf;
+	// Get the current working directory:
+	if ( (buf = getcwd( NULL, 0 )) == NULL ) {
+		perror( "_getcwd error" );
+		return -1;
+	} else {
+		cwd = buf;
+		free(buf);
+	}
+#endif
 	for (int i = cwd.size() - 1; i >= 0; --i) {
 		if (cwd[i] == '/') {
 			parent = cwd.substr(0, i);
@@ -56,7 +65,7 @@ int main(int argc, char **argv)
 
 	cout << parent << endl;
 	Parser parser;
-	parser.parse("1.txt");
+	parser.parse((cwd + "/2.txt").c_str());
 
 	/*
 	// find all files

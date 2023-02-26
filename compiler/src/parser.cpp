@@ -20,7 +20,7 @@ static void error(Token *tok)
 
     cerr << "\n\t error found near line "<< tok->lineno << ", file: " << tok->filename << "\n";
     Token *cur = tok;
-    int len = 10, sum = 0;
+    int len = 20, sum = 0;
     print_space(9);
     while (cur && len) {
         if (cur->kind == TokenKind::k_string) cerr << '"';
@@ -263,7 +263,7 @@ static Token * copy_macro(Token *mt, unordered_map<string, MacroArg*> *args, int
         t->next = nullptr;
         t->is_space = mt->is_space;
         t->newline = mt->newline;
-        t->lineno = lineno;
+        if (lineno) t->lineno = lineno;
 
         if (!ap) {
             ap = t;
@@ -593,7 +593,7 @@ Token * Parser::preprocessing(Token *tok)
                 if (is_sys) {
                     t = parse_file((get_cwd() + "/" + sys_dir + "/" + name).c_str());
                 } else {
-                    t = parse_file((get_cwd() + "/" + cur_compile_dir + "/" + name).c_str());
+                    t = parse_file((get_cwd()  + (cur_compile_dir.empty() ? "" : "/" + cur_compile_dir ) + "/" + name).c_str());
                 }
 
                 if (!t) {
@@ -610,7 +610,7 @@ Token * Parser::preprocessing(Token *tok)
 
             ap = incs[name];
 
-            Token *head = copy_macro(ap, nullptr, cur->lineno);
+            Token *head = copy_macro(ap, nullptr, 0);
             Token *end = head->origin;
             Token *apt = nullptr;
 
@@ -650,8 +650,10 @@ Token * Parser::preprocessing(Token *tok)
 
 Token * Parser::parse_file(const char *filename)
 {
+    parsed_files.push_back(filename);
+
     Scanner *sc = new Scanner;
-    sc->set_file(filename);
+    sc->set_file(parsed_files.back().c_str());
     TokenReader *reader = new TokenReader;
     reader->set_scanner(sc);
 
@@ -676,7 +678,7 @@ Token * Parser::parse_file(const char *filename)
     }
 
     Token *res = reader->get_head();
-    if (reader->get_cur()->next) {
+    if (reader->get_cur()) {
         reader->get_cur()->next = nullptr;
     }
     
@@ -1895,6 +1897,9 @@ pri_kw:
                 is_varargs = true;
                 t->next = tok;
                 tok = tok->next;
+                if (tok->kind == TokenKind::k_identity) {
+                    goto start;
+                }
             case TokenKind::k_key_word_static:
             case TokenKind::k_key_word_private: {
                 is_static = true;

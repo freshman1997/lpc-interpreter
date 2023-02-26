@@ -59,6 +59,7 @@ private:
     unordered_map<string, Token *> incs;
     unordered_map<string, Macro *> builtInMacro;
     unordered_map<string, Macro *> macros;
+    vector<string> parsed_files;
 };
 
 
