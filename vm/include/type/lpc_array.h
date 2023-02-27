@@ -3,7 +3,7 @@
 
 struct lpc_value_t;
 
-class LpcArray
+class lpc_array_t
 {
 public:
     lpc_value_t * get(int i);

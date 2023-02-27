@@ -3,7 +3,7 @@
 
 struct lpc_value_t;
 
-class LpcString
+class lpc_string_t
 {
 public:
     unsigned char get(int i);

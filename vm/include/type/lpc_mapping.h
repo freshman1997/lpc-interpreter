@@ -17,10 +17,13 @@ struct bucket_t
 
 };
 
-class LpcMapping
+class lpc_mapping_t
 {
 public:
     lpc_value_t * copy();
+    lpc_value_t * get(lpc_value_t *k);
+    void set(lpc_value_t *k, lpc_value_t *v);
+    lpc_value_t * upset(lpc_value_t *k, lpc_value_t *v);
 
 private:
     bucket_t *members;

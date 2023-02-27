@@ -1,7 +1,7 @@
 ﻿#ifndef __LPC_BUFFER_H__
 #define __LPC_BUFFER_H__
 
-class LpcBuff
+class lpc_buffer_t
 {
     
 };

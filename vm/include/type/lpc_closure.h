@@ -3,7 +3,7 @@
 
 struct lpc_value_t;
 
-class LpcClosure
+class lpc_closure_t
 {
 
 public:

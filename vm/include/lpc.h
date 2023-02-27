@@ -13,4 +13,9 @@ typedef float                   lfloat32_t;
 typedef double                  lfloat64_t;
 typedef const char *            lstring_t;
 
+
+#define lpc_assert
+
+
+
 #endif

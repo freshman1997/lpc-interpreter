@@ -54,6 +54,7 @@ enum class OpCode
     op_call_efun,               // for call native methods
     op_call_sefun,              // for the specified lpc object methods
     op_call_lfun,               // for object's local methods (include private and public methods)
+    op_call_virtaul,            // 
 
     op_return,
 

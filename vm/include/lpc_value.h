@@ -17,13 +17,13 @@ enum class value_type
     closure_,
 };
 
-class LpcString;
-class LpcArray;
-class LpcMapping;
-class LpcFunction;
-class LpcClosure;
-class LpcObject;
-class LpcBuffer;
+class lpc_string_t;
+class lpc_array_t;
+class lpc_mapping_t;
+class lpc_function_t;
+class lpc_closure_t;
+class lpc_object_t;
+class lpc_buffer_t;
 
 struct lpc_value_t
 {
@@ -35,13 +35,13 @@ struct lpc_value_t
         int number;
         unsigned char byte;
 
-        LpcString   *str;
-        LpcArray    *arr;
-        LpcMapping  *map;
-        LpcFunction *fun;
-        LpcClosure  *clo;
-        LpcObject   *obj;
-        LpcBuffer   *buf;
+        lpc_string_t   *str;
+        lpc_array_t    *arr;
+        lpc_mapping_t  *map;
+        lpc_function_t *fun;
+        lpc_closure_t  *clo;
+        lpc_object_t   *obj;
+        lpc_buffer_t   *buf;
     };
 
     value val;
