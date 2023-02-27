@@ -4,6 +4,8 @@
 struct lpc_value_t;
 class Object
 {
+public:
+    lpc_value_t * copy();
 
 private:
     lpc_value_t *constants;

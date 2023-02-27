@@ -1682,7 +1682,7 @@ static unordered_map<TokenKind, int> priority_map = {
     {TokenKind::k_oper_pointer, 14},
 };
 
-static AbstractExpression * parse_primary(Token *tok, Token *t)
+static AbstractExpression * parse_primary(Token *tok, Token *t, bool fromOp)
 {
     AbstractExpression *exp = nullptr;
     bool is_static = false;
@@ -1948,7 +1948,7 @@ pri_kw:
         }
     } else if (k == TokenKind::k_identity) {
         Token *n = tok->next;
-        if (n) {
+        if (n && !fromOp) {
             if (n->kind == TokenKind::k_oper_mul) {
                 n = n->next;
                 // hello_t * ac()
@@ -2081,7 +2081,7 @@ pri_kw:
     return exp;
 }
 
-static AbstractExpression * parse_unary(Token *tok, Token *t)
+static AbstractExpression * parse_unary(Token *tok, Token *t, bool fromOp)
 {
     static set<TokenKind> unary_oper = {
         TokenKind::k_oper_minus, TokenKind::k_oper_plus_plus, TokenKind::k_oper_sub_sub, TokenKind::k_cmp_not,
@@ -2089,14 +2089,14 @@ static AbstractExpression * parse_unary(Token *tok, Token *t)
 
     TokenKind k = tok->kind;
     if (unary_oper.count(k)) {
-        AbstractExpression *exp = parse_primary(tok->next, t);
+        AbstractExpression *exp = parse_primary(tok->next, t, fromOp);
         UnaryExpression *uExp = new UnaryExpression;
         uExp->op = k;
         uExp->exp = exp;
 
         return uExp;
     } else {
-        AbstractExpression *exp = parse_primary(tok, t);
+        AbstractExpression *exp = parse_primary(tok, t, fromOp);
         if (!exp) {
             error(tok);
         }
@@ -2186,7 +2186,7 @@ static AbstractExpression* parse_follow(AbstractExpression *exp, Token *tok, Tok
 
 static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
 {
-    AbstractExpression *exp1 = parse_unary(tok, cache);
+    AbstractExpression *exp1 = parse_unary(tok, cache, false);
     tok = cache->next;
     if (!tok) {
         return exp1;
@@ -2196,7 +2196,7 @@ static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
     TokenKind kind = tok->kind;
     while (tprec > pre) {
         tok = tok->next;
-        AbstractExpression *exp2 = parse_binay(tok, tprec, cache);
+        AbstractExpression *exp2 = parse_unary(tok, cache, true);
         if (!exp2) {
             error(tok);
         }

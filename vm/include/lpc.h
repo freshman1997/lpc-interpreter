@@ -11,6 +11,6 @@ typedef unsigned long long      luint64_t;
 typedef long long               lint64_t;
 typedef float                   lfloat32_t;
 typedef double                  lfloat64_t;
-
+typedef const char *            lstring_t;
 
 #endif

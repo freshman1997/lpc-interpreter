@@ -1,7 +1,14 @@
 ﻿#ifndef __LPC_STRING__
 #define __LPC_STRING__
+
+struct lpc_value_t;
+
 class LpcString
 {
+public:
+    unsigned char get(int i);
+    int get_size();
+    lpc_value_t * copy();
 
 private:
     const char *str = nullptr;

@@ -3,10 +3,27 @@
 
 struct lpc_value_t;
 
-class LpcMapping
+int calc_hash(lpc_value_t *val);
+
+// 开放地址法
+
+struct item_pair_t
 {
 
+};
+
+struct bucket_t
+{
+
+};
+
+class LpcMapping
+{
+public:
+    lpc_value_t * copy();
+
 private:
+    bucket_t *members;
     int size = 0;
 };
 

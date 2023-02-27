@@ -4,6 +4,8 @@
 struct lpc_value_t;
 class LpcFunction
 {
+public:
+    lpc_value_t * copy();
 
 private:
     lpc_value_t *fields;

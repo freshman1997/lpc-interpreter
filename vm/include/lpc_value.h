@@ -33,6 +33,7 @@ struct lpc_value_t
     {
         float real;
         int number;
+        unsigned char byte;
 
         LpcString   *str;
         LpcArray    *arr;

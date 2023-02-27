@@ -65,7 +65,7 @@ int main(int argc, char **argv)
 
 	cout << parent << endl;
 	Parser parser;
-	parser.parse((cwd + "/2.txt").c_str());
+	parser.parse((cwd + "/1.txt").c_str());
 
 	/*
 	// find all files

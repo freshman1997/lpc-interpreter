@@ -6,6 +6,9 @@ struct lpc_value_t;
 class LpcClosure
 {
 
+public:
+    lpc_value_t * copy();
+
 private:
     
 };
