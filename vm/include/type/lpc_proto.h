@@ -15,8 +15,9 @@ class function_proto_t
 {
 public:
     const char *name = nullptr;
-    char *pc = nullptr;
-    int param_num = 0;
+    int nargs = 0;
+    int nlocal = 0;
+    int nupvalue = 0;
     bool varargs = false;
     variasble_type returnType = variasble_type::none_;
 };
@@ -43,7 +44,7 @@ union const_t
     float real;
 };
 
-class constant_t
+class constant_proto_t
 {
 public:
     variasble_type type = variasble_type::none_;
@@ -63,10 +64,11 @@ public:
 
 class object_proto_t
 {
-
-private:
+public:
+    char *instructions;
+    int instruction_size;
     variable_proto_t *variable_table;
-    constant_t *constant_table;
+    constant_proto_t *constant_table;
     class_proto_t *class_table;
     function_proto_t *func_table;
 };

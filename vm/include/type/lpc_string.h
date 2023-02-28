@@ -6,9 +6,13 @@ struct lpc_value_t;
 class lpc_string_t
 {
 public:
+    lpc_string_t(const char * _str);
+    lpc_string_t(lpc_string_t &);
+    lpc_string_t * operator=(lpc_string_t &);
     unsigned char get(int i);
     int get_size();
     lpc_value_t * copy();
+    const char * get_str();
 
 private:
     const char *str = nullptr;

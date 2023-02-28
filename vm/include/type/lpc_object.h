@@ -8,11 +8,13 @@ class lpc_object_t
 {
 public:
     lpc_value_t * copy();
+    object_proto_t * get_proto();
+    void set_proto(object_proto_t *);
 
 private:
     const char *name = nullptr;
     int hash = 0;
-
+    int no = 0;
     int size_fields = 0;
     int size_func = 0;
     int size_class = 0;

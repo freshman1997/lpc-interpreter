@@ -17,5 +17,4 @@ typedef const char *            lstring_t;
 #define lpc_assert
 
 
-
 #endif
