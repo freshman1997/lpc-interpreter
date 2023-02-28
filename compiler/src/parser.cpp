@@ -1956,9 +1956,25 @@ pri_kw:
                     if (n->kind == TokenKind::k_identity) {
                         if (n->next) {
                             if (n->next->kind == TokenKind::k_symbol_qs1) {
-                                t->next = tok;
-                                initType = tok->kind;
-                                tok = n;
+                                Token *n1 = n->next;
+                                bool found = false;
+                                while (n1) {
+                                    if (found) {
+                                        if (n1->kind == TokenKind::k_symbol_qg1) {
+                                            t->next = tok;
+                                            initType = tok->kind;
+                                            tok = n;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+
+                                    if (n1->kind == TokenKind::k_symbol_qs2) {
+                                        found = true;
+                                    }
+                                    
+                                    n1 = n1->next;
+                                }
                             } else if (n->next->kind == TokenKind::k_symbol_sep) {
                                 initType = tok->kind;
                                 t->next = tok;
