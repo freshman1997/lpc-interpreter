@@ -1,9 +1,9 @@
 ﻿#ifndef __INTERPRETER_H__
 #define __INTERPRETER_H__
-#include "type/lpc_object.h"
+#include "vm.h"
 
 namespace vm {
-    void eval(lpc_object_t *);
+    void eval(lpc_vm_t *);
 }
 
 #endif

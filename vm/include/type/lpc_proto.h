@@ -19,7 +19,8 @@ public:
     int nlocal = 0;
     int nupvalue = 0;
     bool varargs = false;
-    variasble_type returnType = variasble_type::none_;
+    int offset;
+    int address = 0;                // 在当前对象指令的位置
 };
 
 class variable_proto_t
@@ -27,6 +28,7 @@ class variable_proto_t
 public:
     const char *name = nullptr;
     variasble_type type = variasble_type::none_;
+    int offset;
 };
 
 class class_proto_t
@@ -34,6 +36,7 @@ class class_proto_t
 public:
     int field_num;
     int size = 0;
+    int offset;
     variable_proto_t *field_table;
 };
 
@@ -67,10 +70,14 @@ class object_proto_t
 public:
     char *instructions;
     int instruction_size;
-    variable_proto_t *variable_table;
-    constant_proto_t *constant_table;
-    class_proto_t *class_table;
-    function_proto_t *func_table;
+    variable_proto_t **variable_table;
+    constant_proto_t **constant_table;
+    class_proto_t **class_table;
+    function_proto_t **func_table;
+    int nvariable = 0;
+    int nfunction = 0;
+    int nclass = 0;
+    int nconst = 0;
 };
 
 #endif

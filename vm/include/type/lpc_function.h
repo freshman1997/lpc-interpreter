@@ -4,7 +4,7 @@
 #include "lpc_proto.h"
 
 struct lpc_value_t;
-class LpcObject;
+class lpc_object_t;
 
 enum class function_type
 {
@@ -32,9 +32,7 @@ struct lpc_function_detail
 {
     int ref = 0;
     function_type type = function_type::normal_;
-    LpcObject *owner = nullptr;
-    lpc_array_t *args = nullptr;
-    lpc_array_t *upvalues = nullptr;
+    lpc_object_t *owner = nullptr;
 };
 
 union lpc_function_component

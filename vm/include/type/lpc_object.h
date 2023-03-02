@@ -11,15 +11,16 @@ public:
     object_proto_t * get_proto();
     void set_proto(object_proto_t *);
 
+    const char * get_pc();
+    lpc_string_t * get_next_object_name();
+    
+
 private:
     const char *name = nullptr;
     int hash = 0;
     int no = 0;
-    int size_fields = 0;
-    int size_func = 0;
-    int size_class = 0;
     object_proto_t *proto = nullptr;
-    char *pc = nullptr;
+    const char *pc = nullptr;
 
 };
 

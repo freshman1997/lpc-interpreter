@@ -26,6 +26,9 @@ enum class OpCode
     op_binary_not,              // ~
     op_binary_xor,              // ^
 
+    op_inc,
+    op_dec,
+
     op_assign,
     op_add_assign,
     op_sub_assign,
@@ -49,12 +52,9 @@ enum class OpCode
     op_sub_arr,
 
     op_new_mapping,
-    op_get_or_set_mapping,
+    op_get_or_set_mapping,      // 参数：1、不存在则插入，2、获取并入栈
 
-    op_call_efun,               // for call native methods
-    op_call_sefun,              // for the specified lpc object methods
-    op_call_lfun,               // for object's local methods (include private and public methods)
-    op_call_virtaul,            // 
+    op_call,                    // 参数：1、efun，2、sfun，3、local
 
     op_return,
 

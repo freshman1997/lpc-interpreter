@@ -3,8 +3,12 @@
 
 #include "os/os.h"
 #include "efun/efun.h"
+#include "runtime/vm.h"
+#include "runtime/interpreter.h"
 
 extern void debug_message(const char *fmt, ...);
+extern int hash_(const char *str);
+extern unsigned int luaS_hash (const char *str, size_t l, unsigned int seed);
 
 using namespace std;
 int _abs(int num)
@@ -18,8 +22,12 @@ int _abs(int num)
 
 int main(int argc, char **argv)
 {
-	debug_message("xxxxxxxxxxxxxxxxxxxxx %d:%d \n", 100, _abs(-1));
-	os::init_seed(time(NULL));
+    lint64_t seed = time(NULL);
+	debug_message("xxxxxxxxxxxxxxxxxxxxx %d:%d,%d,%d\n", 100, _abs(-1), hash_("hello"), luaS_hash("hello", 5, (unsigned int)(seed)));
+	os::init_seed(seed);
 	cout << "random value: " << os::random() << endl;
+
+    lpc_vm_t *vm = lpc_vm_t::create_vm();
+    vm::eval(vm);
 	return 0;
 }
