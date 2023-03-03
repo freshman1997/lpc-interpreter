@@ -1,21 +1,38 @@
-﻿#ifndef __LPC_MAPPING_H__
-#define __LPC_MAPPING_H__
+﻿#ifndef __LPC_ARRAY_H__
+#define __LPC_ARRAY_H__
+#include "lpc.h"
 
 struct lpc_value_t;
+class lpc_array_iterator_t;
 
 class lpc_array_t
 {
+    friend lpc_array_iterator_t;
 public:
     lpc_value_t * get(int i);
     void set(lpc_value_t *val, int i);
     lpc_value_t * copy();
+    luint32_t get_size() const;
 
 private:
-    int size = 0;
+    luint32_t size = 0;
     lpc_value_t *members;
 };
 
-lpc_value_t * array_add(lpc_value_t *l, lpc_value_t *r);
-lpc_value_t * array_sub(lpc_value_t *l, lpc_value_t *r);
+lpc_array_t * array_add(lpc_array_t *l, lpc_array_t *r);
+lpc_array_t * array_sub(lpc_array_t *l, lpc_array_t *r);
+
+class lpc_array_iterator_t
+{
+public:
+    lpc_array_iterator_t() : idx(0), arr(nullptr) {}
+    void set_array(lpc_array_t *);
+    bool has_next();
+    lpc_value_t *next();
+
+private:
+    luint32_t idx;
+    lpc_array_t *arr;
+};
 
 #endif

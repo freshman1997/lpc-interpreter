@@ -6,6 +6,8 @@
 
 struct lpc_value_t;
 class lpc_stack_t;
+class lpc_allocator_t;
+class lpc_gc_t;
 
 struct call_info_t
 {
@@ -21,7 +23,7 @@ typedef void (*exit_hook_t)(void);
 
 class lpc_vm_t
 {
-
+    friend lpc_allocator_t;
 public:
     lpc_vm_t(lpc_vm_t &) = delete;
     lpc_vm_t & operator=(lpc_vm_t &) = delete;
@@ -57,6 +59,8 @@ private:
     int size_efun;
 
     lpc_object_t *sfun_obj;     // sfun obj，调用是根据偏移找到
+    lpc_allocator_t * alloc;
+    lpc_gc_t *gc;
 };
 
 #endif
