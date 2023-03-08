@@ -3,15 +3,17 @@
 #include <cstring>
 #include <ctime>
 #include <cstdarg>
+
+
+#include "efun/efun.h"
+
+#ifndef WIN32
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
 
-#include "efun/efun.h"
-
-#ifndef WIN32
 size_t strlcpy(char *dst, const char *src, size_t siz)
 {
     char *d = dst;

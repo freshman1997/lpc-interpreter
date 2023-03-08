@@ -22,14 +22,12 @@ int _abs(int num)
 
 int main(int argc, char **argv)
 {
-    lpc_mapping_t *m = new lpc_mapping_t;
-    lpc_value_t *k = new lpc_value_t;
-    k->type = value_type::int_;
-    k->val.number = 12;
-    lpc_value_t *v = new lpc_value_t;
-    v->type = value_type::int_;
-    v->val.number = 100;
-    m->upset(k, v);
-    
+    lint64_t seed = time(NULL);
+	//debug_message("xxxxxxxxxxxxxxxxxxxxx %d:%d,%d,%d\n", 100, _abs(-1), hash_("hello"), luaS_hash("hello", 5, (unsigned int)(seed)));
+	os::init_seed(seed);
+	cout << "random value: " << os::random() << endl;
+
+    lpc_vm_t *vm = lpc_vm_t::create_vm();
+    vm::eval(vm);
 	return 0;
 }

@@ -30,15 +30,15 @@ inline int hashstr(const char *s,  /* string to hash */
 int maxn,  /* maximum number of chars to consider */
 int hashs)
 {
-    register unsigned int h;
-    register unsigned char *p;
+    unsigned int h;
+    unsigned char *p;
 
     h = (unsigned char) *s;
     if (h)
     {
         if (hashs > 256)
         {
-            register int oh = T[(unsigned char) *s];
+            int oh = T[(unsigned char) *s];
 
             for (p = (unsigned char*)s + 1;  *p && p <= (unsigned char*)s + maxn; p++)
             {
@@ -63,9 +63,9 @@ int hashs)
  */
 inline int whashstr(const char *s, int maxn)
 {
-    register unsigned char oh, h;
-    register unsigned char *p;
-    register int i;
+    unsigned char oh, h;
+    unsigned char *p;
+    int i;
 
     if (! *s)
     {
@@ -109,9 +109,9 @@ int hash_pointer(int x)
 
 #define lua_str2number(s,p)	strtod((s), (p))
 
-#define INT_MIN (-INT_MAX - 1)
+#define LINT_MIN (-INT_MAX - 1)
 #define LUA_MAXINTEGER		INT_MAX
-#define LUA_MININTEGER		INT_MIN
+#define LUA_MININTEGER		LINT_MIN
 #define LUA_NUMBER          float
 #define lua_numbertointeger(n,p) \
   ((n) >= (LUA_NUMBER)(LUA_MININTEGER) && \
