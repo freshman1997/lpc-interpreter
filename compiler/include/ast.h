@@ -16,7 +16,6 @@ enum class ExpressionType
     oper_,
     index_,
     call_,
-    pointor_,
     new_,
 
     triple_,

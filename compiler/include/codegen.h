@@ -30,6 +30,7 @@ struct Local
     Token *name = nullptr;
     bool varargs = false;
     lint16_t idx = 0;
+    bool is_arr = false;
 };
 
 struct ClassDecl
@@ -48,7 +49,8 @@ public:
     void generate_decl(AbstractExpression *, bool);
     void generate_unop(AbstractExpression *);
     void generate_binary(AbstractExpression *);
-    void generate_if_else(AbstractExpression *);
+    void generate_if_else(AbstractExpression *, lint32_t forContinue, std::vector<lint32_t> &forBreaks);
+    void generate_triple(AbstractExpression *);
     void generate_for(AbstractExpression *);
     void generate_foreach(AbstractExpression *);
     void generate_while(AbstractExpression *);
@@ -70,6 +72,26 @@ public:
         }
 
         return -1;
+    }
+
+    void push_code(luint8_t code)
+    {
+        opcodes.push_back(code);
+    }
+
+    lint32_t opcode_size()
+    {
+        return opcodes.size();
+    }
+
+    std::vector<luint8_t> & codes()
+    {
+        return this->opcodes;
+    }
+
+    std::unordered_map<std::string, Func> & get_funcs()
+    {
+        return this->funcs;
     }
 
     lint16_t find_local_idx(const string &name, const std::vector<Local> &);

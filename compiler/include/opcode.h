@@ -55,7 +55,6 @@ enum class OpCode
 
     op_or,
     op_pointor,                 // ->
-    op_dup,                     // copy ref
 
     op_test,
 
@@ -65,7 +64,7 @@ enum class OpCode
     op_sub_arr,
 
     op_new_mapping,
-    op_get_or_set_mapping,      // 参数：1、不存在则插入，2、获取并入栈
+    op_upset,                   // 参数：1、不存在则插入，2、获取并入栈
 
     op_call,                    // 参数：1、efun，2、sfun，3、local
 
