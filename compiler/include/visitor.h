@@ -19,35 +19,35 @@ class ConcretVisitor : public Visitor
 public:
     virtual void visit(AbstractExpression *exp);
 private:
-    void visit_decl(AbstractExpression *decl);
+    void visit_decl(AbstractExpression *exp);
 
-    void visit_value();
+    void visit_value(AbstractExpression *exp);
 
-    void visit_assign();
+    void visit_assign(AbstractExpression *exp);
 
-    void visit_func_decl();
+    void visit_func_decl(AbstractExpression *exp);
 
-    void visit_index();
+    void visit_index(AbstractExpression *exp);
     
-    void visit_oper();
+    void visit_oper(AbstractExpression *exp);
 
-    void visit_new();
+    void visit_new(AbstractExpression *exp);
 
-    void visit_return();
+    void visit_return(AbstractExpression *exp);
 
-    void visit_for_normal();
+    void visit_for_normal(AbstractExpression *exp);
 
-    void visit_foreach();
+    void visit_foreach(AbstractExpression *exp);
 
-    void visit_while();
+    void visit_while(AbstractExpression *exp);
 
-    void visit_do_while();
+    void visit_do_while(AbstractExpression *exp);
 
-    void visit_switch_case();
+    void visit_switch_case(AbstractExpression *exp);
 
-    void visit_class();
+    void visit_class(AbstractExpression *exp);
 
-    void visit_doc();
+    void visit_doc(AbstractExpression *exp);
 
 };
 

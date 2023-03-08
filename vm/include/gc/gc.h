@@ -10,13 +10,13 @@ class lpc_gc_t
 {
 public:
     void gc();
+    void * allocate(luint32_t sz) 
+    {
+        return msg->allocate(sz);
+    }
+
 private:
-    int large_object_threshod = 2700;
-    lpc_allocator_t *allocator;
-    lpc_vm_t *vm;
-
     mark_sweep_gc *msg;
-
 };
 
 #endif

@@ -112,7 +112,7 @@ public:
     union Value
     {
         int ival;
-        double dval;
+        float dval;
         Token *sval = nullptr;
         ~Value(){}
     } val;

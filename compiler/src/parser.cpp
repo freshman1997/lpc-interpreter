@@ -11,7 +11,7 @@ static void print_space(int n)
     for (int i = 0; i < n; ++i) cerr << ' ';
 }
 
-static void error(Token *tok)
+void error(Token *tok)
 {
     if (!tok) {
         cerr << "unexpected in file end!\n";

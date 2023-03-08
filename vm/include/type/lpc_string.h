@@ -13,6 +13,7 @@ public:
     int get_size();
     lpc_value_t * copy();
     const char * get_str();
+    int get_hash();
 
 private:
     const char *str = nullptr;

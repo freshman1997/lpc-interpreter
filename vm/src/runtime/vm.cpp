@@ -81,3 +81,8 @@ void lpc_vm_t::pop_frame()
 {
 
 }
+
+lpc_gc_t * lpc_vm_t::get_gc()
+{
+    return this->gc;
+}

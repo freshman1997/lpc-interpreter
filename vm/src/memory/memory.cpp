@@ -1,13 +1,22 @@
 ﻿#include "memory/memory.h"
+#include "runtime/vm.h"
+#include "gc/gc.h"
+#include "type/lpc_array.h"
+#include "type/lpc_mapping.h"
 
-lpc_value_t * lpc_allocator_t::allocate_array(int size)
+lpc_array_t * lpc_allocator_t::allocate_array(int size)
 {
-    return nullptr;
+    lpc_array_t *arr = (lpc_array_t *)vm->get_gc()->allocate(sizeof(lpc_array_t));
+    lpc_value_t *m = (lpc_value_t *)vm->get_gc()->allocate(sizeof(lpc_value_t) * size);
+    new(arr)(lpc_array_t(size, m)); // call ctor
+    return arr;
 }
 
-lpc_value_t * lpc_allocator_t::allocate_mapping()
+lpc_mapping_t * lpc_allocator_t::allocate_mapping()
 {
-    return nullptr;
+    lpc_mapping_t *map = (lpc_mapping_t *)vm->get_gc()->allocate(sizeof(lpc_mapping_t));
+    new(map)(lpc_mapping_t(vm->get_gc()));
+    return map;
 }
 
 lpc_value_t * lpc_allocator_t::allocate_object()

@@ -90,11 +90,17 @@ inline int whashstr(const char *s, int maxn)
 
 // 字符串表的大小
 static int htable_size_minus_one = 100;
+
 #define StrHash(s) (whashstr((s), 20) & (htable_size_minus_one))
 
 int hash_(const char *str)
 {
     return StrHash(str);
+}
+
+int hash_pointer(int x)
+{
+  return MAP_POINTER_HASH(x);
 }
 
 ////////////////////////////////////// lua hash ///////////////////////////////////////////

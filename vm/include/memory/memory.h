@@ -4,13 +4,15 @@
 struct lpc_value_t;
 class lpc_gc_t;
 class lpc_vm_t;
+class lpc_array_t;
+class lpc_mapping_t;
 
 class lpc_allocator_t
 {
     friend lpc_gc_t;
 public:
-    lpc_value_t * allocate_array(int size);
-    lpc_value_t * allocate_mapping();
+    lpc_array_t * allocate_array(int size);
+    lpc_mapping_t * allocate_mapping();
     lpc_value_t * allocate_object();
     lpc_value_t * allocate_closure();
     lpc_value_t * allocate_string();

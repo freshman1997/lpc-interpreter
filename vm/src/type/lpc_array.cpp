@@ -2,6 +2,8 @@
 #include "type/lpc_array.h"
 #include "memory/memory.h"
 
+lpc_array_t::lpc_array_t(luint32_t sz, lpc_value_t *m) : size(sz), members(m){}
+
 lpc_value_t * lpc_array_t::get(int i)
 {
     return nullptr;
@@ -38,12 +40,12 @@ lpc_value_t * lpc_array_iterator_t::next()
 }
 
 // array op
-lpc_array_t * array_add(lpc_array_t *l, lpc_array_t *r)
+lpc_array_t * array_add(lpc_array_t *l, lpc_array_t *r, lpc_gc_t *gc)
 {
     return nullptr;
 }
 
-lpc_array_t * array_sub(lpc_array_t *l, lpc_array_t *r)
+lpc_array_t * array_sub(lpc_array_t *l, lpc_array_t *r, lpc_gc_t *gc)
 {
     return nullptr;
 }

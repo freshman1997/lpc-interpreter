@@ -43,6 +43,7 @@ public:
     
     call_info_t * new_frame();
     void pop_frame();
+    lpc_gc_t * get_gc();
 
 private:
     lpc_vm_t();

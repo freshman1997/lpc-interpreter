@@ -65,7 +65,9 @@ int main(int argc, char **argv)
 
 	cout << parent << endl;
 	Parser parser;
-	parser.parse((cwd + "/1.txt").c_str());
+	ExpressionVisitor *doc = parser.parse((cwd + "/1.txt").c_str());
+	Visitor *vis = new ConcretVisitor;
+	vis->visit(dynamic_cast<AbstractExpression *>(doc));
 
 	/*
 	// find all files

@@ -21,6 +21,11 @@ const char * lpc_string_t::get_str()
     return this->str;
 }
 
+int lpc_string_t::get_hash()
+{
+    return hash;
+}
+
 unsigned char lpc_string_t::get(int i)
 {
     return 0;

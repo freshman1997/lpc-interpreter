@@ -1,6 +1,6 @@
 #ifndef __GC_MARK_SWEEP_H__
 #define __GC_MARK_SWEEP_H__
-#include <memory>
+#include <list>
 #include "lpc.h"
 
 class mark_sweep_gc
@@ -16,7 +16,8 @@ private:
     void collect_leisure_sapce();
 
     luint32_t total_objects;
-    //std::allocator<Test> alloc;
+
+    std::list<void *> list;
 };
 
 #endif
