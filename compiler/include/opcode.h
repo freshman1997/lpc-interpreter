@@ -30,6 +30,7 @@ enum class OpCode
 
     op_inc,
     op_dec,
+    op_minus,
 
     op_assign,
     op_add_assign,
@@ -56,7 +57,7 @@ enum class OpCode
     op_or,
     op_pointor,                 // ->
 
-    op_test,
+    op_test,                    // 一个参数，4个字节
 
     op_index,
 
@@ -75,7 +76,7 @@ enum class OpCode
 
     op_new_class,
 
-    op_goto,
+    op_goto,                    // 一个参数，4个字节
 
     op_enter_block,             // for for loop, foreach loop block
     op_exit_block,

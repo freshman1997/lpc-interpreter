@@ -7,6 +7,7 @@
 #endif
 
 #include "parser.h"
+#include "codegen.h"
 
 using namespace std;
 
@@ -66,8 +67,10 @@ int main(int argc, char **argv)
 	cout << parent << endl;
 	Parser parser;
 	ExpressionVisitor *doc = parser.parse((cwd + "/1.txt").c_str());
-	Visitor *vis = new ConcretVisitor;
-	vis->visit(dynamic_cast<AbstractExpression *>(doc));
+	/*Visitor *vis = new ConcretVisitor;
+	vis->visit(dynamic_cast<AbstractExpression *>(doc));*/
+	CodeGenerator g;
+	g.generate(dynamic_cast<AbstractExpression *>(doc));
 
 	/*
 	// find all files

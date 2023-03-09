@@ -2212,7 +2212,7 @@ static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
     TokenKind kind = tok->kind;
     while (tprec > pre) {
         tok = tok->next;
-        AbstractExpression *exp2 = parse_unary(tok, cache, true);
+        AbstractExpression *exp2 = parse_binay(tok, tprec, cache);
         if (!exp2) {
             error(tok);
         }
@@ -2415,6 +2415,7 @@ ExpressionVisitor * Parser::parse(const char *filename)
     try {
         // 正式开始处理
         exp = dynamic_cast<DocumentExpression *>(do_parse(cur));
+        exp->file_name = filename;
         if (exp->contents.empty()) {
             cout << "[error] parse " << filename << " failed!\n";
             exit(-1);
