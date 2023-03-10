@@ -87,7 +87,7 @@ using namespace std;
         } else if (exp->get_type() == ExpressionType::triple_) { \
             generate_triple(exp); \
         } else if (exp->get_type() == ExpressionType::call_) { \
-            generate_call(exp, false); \
+            generate_call(exp); \
         } else if (exp->get_type() == ExpressionType::value_) { \
             vector<Local> &scopeLocals = locals[cur_scope]; \
             Func &fun = funcs[cur_scope]; \
@@ -405,6 +405,27 @@ static std::set<TokenKind> assignSet = {
     TokenKind::k_oper_mod_assign,
 };
 
+#define CTOR(exp) \
+    ConstructExpression *ctor = dynamic_cast<ConstructExpression *>(exp); \
+    lint32_t count = 0; \
+    vector<Local> &scopeLocals = locals[cur_scope]; \
+    for (auto &it : ctor->body) { \
+        GENERATE_OP(it, false) \
+        ++count; \
+    } \
+    \
+    const char * idx2char = (const char *)&count; \
+    if (ctor->type) { \
+        if (count % 2 != 0) { \
+            error_at(__LINE__); \
+        } \
+        opcodes.push_back((luint8_t)(OpCode::op_new_mapping)); \
+    } else { \
+        opcodes.push_back((luint8_t)(OpCode::op_new_array)); \
+    } \
+    \
+    LOAD_IDX_4(opcodes, count)
+
 // 怎么做常量折叠　？
 void CodeGenerator::generate_binary(AbstractExpression *exp)
 {
@@ -414,14 +435,12 @@ void CodeGenerator::generate_binary(AbstractExpression *exp)
     if (constFold.count(bin->oper)) {
         AbstractExpression *res = calc_const(bin);
         if (res != bin) {
-            GENERATE_VALUE(res, DeclType::none_)
-            return;
+            bin->r = res;
         }
     } else if (assignSet.count(bin->oper) && bin->r->get_type() == ExpressionType::oper_) {
         AbstractExpression *res = calc_const(dynamic_cast<BinaryExpression *>(bin->r));
         if (res != bin->r) {
-            GENERATE_VALUE(res, DeclType::none_)
-            return;
+            bin->r = res;
         }
     }
 
@@ -433,7 +452,18 @@ void CodeGenerator::generate_binary(AbstractExpression *exp)
         generate_decl(left);
     } else {
         // 给标识符、函数调用、下标索引（mapping、array）登赋值的
-        GENERATE_OP(left, false)
+        if (bin->oper != TokenKind::k_oper_assign && (constFold.count(bin->oper) || assignSet.count(bin->oper))) {
+            ValueExpression *v = dynamic_cast<ValueExpression *>(left);
+            if (v->valType == 3) {
+                error_at(__LINE__);
+            }
+        }
+
+        if (left->get_type() == ExpressionType::construct_) {
+            CTOR(left)
+        } else {
+            GENERATE_OP(left, false)
+        }
     }
 
     if (on_var_decl) {
@@ -443,95 +473,23 @@ void CodeGenerator::generate_binary(AbstractExpression *exp)
     }
 
     // 右边的类型有：值，
-    switch (right->get_type())
-    {
-    case ExpressionType::value_:{
-        GENERATE_VALUE(right, DeclType::none_)
-        break;
-    }
-    case ExpressionType::oper_:{
-        generate_binary(right);
-        break;
-    }
-    case ExpressionType::uop_:{
-        generate_unop(right);
-        break;
-    }
-    case ExpressionType::call_:{
-        generate_call(right, bin->oper == TokenKind::k_oper_pointer);
-        break;
-    }
-    case ExpressionType::index_:{
-        generate_index(right, false);
-        break;
-    }
-    case ExpressionType::triple_:{
-        generate_triple(right);
-        break;
-    }
-    case ExpressionType::construct_:{
-        ConstructExpression *ctor = dynamic_cast<ConstructExpression *>(right);
-        lint32_t count = 0;
-        for (auto &it : ctor->body) {
-            switch (it->get_type())
-            {
-            case ExpressionType::value_: {
-                vector<Local> &scopeLocals = locals[cur_scope];
-                GENERATE_VALUE(it, DeclType::none_)
-                break;
-            }
-            case ExpressionType::call_: {
-                generate_call(it, false);
-                break;
-            }
-            case ExpressionType::index_: {
-                generate_index(it, false);
-                break;
-            }
-            case ExpressionType::uop_: {
-                generate_unop(it);
-                break;
-            }
-            case ExpressionType::oper_: {
-                generate_binary(it);
-                break;
-            }
-            case ExpressionType::triple_: {
-                generate_triple(it);
-                break;
-            }
-            default:
-                error_at(__LINE__);
-                break;
-            }
-
-            ++count;
+    if (bin->oper != TokenKind::k_oper_assign && (constFold.count(bin->oper) || assignSet.count(bin->oper))) {
+        ValueExpression *v = dynamic_cast<ValueExpression *>(right);
+        if (v->valType == 3) {
+            error_at(__LINE__);
         }
-
-        const char * idx2char = (const char *)&count;
-        if (ctor->type) {
-            if (count % 2 != 0) {
-                error_at(__LINE__);
-            }
-            opcodes.push_back((luint8_t)(OpCode::op_new_mapping));
-        } else {
-            opcodes.push_back((luint8_t)(OpCode::op_new_array));
-        }
-
-        LOAD_IDX_4(opcodes, count)
-        break;
     }
-    case ExpressionType::new_:{
+
+    if (right->get_type() == ExpressionType::construct_) {
+        CTOR(right)
+    } else if (right->get_type() == ExpressionType::new_) {
+        // TODO
         if (bin->oper != TokenKind::k_oper_assign) {
             error_at(__LINE__);
         }
 
-        // TODO
-        generate_index(right, false);
-        break;
-    }
-    default:
-        break;
+    } else {
+        GENERATE_OP(right, false)
     }
 }
 
@@ -783,7 +741,7 @@ void CodeGenerator::generate_index(AbstractExpression *exp, bool lhs)
 
         LOAD_IDX_2(opcodes, idx)
     } else if (idex->l->get_type() == ExpressionType::call_) {
-        generate_call(idex->l, false);
+        generate_call(idex->l);
     } else if (idex->l->get_type() == ExpressionType::index_) {
         // 多重 index 
         generate_index(idex->l, false);
@@ -822,7 +780,7 @@ void CodeGenerator::generate_index(AbstractExpression *exp, bool lhs)
     }
 }
 
-void CodeGenerator::generate_call(AbstractExpression *exp, bool fromPointer)
+void CodeGenerator::generate_call(AbstractExpression *exp)
 {
     CallExpression *call = dynamic_cast<CallExpression *>(exp);
     
@@ -880,7 +838,7 @@ void CodeGenerator::generate_call(AbstractExpression *exp, bool fromPointer)
                     // TODO 
                 }
 
-                generate_call(it, false);
+                generate_call(it);
                 break;
             }
 

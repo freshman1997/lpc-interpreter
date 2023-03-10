@@ -58,7 +58,7 @@ public:
     void generate_switch_case(AbstractExpression *);
     void generate_class(AbstractExpression *);
     void generate_index(AbstractExpression *, bool);
-    void generate_call(AbstractExpression *, bool);
+    void generate_call(AbstractExpression *);
     void generate_return(AbstractExpression *);
     void generate_func(AbstractExpression *);
 
