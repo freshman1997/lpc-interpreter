@@ -279,9 +279,86 @@ void CodeGenerator::generate_decl(AbstractExpression *exp)
     }
 }
 
-static void calc_const()
-{
+static std::set<TokenKind> constFold = {
+    TokenKind::k_oper_mul,
+    TokenKind::k_oper_div,
+    TokenKind::k_oper_plus,
+    TokenKind::k_oper_minus,
+    TokenKind::k_oper_mod
+};
 
+#define DO_FOLD_CONST(op) \
+    ValueExpression *val = new ValueExpression; \
+    if (left->valType == 0 && right->valType == 0) { \
+        val->valType = 0; \
+        val->val.ival = left->val.ival + right->val.ival; \
+    } else { \
+        val->valType = 0; \
+        val->val.dval = (left->valType == 0 ? left->val.ival : left->val.dval) op (right->valType == 0 ? right->val.ival : right->val.dval); \
+    } \
+    res = val;
+
+static AbstractExpression * calc(BinaryExpression *bin)
+{
+    AbstractExpression *res = bin;
+    ValueExpression *left = dynamic_cast<ValueExpression *>(bin->l);
+    ValueExpression *right = dynamic_cast<ValueExpression *>(bin->r);
+    if (constFold.count(bin->oper) && (left->valType == 0 || left->valType == 1) && (right->valType == 0 || right->valType == 1) ) {
+        switch (bin->oper)
+        {
+        case TokenKind::k_oper_plus: {
+            // int + int, int + float
+            DO_FOLD_CONST(+)
+            break;
+        }
+        case TokenKind::k_oper_minus: {
+            DO_FOLD_CONST(-)
+            break;
+        }
+        case TokenKind::k_oper_mul: {
+            DO_FOLD_CONST(*)
+            break;
+        }
+        case TokenKind::k_oper_div: {
+            DO_FOLD_CONST(/)
+            break;
+        }
+        case TokenKind::k_oper_mod: {
+            if (left->valType == 0 && right->valType == 0) {
+                ValueExpression *val = new ValueExpression;
+                val->valType = 0;
+                val->val.ival = left->val.ival % right->val.ival;
+                res = val;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    return res;
+}
+
+static AbstractExpression * calc_const(BinaryExpression *bin)
+{
+    if (bin->r->get_type() == ExpressionType::value_) {
+        if (bin->l->get_type() == ExpressionType::value_) {
+            return calc(bin);
+        } else {
+            if (bin->l->get_type() == ExpressionType::oper_) {
+                AbstractExpression *res = calc_const(dynamic_cast<BinaryExpression *>(bin->l));
+                // 折叠完成
+                if (res != bin->l) {
+                    bin->l = res;
+                }
+
+                return calc(bin);
+            }
+        }
+    }
+
+    return bin;
 }
 
 static std::unordered_map<TokenKind, OpCode> op2code = {
@@ -319,14 +396,37 @@ static std::unordered_map<TokenKind, OpCode> op2code = {
     {TokenKind::k_oper_pointer, OpCode::op_pointor},
 };
 
+static std::set<TokenKind> assignSet = { 
+    TokenKind::k_oper_assign, 
+    TokenKind::k_oper_plus_assign, 
+    TokenKind::k_oper_minus_assign, 
+    TokenKind::k_oper_mul_assign, 
+    TokenKind::k_oper_div_assign,
+    TokenKind::k_oper_mod_assign,
+};
+
 // 怎么做常量折叠　？
 void CodeGenerator::generate_binary(AbstractExpression *exp)
 {
     BinaryExpression *bin = dynamic_cast<BinaryExpression *>(exp);
+    vector<Local> &scopeLocals = locals[cur_scope];
+    // 条件、赋值
+    if (constFold.count(bin->oper)) {
+        AbstractExpression *res = calc_const(bin);
+        if (res != bin) {
+            GENERATE_VALUE(res, DeclType::none_)
+            return;
+        }
+    } else if (assignSet.count(bin->oper) && bin->r->get_type() == ExpressionType::oper_) {
+        AbstractExpression *res = calc_const(dynamic_cast<BinaryExpression *>(bin->r));
+        if (res != bin->r) {
+            GENERATE_VALUE(res, DeclType::none_)
+            return;
+        }
+    }
+
     AbstractExpression *left = bin->l;
     AbstractExpression *right = bin->r;
-    
-    vector<Local> &scopeLocals = locals[cur_scope];
 
     // 变量声明一定是在左边
     if (left->get_type() == ExpressionType::var_decl_) {
