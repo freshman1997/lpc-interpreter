@@ -75,6 +75,7 @@ enum class OpCode
     op_get_upvalue,
 
     op_new_class,
+    op_set_class_field,         // h->id
 
     op_goto,                    // 一个参数，4个字节
 

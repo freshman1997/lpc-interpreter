@@ -10,17 +10,20 @@
 
 #define MAX_LOCAL (0xffff)
 
+void init_sfun_and_efun(const char *sfunFile, const char *efunDefFile);
+
 struct Func
 {
     bool is_static = false;
     bool is_varargs = false;
     Token *name = nullptr;      // optional
-    DeclType retType = DeclType::none_;
+    DeclType retType = DeclType::void_;
     Token *udef = nullptr;
     luint16_t nparams = 0;
     luint16_t nlocals = 0;
     luint32_t fromPc = 0;
     luint32_t toPc = 0;
+    const char *efunName = nullptr;
 };
 
 struct Local
@@ -31,14 +34,16 @@ struct Local
     bool varargs = false;
     lint16_t idx = 0;
     bool is_arr = false;
+    Token *declName = nullptr; // for user define type
 };
 
 struct ClassDecl
 {
     bool is_static = false;
     Token *name = nullptr;
-    lint32_t nfields = 0;
-    std::unordered_map<std::string, lint32_t> fields;
+    lint16_t nfields = 0;
+    // 位置：声明类型（如果是用户定义的class，则需要保存class的位置）
+    std::vector<std::pair<std::pair<std::string, DeclType>, lint16_t>> fields;
 };
 
 class CodeGenerator
@@ -46,7 +51,7 @@ class CodeGenerator
 public:
     void generate(AbstractExpression *);
 
-    void generate_decl(AbstractExpression *);
+    void generate_decl(AbstractExpression *, bool);
     void generate_unop(AbstractExpression *);
     void generate_binary(AbstractExpression *);
     void generate_if_else(AbstractExpression *, lint32_t forContinue, std::vector<lint32_t> &forBreaks);
@@ -58,7 +63,7 @@ public:
     void generate_switch_case(AbstractExpression *);
     void generate_class(AbstractExpression *);
     void generate_index(AbstractExpression *, bool);
-    void generate_call(AbstractExpression *);
+    void generate_call(AbstractExpression *, DeclType type = DeclType::none_);
     void generate_return(AbstractExpression *);
     void generate_func(AbstractExpression *);
 

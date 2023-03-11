@@ -1157,6 +1157,8 @@ static AbstractExpression * parse_foreach(Token *tok, Token *t)
     if (!container) {
         error(tok);
     }
+    
+    foreach->container = container;
 
     tok = t->next;
     if (tok->kind != TokenKind::k_symbol_qs2) {
@@ -1543,6 +1545,12 @@ static AbstractExpression * parse_function_decl(Token *tok, Token *t)
 
 static AbstractExpression * parse_class_decl(Token *tok, Token *t)
 {
+    bool is_static = false;
+    if (tok->kind == TokenKind::k_key_word_static) {
+        is_static = true;
+        tok = tok->next;
+    }
+
     if (tok->kind != TokenKind::k_key_word_class) {
         error(tok);
     }
@@ -1554,6 +1562,7 @@ static AbstractExpression * parse_class_decl(Token *tok, Token *t)
 
     ClassExpression *clazz = new ClassExpression;
     clazz->className = tok;
+    clazz->is_static = is_static;
 
     tok = tok->next;
     if (!tok || tok->kind != TokenKind::k_symbol_qg1) {
@@ -1741,7 +1750,7 @@ pri_kw:
                     goto start;
                 }
             }
-
+clazz:
             case TokenKind::k_key_word_class: {
                 exp = parse_class_decl(tok, t);
                 tok = nullptr;
@@ -1931,6 +1940,9 @@ pri_kw:
                         case TokenKind::k_key_word_varargs:{
                             tok = n->next;
                             goto pri_kw;
+                        }
+                        case TokenKind::k_key_word_class:{
+                            goto clazz;
                         }
                         default: {
                             error(tok);
@@ -2248,6 +2260,7 @@ static AbstractExpression * transfer_2_decl(AbstractExpression *dexp, bool is_st
     decl->name = val->val.sval;
     decl->is_static = is_static;
     decl->is_arr = val->is_arr;
+    decl->user_define_type = nullptr;
 
     delete val;
 
@@ -2265,6 +2278,7 @@ static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExp
 
         Token *tok = t->next->next; // skip ','
         DeclType dtype = DeclType::none_;
+        Token *user_def = nullptr;
         bool is_static = false, is_arr = false;
         if (exp->get_type() == ExpressionType::oper_) {
             BinaryExpression *bin = dynamic_cast<BinaryExpression *>(exp);
@@ -2274,6 +2288,7 @@ static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExp
             }
 
             dtype = decl->dtype;
+            user_def = decl->user_define_type;
         } else {
             VarDeclExpression *decl = dynamic_cast<VarDeclExpression *>(exp);
             if (!decl || decl->dtype == DeclType::none_) {
@@ -2281,6 +2296,7 @@ static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExp
             }
 
             dtype = decl->dtype;
+            user_def = decl->user_define_type;
         }
 
         while (tok) {
@@ -2314,15 +2330,31 @@ static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExp
                 decl->name = val->val.sval;
                 decl->is_static = is_static;
                 decl->is_arr = is_arr;
+                decl->user_define_type = user_def;
 
-                dexp = transfer_2_decl(dexp, is_static, dtype);
+                AbstractExpression *t = dexp;
+                dexp = decl;
+
+                delete t;
             } else if (dexp->get_type() == ExpressionType::oper_){
                 BinaryExpression *bin = dynamic_cast<BinaryExpression *>(dexp);
                 if (!bin) {
                     error(tok);
                 }
 
-                bin->l = transfer_2_decl(bin->l, is_static, dtype);
+                ValueExpression *val = dynamic_cast<ValueExpression *>(bin->l);
+
+                VarDeclExpression *decl = new VarDeclExpression;
+                decl->dtype = dtype;
+                decl->name = val->val.sval;
+                decl->is_static = is_static;
+                decl->is_arr = is_arr;
+                decl->user_define_type = user_def;
+
+                AbstractExpression *t = bin->l;
+                bin->l = decl;
+
+                delete t;
             } else {
                 error(tok);
             }
