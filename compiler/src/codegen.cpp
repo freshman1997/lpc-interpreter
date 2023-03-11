@@ -651,6 +651,11 @@ void CodeGenerator::generate_while(AbstractExpression *exp)
     vector<lint32_t> *p = nullptr;
     GENERATE_BODY(w->body, p)
 
+    // 跳回条件处
+    opcodes.push_back((luint8_t)(OpCode::op_goto));
+    const char *idx2char = (const char *)(&forContinue);
+    LOAD_IDX_4(opcodes, forContinue)
+
     lint32_t t = opcodes.size();
     const char *idxCode = (const char *)&t;
     // Note. 修正跳转的位置信息
