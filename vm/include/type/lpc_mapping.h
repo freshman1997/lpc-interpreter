@@ -1,6 +1,7 @@
 ﻿#ifndef __LPC_MAPPING_H__
 #define __LPC_MAPPING_H__
 #include "lpc.h"
+#include "lpc_value.h"
 
 struct lpc_value_t;
 class lpc_mapping_iterator_t;
@@ -26,6 +27,9 @@ struct bucket_t
 class lpc_mapping_t
 {
     friend lpc_mapping_iterator_t;
+public:
+    lpc_gc_object_header_t header;
+
 public:
     lpc_mapping_t(lpc_gc_t *);
     lpc_value_t * copy();

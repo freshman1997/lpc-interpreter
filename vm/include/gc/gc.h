@@ -15,6 +15,11 @@ public:
         return msg->allocate(sz);
     }
 
+    lpc_gc_t() 
+    {
+        msg = new mark_sweep_gc();
+    }
+
 private:
     mark_sweep_gc *msg;
 };

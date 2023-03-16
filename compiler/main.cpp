@@ -30,12 +30,6 @@ string get_father()
 	return parent;
 }
 
-struct CompileFile
-{
-    bool isFile;
-    string path;
-};
-
 int main(int argc, char **argv)
 {
 #if LUNIX
@@ -66,11 +60,12 @@ int main(int argc, char **argv)
 
 	cout << parent << endl;
 	Parser parser;
-	ExpressionVisitor *doc = parser.parse((cwd + "/1.txt").c_str());
+	ExpressionVisitor *doc = parser.parse("1.txt");
 	/*Visitor *vis = new ConcretVisitor;
 	vis->visit(dynamic_cast<AbstractExpression *>(doc));*/
 	CodeGenerator g;
 	g.generate(dynamic_cast<AbstractExpression *>(doc));
+	g.dump();
 
 	/*
 	// find all files

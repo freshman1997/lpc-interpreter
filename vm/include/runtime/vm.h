@@ -45,6 +45,9 @@ public:
     void pop_frame();
     lpc_gc_t * get_gc();
 
+    object_proto_t * load_object_proto(const char *name);
+    lpc_object_t * load_object(const char *name);
+
 private:
     lpc_vm_t();
     const char *entry;
@@ -59,6 +62,7 @@ private:
     void **efuns;               // efun table
     int size_efun;
 
+    const char *sfun_object_name;
     lpc_object_t *sfun_obj;     // sfun obj，调用是根据偏移找到
     lpc_allocator_t * alloc;
     lpc_gc_t *gc;

@@ -3,7 +3,6 @@
 #include "lpc_array.h"
 #include "lpc_proto.h"
 
-struct lpc_value_t;
 class lpc_object_t;
 
 enum class function_type
@@ -45,6 +44,9 @@ union lpc_function_component
 
 class lpc_function_t
 {
+public:
+    lpc_gc_object_header_t header;
+    
 public:
     lpc_function_t(lpc_function_t &) = delete;
     lpc_function_t *operator=(lpc_function_t *);

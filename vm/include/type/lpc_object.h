@@ -7,6 +7,9 @@ struct lpc_value_t;
 class lpc_object_t
 {
 public:
+    lpc_gc_object_header_t header;
+    
+public:
     lpc_value_t * copy();
     object_proto_t * get_proto();
     void set_proto(object_proto_t *);

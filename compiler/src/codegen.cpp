@@ -1,4 +1,11 @@
 #include <iostream>
+#include <fstream>
+#ifdef WIN32
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 #include "codegen.h"
 #include "opcode.h"
 
@@ -287,7 +294,7 @@ void CodeGenerator::generate_unop(AbstractExpression *exp)
     UnaryExpression *uop = dynamic_cast<UnaryExpression *>(exp);
     if (uop->exp->get_type() != ExpressionType::value_ && uop->exp->get_type() != ExpressionType::index_ 
         && uop->exp->get_type() != ExpressionType::call_ && uop->exp->get_type() != ExpressionType::oper_
-        & uop->exp->get_type() != ExpressionType::uop_ && uop->exp->get_type() != ExpressionType::triple_) {
+        && uop->exp->get_type() != ExpressionType::uop_ && uop->exp->get_type() != ExpressionType::triple_) {
         error_at(__LINE__);
     }
 
@@ -494,7 +501,6 @@ static std::set<TokenKind> assignSet = {
 #define CTOR(exp) \
     ConstructExpression *ctor = dynamic_cast<ConstructExpression *>(exp); \
     lint32_t count = 0; \
-    vector<Local> &scopeLocals = locals[cur_scope]; \
     for (auto &it : ctor->body) { \
         GENERATE_OP(it, DeclType::none_) \
         ++count; \
@@ -678,7 +684,7 @@ void CodeGenerator::generate_if_else(AbstractExpression *exp, lint32_t forContin
     }
     
     lint32_t type0 = 0, type1 = 2, type2 = 0;
-    lint32_t goto1 = 0, goto2 = 0, goto3 = 0;
+    lint32_t goto1 = 0, goto2 = 0;
     const char *idx2char = nullptr;
     vector<lint32_t> *p = nullptr;
     for (auto &it : ifExp->exps) {
@@ -1281,7 +1287,118 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
     funcs[funDecl->name->strval] = f;
 }
 
+extern string get_cwd();
+
+static void recurve_mkdir(const string &file)
+{
+    string cwd = get_cwd();
+    luint32_t idx = 0;
+    for (;;) {
+#ifdef WIN32
+#else
+    luint32_t pos = file.find("/", idx);
+    if (pos == string::npos) {
+        break;
+    }
+
+    string dir = cwd + "/" + file.substr(0, pos);
+    if (access(dir.c_str(), 0) == -1) {
+        if (mkdir(dir.c_str(), 0777)) //如果不存在就用mkdir函数来创建
+        {
+            printf("creat dir failed!!!\n");
+            exit(-1);
+        }
+    }
+
+    idx = pos + 1;
+#endif
+    }
+}
+
 void CodeGenerator::dump()
 {
+    luint32_t idx = object_name.find_last_of(".");
+    if (idx == string::npos) {
+        return;
+    }
 
+    string bFile = object_name.substr(0, idx) + ".b";
+    //recurve_mkdir(bFile);
+    ofstream out;
+    out.open(bFile.c_str(), ios_base::binary);
+    if (!out.good()) {
+        cout << "can not open file: " << bFile.c_str() << endl;
+        return;
+    }
+
+    /*string name = object_name.substr(0, idx);
+    luint32_t sz = name.size();
+    out.write((char *)&sz, 4);
+    out.write(name.c_str(), sz);*/
+
+    bool is_static = false;
+    luint32_t sz = this->funcs.size();
+    out.write((char *)&sz, 4);
+    for (auto &it : funcs) {
+        sz = it.first.size();
+        out.write((char *)&sz, 4);
+        out.write(it.first.c_str(), sz);
+        is_static = it.second.is_static;
+
+        out.write((char *)&is_static, 1);
+        out.write((char *)&it.second.nparams, 2);
+        out.write((char *)&it.second.nlocals, 2);
+        out.write((char *)&it.second.fromPc, 4);
+        out.write((char *)&it.second.toPc, 4);
+
+        // TODO closure
+    }
+
+    sz = this->locals[object_name].size();
+    out.write((char *)&sz, 4);
+    for (auto &it : locals[object_name]) {
+        is_static = it.is_static;
+        out.write((char *)&is_static, 1);
+    }
+
+    sz = this->intConsts.size();
+    out.write((char *)&sz, 4);
+    for (auto &it : intConsts) {
+        out.write((char *)&it, 4);
+    }
+
+    sz = this->floatConsts.size();
+    out.write((char *)&sz, 4);
+    for (auto &it : floatConsts) {
+        out.write((char *)&it, 4);
+    }
+
+    sz = this->stringConsts.size();
+    out.write((char *)&sz, 4);
+    for (auto &it : stringConsts) {
+        sz = it.size();
+        out.write((char *)&sz, 4);
+        out.write(it.c_str(), sz);
+    }
+
+    bool hasClazz = this->clazz.empty();
+    out.write((char *)&hasClazz, 1);
+
+    if (!hasClazz) {
+        sz = this->clazz.size();
+        out.write((char *)&sz, 4);
+        for (auto &it : this->clazz) {
+            is_static = it.is_static;
+            out.write((char *)&is_static, 1);
+            out.write((char *)&it.nfields, 4);
+        }
+    }
+
+    sz = this->var_init_codes.size();
+    out.write((char *)&sz, 4);
+    out.write(var_init_codes.data(), sz);
+
+    sz = this->opcodes.size();
+    out.write((char *)&sz, 4);
+    out.write(opcodes.data(), sz);
 }

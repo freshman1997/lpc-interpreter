@@ -24,14 +24,14 @@ void vm::eval(lpc_vm_t *lvm)
         case OpCode::op_push: {
             lpc_value_t *v = sk->get(0);
             v->type = value_type::int_;
-            v->val.number = 100;
+            v->pval.number = 100;
             sk->push(v);
             break;
         }
         case OpCode::op_load_const: {
             lpc_value_t *v = sk->get(1);
             v->type = value_type::int_;
-            v->val.number = 200;
+            v->pval.number = 200;
             sk->push(v);
             break;
         }
@@ -40,8 +40,8 @@ void vm::eval(lpc_vm_t *lvm)
             lpc_value_t *v2 = sk->pop();
             lpc_value_t *v3 = sk->get(2);
             v3->type = value_type::int_;
-            v3->val.number = v1->val.number + v2->val.number;
-            std::cout << "numbers: " << v1->val.number << ", " << v2->val.number << ", " << v3->val.number << std::endl;
+            v3->pval.number = v1->pval.number + v2->pval.number;
+            std::cout << "numbers: " << v1->pval.number << ", " << v2->pval.number << ", " << v3->pval.number << std::endl;
             sk->push(v3);
             return;
         }

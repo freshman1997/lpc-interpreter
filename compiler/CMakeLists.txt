@@ -5,6 +5,8 @@ project(lpc_compiler)
 include_directories(include)
 aux_source_directory(./src SRC)
 
+add_definitions("-Wall -fpermissive")
+
 if(UNIX)
 	message("current platform: Linux ")
     add_compile_definitions(LUNIX)

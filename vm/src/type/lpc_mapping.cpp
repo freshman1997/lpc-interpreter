@@ -9,9 +9,9 @@ extern int hash_pointer(int x);
 
 int lpc_mapping_t::calc_hash(lpc_value_t *val)
 {
-    if (val->type == value_type::string_) return hash_(val->val.str->get_str());
+    if (val->type == value_type::string_) return hash_(val->gcobj->str->get_str());
     else if (val->type == value_type::int_ || val->type == value_type::float_) {
-        return hash_pointer(val->val.number);
+        return hash_pointer(val->pval.number);
     } else {
         return 0;
     }
@@ -38,7 +38,7 @@ bucket_t * lpc_mapping_t::get(lpc_value_t *k)
     while (b->next) {
         if (k->type == value_type::int_ || k->type == value_type::float_) {
             if (b->pair.key->type == value_type::int_ || b->pair.key->type == value_type::float_) {
-                if (b->pair.key->val.number != k->val.number) {
+                if (b->pair.key->pval.number != k->pval.number) {
                     b = b->next;
                 } else {
                     target = b;
@@ -47,7 +47,7 @@ bucket_t * lpc_mapping_t::get(lpc_value_t *k)
             }
         } else if (k->type == value_type::string_ && b->pair.key->type == value_type::string_)
         {
-            if (k->val.str->get_hash() != b->pair.key->val.str->get_hash()) {
+            if (k->gcobj->str->get_hash() != b->pair.key->gcobj->str->get_hash()) {
                 b = b->next;
             } else {
                 target = b;
@@ -65,7 +65,7 @@ void lpc_mapping_t::set(lpc_value_t *k, lpc_value_t *v)
 {
     bucket_t *found = get(k);
     if (found->pair.key) {
-        bucket_t *b = (bucket_t *)gc->allocate(sizeof(bucket_t));
+        bucket_t *b = new bucket_t;
         b->pair.key = k;
         b->pair.val = v;
         found->next = b;
@@ -90,7 +90,7 @@ void lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v)
         }
 
         if (b->pair.key) {
-            bucket_t *node = (bucket_t *)gc->allocate(sizeof(bucket_t));
+            bucket_t *node = new bucket_t;
             node->pair.key = k;
             node->pair.val = v;
             b->next = node;
@@ -112,7 +112,7 @@ void lpc_mapping_t::remove(lpc_value_t *k)
     while (b->next) {
         if (k->type == value_type::int_ || k->type == value_type::float_) {
             if (b->pair.key->type == value_type::int_ || b->pair.key->type == value_type::float_) {
-                if (b->pair.key->val.number != k->val.number) {
+                if (b->pair.key->pval.number != k->pval.number) {
                     b = b->next;
                 } else {
                     if (pre) {
@@ -127,7 +127,7 @@ void lpc_mapping_t::remove(lpc_value_t *k)
             }
         } else if (k->type == value_type::string_ && b->pair.key->type == value_type::string_)
         {
-            if (k->val.str->get_hash() != b->pair.key->val.str->get_hash()) {
+            if (k->gcobj->str->get_hash() != b->pair.key->gcobj->str->get_hash()) {
                 b = b->next;
             } else {
                 if (pre) {
