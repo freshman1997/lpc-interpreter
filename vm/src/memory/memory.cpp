@@ -18,6 +18,7 @@ lpc_mapping_t * lpc_allocator_t::allocate_mapping()
 {
     lpc_mapping_t *map = (lpc_mapping_t *)vm->get_gc()->allocate(sizeof(lpc_mapping_t));
     new(map)lpc_mapping_t(vm->get_gc());
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(map), value_type::mappig_);
     return map;
 }
 
@@ -25,6 +26,7 @@ lpc_object_t * lpc_allocator_t::allocate_object()
 {
     lpc_object_t *obj = (lpc_object_t *)vm->get_gc()->allocate(sizeof(lpc_object_t));
     new(obj)lpc_object_t();
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(obj), value_type::object_);
     return obj;
 }
 
@@ -32,6 +34,7 @@ object_proto_t * lpc_allocator_t::allocate_object_proto()
 {
     object_proto_t *proto = (object_proto_t *)vm->get_gc()->allocate(sizeof(object_proto_t));
     new(proto)object_proto_t();
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(proto), value_type::proto_);
     return proto;
 }
 

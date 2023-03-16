@@ -22,9 +22,9 @@ private:
     const char *name = nullptr;
     int hash = 0;
     int no = 0;
-    object_proto_t *proto = nullptr;
-    const char *pc = nullptr;
 
+    lpc_value_t *locals;
+    object_proto_t *proto = nullptr;
 };
 
 #endif

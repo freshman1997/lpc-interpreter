@@ -1396,9 +1396,9 @@ void CodeGenerator::dump()
 
     sz = this->var_init_codes.size();
     out.write((char *)&sz, 4);
-    out.write(var_init_codes.data(), sz);
+    out.write(reinterpret_cast<char *>(var_init_codes.data()), sz);
 
     sz = this->opcodes.size();
     out.write((char *)&sz, 4);
-    out.write(opcodes.data(), sz);
+    out.write(reinterpret_cast<char *>(opcodes.data()), sz);
 }

@@ -79,9 +79,6 @@ enum class OpCode
 
     op_goto,                    // 一个参数，4个字节
 
-    op_enter_block,             // for for loop, foreach loop block
-    op_exit_block,
-
     op_switch_select,
     op_switch,                  // TODO  table switch implement
 

@@ -16,11 +16,52 @@ void vm::eval(lpc_vm_t *lvm)
     call_info_t *ci = lvm->get_call_info();
     lpc_stack_t *sk = lvm->get_stack();
     const char *sp = ci->savepc;
+    ci->base = sk->top();
+    
 
     for(;;) {
         OpCode op = (OpCode)*(sp++);
         switch (op)
         {
+        case OpCode::op_load_global: {
+
+            break;
+        }
+        case OpCode::op_load_local: {
+            lint16_t idx = *(sp + 1) | *(sp + 1);
+            sk->push(ci->base + idx);
+            sp += 2;
+            break;
+        }
+
+        case OpCode::op_load_iconst: {
+            lint16_t idx = *(sp + 1) | *(sp + 1);
+            lpc_value_t *val = sk->top();
+            val->type = value_type::int_;
+            val->pval.number = ci->cur_obj->get_proto()->iconst[idx].item.number;
+            sk->push(val);
+            sp += 2;
+            break;
+        }
+        case OpCode::op_load_fconst: {
+
+            break;
+        }
+        case OpCode::op_load_sconst: {
+
+            break;
+        }
+
+
+        case OpCode::op_load_0: {
+
+            break;
+        }
+        case OpCode::op_load_1: {
+
+            break;
+        }
+
         case OpCode::op_push: {
             lpc_value_t *v = sk->get(0);
             v->type = value_type::int_;
@@ -28,13 +69,11 @@ void vm::eval(lpc_vm_t *lvm)
             sk->push(v);
             break;
         }
-        case OpCode::op_load_const: {
-            lpc_value_t *v = sk->get(1);
-            v->type = value_type::int_;
-            v->pval.number = 200;
-            sk->push(v);
+        case OpCode::op_pop: {
+
             break;
         }
+
         case OpCode::op_add: {
             lpc_value_t *v1 = sk->pop();
             lpc_value_t *v2 = sk->pop();
@@ -45,6 +84,239 @@ void vm::eval(lpc_vm_t *lvm)
             sk->push(v3);
             return;
         }
+        case OpCode::op_sub: {
+
+            break;
+        }
+        case OpCode::op_mul: {
+
+            break;
+        }
+        case OpCode::op_div: {
+
+            break;
+        }
+        case OpCode::op_mod: {
+
+            break;
+        }
+
+        case OpCode::op_binary_lm: {
+
+            break;
+        }
+        case OpCode::op_binary_rm: {
+
+            break;
+        }
+        case OpCode::op_binary_and: {
+
+            break;
+        }
+        case OpCode::op_binary_or: {
+
+            break;
+        }
+        case OpCode::op_binary_not: {
+
+            break;
+        }
+        case OpCode::op_binary_xor: {
+
+            break;
+        }
+
+
+        case OpCode::op_inc: {
+
+            break;
+        }
+        case OpCode::op_dec: {
+
+            break;
+        }
+        case OpCode::op_minus: {
+
+            break;
+        }
+
+
+        case OpCode::op_assign: {
+            lpc_value_t *val1 = sk->pop();
+            lpc_value_t *val2 = sk->pop();
+            sk->push(val2);
+            break;
+        }
+        case OpCode::op_add_assign: {
+            lpc_value_t *val1 = sk->pop();
+            lpc_value_t *val2 = sk->pop();
+            if (val1->type == value_type::int_ && val2->type == value_type::int_) {
+
+            }
+            sk->push(val1);
+            break;
+        }
+        case OpCode::op_sub_assign: {
+
+            break;
+        }
+        case OpCode::op_mul_assign: {
+
+            break;
+        }
+        case OpCode::op_div_assign: {
+
+            break;
+        }
+        case OpCode::op_mod_assign: {
+
+            break;
+        }
+        case OpCode::op_binary_lm_assign: {
+
+            break;
+        }
+        case OpCode::op_binary_rm_assign: {
+
+            break;
+        }
+        case OpCode::op_binary_and_assign: {
+
+            break;
+        }
+        case OpCode::op_binary_or_assign: {
+
+            break;
+        }
+        case OpCode::op_binary_xor_assign: {
+
+            break;
+        }
+
+
+        case OpCode::op_cmp_and: {
+
+            break;
+        }
+        case OpCode::op_cmp_or: {
+
+            break;
+        }
+        case OpCode::op_cmp_not: {
+
+            break;
+        }
+        case OpCode::op_cmp_eq: {
+
+            break;
+        }
+        case OpCode::op_cmp_neq: {
+
+            break;
+        }
+        case OpCode::op_cmp_gt: {
+
+            break;
+        }
+        case OpCode::op_cmp_gte: {
+
+            break;
+        }
+        case OpCode::op_cmp_lt: {
+
+            break;
+        }
+        case OpCode::op_cmp_lte: {
+
+            break;
+        }
+
+
+        case OpCode::op_or: {
+
+            break;
+        }
+        case OpCode::op_pointor: {
+
+            break;
+        }
+
+        case OpCode::op_test: {
+
+            break;
+        }
+
+        case OpCode::op_index: {
+
+            break;
+        }
+        case OpCode::op_new_array: {
+
+            break;
+        }
+        case OpCode::op_sub_arr: {
+
+            break;
+        }
+        case OpCode::op_new_mapping: {
+
+            break;
+        }
+        case OpCode::op_upset: {
+
+            break;
+        }
+
+        case OpCode::op_call: {
+
+            break;
+        }
+        case OpCode::op_return: {
+
+            break;
+        }
+        case OpCode::op_set_upvalue: {
+
+            break;
+        }
+        case OpCode::op_get_upvalue: {
+
+            break;
+        }
+        case OpCode::op_new_class: {
+
+            break;
+        }
+        case OpCode::op_set_class_field: {
+
+            break;
+        }
+        case OpCode::op_goto: {
+
+            break;
+        }
+        case OpCode::op_switch_select: {
+
+            break;
+        }
+        case OpCode::op_switch: {
+
+            break;
+        }
+
+        case OpCode::op_foreach_step1: {
+
+            break;
+        }
+        case OpCode::op_foreach_step2: {
+
+            break;
+        }
+        case OpCode::op_foreach_step3: {
+
+            break;
+        }
+
         
         default:
             break;

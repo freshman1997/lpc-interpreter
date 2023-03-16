@@ -20,6 +20,11 @@ public:
         msg = new mark_sweep_gc();
     }
 
+    void link(lpc_gc_object_t *gcobj, value_type type) 
+    {
+        msg->link(gcobj, type);
+    }
+
 private:
     mark_sweep_gc *msg;
 };

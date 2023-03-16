@@ -6,7 +6,9 @@ enum class OpCode
     op_load_global,
     op_load_local,
 
-    op_load_const,
+    op_load_iconst,
+    op_load_fconst,
+    op_load_sconst,
     op_load_0,                  // for false, 0 
     op_load_1,                  // for true
 
@@ -28,6 +30,7 @@ enum class OpCode
 
     op_inc,
     op_dec,
+    op_minus,
 
     op_assign,
     op_add_assign,
@@ -41,10 +44,20 @@ enum class OpCode
     op_binary_or_assign,
     op_binary_xor_assign,
 
-    op_pointor,                 // ->
-    op_dup,                     // copy ref
+    op_cmp_and,
+    op_cmp_or,
+    op_cmp_not,
+    op_cmp_eq,
+    op_cmp_neq,
+    op_cmp_gt,
+    op_cmp_gte,
+    op_cmp_lt,
+    op_cmp_lte,
 
-    op_test,
+    op_or,
+    op_pointor,                 // ->
+
+    op_test,                    // 一个参数，4个字节
 
     op_index,
 
@@ -52,7 +65,7 @@ enum class OpCode
     op_sub_arr,
 
     op_new_mapping,
-    op_get_or_set_mapping,      // 参数：1、不存在则插入，2、获取并入栈
+    op_upset,                   // 参数：1、不存在则插入，2、获取并入栈
 
     op_call,                    // 参数：1、efun，2、sfun，3、local
 
@@ -62,11 +75,9 @@ enum class OpCode
     op_get_upvalue,
 
     op_new_class,
+    op_set_class_field,         // h->id
 
-    op_goto,
-
-    op_enter_block,             // for for loop, foreach loop block
-    op_exit_block,
+    op_goto,                    // 一个参数，4个字节
 
     op_switch_select,
     op_switch,                  // TODO  table switch implement

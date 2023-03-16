@@ -54,6 +54,8 @@ public:
     lpc_function_detail * get_decl();
     lpc_function_component * get_component();
 
+    lpc_value_t *locals;
+
 private:
     lpc_function_detail decl;
     lpc_function_component f;

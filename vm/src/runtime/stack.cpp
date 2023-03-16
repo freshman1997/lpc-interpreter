@@ -24,7 +24,7 @@ lpc_value_t * lpc_stack_t::get(int idx)
 
 lpc_value_t * lpc_stack_t::top()
 {
-    return this->get(0);
+    return this->get(idx);
 }
 
 lpc_value_t * lpc_stack_t::pop()

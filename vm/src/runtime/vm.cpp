@@ -1,6 +1,7 @@
 ﻿#include <string>
 #include <fstream>
 
+#include "lpc_value.h"
 #include "runtime/vm.h"
 #include "runtime/stack.h"
 #include "type/lpc_proto.h"
@@ -153,14 +154,16 @@ lpc_vm_t::lpc_vm_t()
     this->gc = new lpc_gc_t;
     entry = "1";
     call_info_t *ci = new call_info_t;
-    ci->savepc = "\x05\x02\x07";
     ci->base = stack->top();
     ci->cur_obj = load_object(entry);
 
+    // TODO 设置开始执行的位置、给全局变量赋值啥的
+    ci->savepc = ci->cur_obj->get_pc();
+
     this->ci = ci;
     this->cur_ci = ci;
-    sfun_object_name = "rc/simulate/main.c";
-    this->sfun_obj = load_object(sfun_object_name);
+    //sfun_object_name = "rc/simulate/main.c";
+    //this->sfun_obj = load_object(sfun_object_name);
 }
 
 lpc_vm_t * lpc_vm_t::create_vm()
