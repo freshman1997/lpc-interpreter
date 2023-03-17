@@ -51,7 +51,7 @@ class CodeGenerator
 public:
     void generate(AbstractExpression *);
 
-    void generate_decl(AbstractExpression *, bool);
+    void generate_decl(AbstractExpression *);
     void generate_unop(AbstractExpression *);
     void generate_binary(AbstractExpression *);
     void generate_if_else(AbstractExpression *, lint32_t forContinue, std::vector<lint32_t> &forBreaks);

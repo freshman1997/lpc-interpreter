@@ -5,10 +5,16 @@ enum class OpCode
 {
     op_load_global,
     op_load_local,
+    op_store_global,
+    op_store_local,
+
+    op_load_class_field,
+    op_store_class_field,
 
     op_load_iconst,
     op_load_fconst,
     op_load_sconst,
+    
     op_load_0,                  // for false, 0 
     op_load_1,                  // for true
 
@@ -31,18 +37,6 @@ enum class OpCode
     op_inc,
     op_dec,
     op_minus,
-
-    op_assign,
-    op_add_assign,
-    op_sub_assign,
-    op_mul_assign,
-    op_div_assign,
-    op_mod_assign,
-    op_binary_lm_assign,
-    op_binary_rm_assign,
-    op_binary_and_assign,
-    op_binary_or_assign,
-    op_binary_xor_assign,
 
     op_cmp_and,
     op_cmp_or,

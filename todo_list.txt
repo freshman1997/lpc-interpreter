@@ -7,3 +7,32 @@
 7、gc 未设计
 
 
+mapping test()
+{
+    return {};
+}
+
+void add()
+{
+    int a = 10;
+    int b = 20;
+    mapping aa = {};
+
+    aa[12] = 100;
+}
+
+new_mapping
+return
+
+load_iconst 0
+store_local 0
+load_iconst 1
+store_local 1
+new_mapping
+store_local 2
+
+op_load_local 2
+load_iconst 2
+load_iconst 3
+op_upset
+

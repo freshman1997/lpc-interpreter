@@ -56,8 +56,8 @@ static lint16_t find_fun_idx(const string &name, int type)
             intConsts.push_back(val->val.ival); \
         } \
         \
-        opcodes.push_back((luint8_t)(OpCode::op_load_iconst)); \
-        LOAD_IDX_2(opcodes, idx) \
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_iconst)); \
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx) \
     } else if (val->valType == 1) { \
         lint16_t idx = find_const<lfloat32_t>(val->val.dval, floatConsts); \
         if (idx < 0) { \
@@ -65,8 +65,8 @@ static lint16_t find_fun_idx(const string &name, int type)
             intConsts.push_back(val->val.dval); \
         } \
         \
-        opcodes.push_back((luint8_t)(OpCode::op_load_fconst)); \
-        LOAD_IDX_2(opcodes, idx) \
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_fconst)); \
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx) \
     } else if (val->valType == 2) { \
         /* TODO optimize */ \
         lint16_t idx = find_const<string>(val->val.sval->strval, stringConsts); \
@@ -75,13 +75,13 @@ static lint16_t find_fun_idx(const string &name, int type)
             stringConsts.push_back(val->val.sval->strval); \
         } \
         \
-        opcodes.push_back((luint8_t)(OpCode::op_load_sconst)); \
-        LOAD_IDX_2(opcodes, idx) \
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_sconst)); \
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx) \
     } else if (val->valType == 3) { \
         if (val->val.ival) { \
-            opcodes.push_back((luint8_t)(OpCode::op_load_1)); \
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_1)); \
         } else { \
-            opcodes.push_back((luint8_t)(OpCode::op_load_0)); \
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_0)); \
         } \
     } else if (val->valType == 4) { \
         if (vType == DeclType::user_define_) { \
@@ -93,8 +93,8 @@ static lint16_t find_fun_idx(const string &name, int type)
                 stringConsts.push_back(val->val.sval->strval); \
             } \
             \
-            opcodes.push_back((luint8_t)(OpCode::op_load_sconst)); \
-            LOAD_IDX_2(opcodes, idx) \
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_sconst)); \
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx) \
         } else { \
             lint16_t idx = find_local_idx(val->val.sval->strval, scopeLocals); \
             Local *loc = nullptr; \
@@ -104,13 +104,13 @@ static lint16_t find_fun_idx(const string &name, int type)
                     /* TODO undefine identifier */ error_at(__LINE__); \
                 } \
                 loc = &locals[object_name][idx]; \
-                opcodes.push_back((luint8_t)(OpCode::op_load_global)); \
+                (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_global)); \
             } else {\
                 loc = &scopeLocals[idx]; \
                 if (object_name != cur_scope) { \
-                    opcodes.push_back((luint8_t)(OpCode::op_load_local)); \
+                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_local)); \
                 } else { \
-                    opcodes.push_back((luint8_t)(OpCode::op_load_global)); \
+                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_global)); \
                 } \
             } \
             \
@@ -118,7 +118,7 @@ static lint16_t find_fun_idx(const string &name, int type)
                 /* TODO 类型不匹配 */ error_at(__LINE__);\
             } \
             \
-            LOAD_IDX_2(opcodes, idx) \
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx) \
         } \
     }
 
@@ -145,7 +145,7 @@ static lint16_t find_fun_idx(const string &name, int type)
     for (auto &it : body) { \
         switch (it->get_type()) { \
             case ExpressionType::var_decl_: { \
-                generate_decl(it, false); \
+                generate_decl(it); \
                 break; \
             } \
             case ExpressionType::oper_: { \
@@ -192,7 +192,7 @@ static lint16_t find_fun_idx(const string &name, int type)
             case ExpressionType::continue_: { \
                 push_code((luint8_t)(OpCode::op_goto)); \
                 if (cons != nullptr) { \
-                    cons->push_back(opcodes.size()); \
+                    cons->push_back((on_var_decl ? var_init_codes : opcodes).size()); \
                 } \
                 const char *idx2char = nullptr; \
                 LOAD_IDX_4(codes(), forContinue) \
@@ -204,10 +204,6 @@ static lint16_t find_fun_idx(const string &name, int type)
             } \
             \
             case ExpressionType::return_: { \
-                Func *fun = &get_funcs()[cur_scope]; \
-                if (fun->retType == DeclType::void_) { \
-                    error_at(__LINE__); \
-                } \
                 generate_return(it); \
                 break; \
             } \
@@ -260,7 +256,7 @@ void CodeGenerator::generate(AbstractExpression *exp)
         switch (it->get_type()) {
             case ExpressionType::var_decl_: {
                 on_var_decl = true;
-                generate_decl(it, false);
+                generate_decl(it);
                 break;
             }
             case ExpressionType::oper_: {
@@ -308,19 +304,19 @@ void CodeGenerator::generate_unop(AbstractExpression *exp)
     GENERATE_OP(uop->exp, DeclType::none_)
 
     if (uop->op == TokenKind::k_oper_minus) {
-        opcodes.push_back((luint8_t)(OpCode::op_minus));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_minus));
     } else if (uop->op == TokenKind::k_oper_sub_sub) {
-        opcodes.push_back((luint8_t)(OpCode::op_dec));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_dec));
     } else if (uop->op == TokenKind::k_oper_plus_plus) {
-        opcodes.push_back((luint8_t)(OpCode::op_inc));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_inc));
     } else if (uop->op == TokenKind::k_cmp_not) {
-        opcodes.push_back((luint8_t)(OpCode::op_cmp_not));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_cmp_not));
     } else {
         error_at(__LINE__);
     }
 }
 
-void CodeGenerator::generate_decl(AbstractExpression *exp, bool gen)
+void CodeGenerator::generate_decl(AbstractExpression *exp)
 {
     VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(exp);
     if (on_var_decl) {
@@ -332,12 +328,6 @@ void CodeGenerator::generate_decl(AbstractExpression *exp, bool gen)
 
         idx = (lint16_t)locals[object_name].size();
         locals[object_name].push_back({var->is_static, var->dtype, var->name, false, idx, var->is_arr, var->user_define_type});
-
-        if (gen) {
-            idx = (lint16_t)locals[object_name].size();
-            var_init_codes.push_back((luint8_t)(OpCode::op_load_global));
-            LOAD_IDX_2(var_init_codes, idx)
-        }
     } else {
         lint16_t idx = find_local_idx(var->name->strval, locals[object_name]);
         if (idx >= 0) {
@@ -354,11 +344,6 @@ void CodeGenerator::generate_decl(AbstractExpression *exp, bool gen)
 
         idx = (lint16_t)scopeLocals.size();
         scopeLocals.push_back({var->is_static, var->dtype, var->name, false, idx, var->is_arr,var->user_define_type});
-
-        if (gen) {
-            opcodes.push_back((luint8_t)(OpCode::op_load_local));
-            LOAD_IDX_2(opcodes, idx)
-        }
     }
 }
 
@@ -455,12 +440,12 @@ static AbstractExpression * calc_const(BinaryExpression *bin)
 }
 
 static std::unordered_map<TokenKind, OpCode> op2code = {
-    {TokenKind::k_oper_assign, OpCode::op_assign},
-    {TokenKind::k_oper_plus_assign, OpCode::op_add_assign},
-    {TokenKind::k_oper_minus_assign, OpCode::op_sub_assign},
-    {TokenKind::k_oper_mul_assign, OpCode::op_mul_assign},
-    {TokenKind::k_oper_div_assign, OpCode::op_div_assign},
-    {TokenKind::k_oper_mod_assign, OpCode::op_mod_assign},
+    {TokenKind::k_oper_assign, OpCode::op_load_fconst},
+    {TokenKind::k_oper_plus_assign, OpCode::op_load_fconst},
+    {TokenKind::k_oper_minus_assign, OpCode::op_load_fconst},
+    {TokenKind::k_oper_mul_assign, OpCode::op_load_fconst},
+    {TokenKind::k_oper_div_assign, OpCode::op_load_fconst},
+    {TokenKind::k_oper_mod_assign, OpCode::op_load_fconst},
     
     {TokenKind::k_cmp_or, OpCode::op_cmp_or},
     {TokenKind::k_cmp_and, OpCode::op_cmp_and},
@@ -498,7 +483,7 @@ static std::set<TokenKind> assignSet = {
     TokenKind::k_oper_mod_assign,
 };
 
-#define CTOR(exp) \
+#define CTOR(exp, con) \
     ConstructExpression *ctor = dynamic_cast<ConstructExpression *>(exp); \
     lint32_t count = 0; \
     for (auto &it : ctor->body) { \
@@ -511,17 +496,48 @@ static std::set<TokenKind> assignSet = {
         if (count % 2 != 0) { \
             error_at(__LINE__); \
         } \
-        opcodes.push_back((luint8_t)(OpCode::op_new_mapping)); \
+        con.push_back((luint8_t)(OpCode::op_new_mapping)); \
     } else { \
-        opcodes.push_back((luint8_t)(OpCode::op_new_array)); \
+        con.push_back((luint8_t)(OpCode::op_new_array)); \
     } \
     \
-    LOAD_IDX_4(opcodes, count)
+    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), count)
 
+#define LHS(op) \
+    if (bin->l->get_type() == ExpressionType::index_) { \
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_upset); \
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)op); \
+    } else { \
+        ValueExpression *val = dynamic_cast<ValueExpression *>(bin->l); \
+        if (val->valType != 4) { \
+            error_at(__LINE__); \
+        } \
+         \
+        lint16_t idx = find_local_idx(val->val.sval->strval, scopeLocals); \
+        if (idx < 0) { \
+            idx = find_local_idx(val->val.sval->strval, locals[object_name]); \
+            if (idx < 0) { \
+                error_at(__LINE__); \
+            } \
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_load_global); \
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx) \
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)op); \
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_global); \
+        } else { \
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_load_local); \
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx) \
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)op); \
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_local); \
+        } \
+    }
 // 怎么做常量折叠　？
 void CodeGenerator::generate_binary(AbstractExpression *exp)
 {
     BinaryExpression *bin = dynamic_cast<BinaryExpression *>(exp);
+    if (on_var_decl && bin->oper != TokenKind::k_oper_assign) {
+        error_at(__LINE__);
+    }
+
     vector<Local> &scopeLocals = locals[cur_scope];
     // 条件、赋值
     if (constFold.count(bin->oper)) {
@@ -541,7 +557,7 @@ void CodeGenerator::generate_binary(AbstractExpression *exp)
 
     // 变量声明一定是在左边
     if (left->get_type() == ExpressionType::var_decl_) {
-        generate_decl(left, true);
+        generate_decl(left);
     } else {
         // 给标识符、函数调用、下标索引（mapping、array）登赋值的
         if (bin->oper != TokenKind::k_oper_assign && assignSet.count(bin->oper)) {
@@ -569,7 +585,7 @@ void CodeGenerator::generate_binary(AbstractExpression *exp)
         }
 
         if (left->get_type() == ExpressionType::construct_) {
-            CTOR(left)
+            CTOR(left, (on_var_decl ? var_init_codes : opcodes))
         } else {
             GENERATE_OP(left, DeclType::none_)
         }
@@ -627,8 +643,8 @@ void CodeGenerator::generate_binary(AbstractExpression *exp)
                             error_at(__LINE__);
                         }
 
-                        opcodes.push_back((luint8_t)(OpCode::op_set_class_field));
-                        LOAD_IDX_2(opcodes, idx)
+                        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_set_class_field));
+                        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
                         return;
                     } else if (loc->type != DeclType::object_) {
                         error_at(__LINE__);
@@ -649,7 +665,7 @@ void CodeGenerator::generate_binary(AbstractExpression *exp)
     }
 
     if (right->get_type() == ExpressionType::construct_) {
-        CTOR(right)
+        CTOR(right, (on_var_decl ? var_init_codes : opcodes))
     } else if (right->get_type() == ExpressionType::new_) {
         if (bin->oper != TokenKind::k_oper_assign) {
             error_at(__LINE__);
@@ -663,16 +679,70 @@ void CodeGenerator::generate_binary(AbstractExpression *exp)
             error_at(__LINE__);
         }
 
-        opcodes.push_back((luint8_t)(OpCode::op_new_class));
-        LOAD_IDX_2(opcodes, idx)
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_new_class));
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
     } else {
         GENERATE_OP(right, dtype)
     }
 
+    if (bin->l->get_type() == ExpressionType::value_ || bin->l->get_type() == ExpressionType::index_) {
+        switch (bin->oper)
+        {
+        case TokenKind::k_oper_assign:
+            if (bin->l->get_type() == ExpressionType::index_) {
+                (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_upset);
+                (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)0);
+            } else {
+                ValueExpression *val = dynamic_cast<ValueExpression *>(bin->l);
+                if (val->valType != 4) {
+                    error_at(__LINE__);
+                }
+
+                lint16_t idx = find_local_idx(val->val.sval->strval, scopeLocals);
+                if (idx < 0) {
+                    idx = find_local_idx(val->val.sval->strval, locals[object_name]);
+                    if (idx < 0) {
+                        error_at(__LINE__);
+                    }
+                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_global);
+                } else {
+                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_local);
+                }
+                LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
+            }
+            break;
+        case TokenKind::k_oper_plus_assign:
+            LHS(OpCode::op_add)
+            break;
+        case TokenKind::k_oper_minus_assign:
+            LHS(OpCode::op_minus)
+            break;
+        case TokenKind::k_oper_mul_assign:
+            LHS(OpCode::op_mul)
+            break;
+        case TokenKind::k_oper_div_assign:
+            LHS(OpCode::op_div)
+            break;
+        case TokenKind::k_oper_mod_assign:
+            LHS(OpCode::op_mod)
+            break;
+        default: break;
+        }
+
+        return;
+    }
+
     if (on_var_decl) {
-        var_init_codes.push_back((luint8_t)(op2code[bin->oper]));
+        var_init_codes.push_back((luint8_t)OpCode::op_store_global);
+        VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(bin->l);
+        lint16_t idx = find_local_idx(var->name->strval, locals[object_name]);
+        if (idx < 0) {
+            error_at(__LINE__);
+        }
+        LOAD_IDX_2(var_init_codes, idx)
+        on_var_decl = false;
     } else {
-        opcodes.push_back((luint8_t)(op2code[bin->oper]));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(op2code[bin->oper]));
     }
 }
 
@@ -695,16 +765,16 @@ void CodeGenerator::generate_if_else(AbstractExpression *exp, lint32_t forContin
 
             ++type0;
             GENERATE_OP(it.cond, DeclType::none_)
-            opcodes.push_back((luint8_t)(OpCode::op_test));
-            goto1 = opcodes.size();
-            LOAD_IDX_4(opcodes, goto1)
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_test));
+            goto1 = (on_var_decl ? var_init_codes : opcodes).size();
+            LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), goto1)
             
             GENERATE_BODY(it.body, p)
 
-            lint32_t t = opcodes.size();
+            lint32_t t = (on_var_decl ? var_init_codes : opcodes).size();
             idx2char = (const char *)&t;
             for (int i = 0; i < 4; ++i) {
-                opcodes[goto2 + i] = idx2char[i];
+                (on_var_decl ? var_init_codes : opcodes)[goto2 + i] = idx2char[i];
             }
         } else if (it.type == 1) {
             if (type0 == 0 || type0 > 1) {
@@ -713,15 +783,15 @@ void CodeGenerator::generate_if_else(AbstractExpression *exp, lint32_t forContin
 
             ++type1;
             GENERATE_OP(it.cond, DeclType::none_)
-            opcodes.push_back((luint8_t)(OpCode::op_test));
-            goto2 = opcodes.size();
-            LOAD_IDX_4(opcodes, goto2)
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_test));
+            goto2 = (on_var_decl ? var_init_codes : opcodes).size();
+            LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), goto2)
             GENERATE_BODY(it.body, p)
 
-            lint32_t t = opcodes.size();
+            lint32_t t = (on_var_decl ? var_init_codes : opcodes).size();
             idx2char = (const char *)&t;
             for (int i = 0; i < 4; ++i) {
-                opcodes[goto2 + i] = idx2char[i];
+                (on_var_decl ? var_init_codes : opcodes)[goto2 + i] = idx2char[i];
             }
         } else if (it.type == 2) {
             if (type0 == 0 || type0 > 1 || type2 > 1) {
@@ -740,29 +810,29 @@ void CodeGenerator::generate_triple(AbstractExpression *exp)
 {
     TripleExpression *tri = dynamic_cast<TripleExpression *>(exp);
     GENERATE_OP(tri->cond, DeclType::none_)
-    opcodes.push_back((luint8_t)(OpCode::op_test));
-    lint32_t second = opcodes.size() + 4, end = 0;
+    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_test));
+    lint32_t second = (on_var_decl ? var_init_codes : opcodes).size() + 4, end = 0;
     const char *idx2char = nullptr;
-    LOAD_IDX_4(opcodes, second)
+    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), second)
 
     GENERATE_OP(tri->first, DeclType::none_)
 
-    opcodes.push_back((luint8_t)(OpCode::op_goto));
-    end = opcodes.size();
-    LOAD_IDX_4(opcodes, end)
+    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_goto));
+    end = (on_var_decl ? var_init_codes : opcodes).size();
+    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), end)
 
-    lint32_t t = opcodes.size();
+    lint32_t t = (on_var_decl ? var_init_codes : opcodes).size();
     GENERATE_OP(tri->second, DeclType::none_)
 
     const char *arr = (const char *)&t;
     for (int i = 0; i < 4; i++) {
-        opcodes[second + i] = arr[i];
+        (on_var_decl ? var_init_codes : opcodes)[second + i] = arr[i];
     }
 
-    t = opcodes.size();
+    t = (on_var_decl ? var_init_codes : opcodes).size();
     arr = (const char *)&t;
     for (int i = 0; i < 4; i++) {
-        opcodes[end + i] = arr[i];
+        (on_var_decl ? var_init_codes : opcodes)[end + i] = arr[i];
     }
 }
 
@@ -771,7 +841,7 @@ void CodeGenerator::generate_for(AbstractExpression *exp)
     ForNormalExpression *forExp = dynamic_cast<ForNormalExpression *>(exp);
     for (auto &it : forExp->inits) {
         if (it->get_type() == ExpressionType::var_decl_) {
-            generate_decl(it, false);
+            generate_decl(it);
         } else if (it->get_type() == ExpressionType::oper_) {
             generate_binary(it);
         } else if (it->get_type() == ExpressionType::uop_) {
@@ -781,7 +851,7 @@ void CodeGenerator::generate_for(AbstractExpression *exp)
         }
     }
 
-    lint32_t forContinue = opcodes.size(), gotoEnd = 0;
+    lint32_t forContinue = (on_var_decl ? var_init_codes : opcodes).size(), gotoEnd = 0;
     vector<lint32_t> forBreaks;
     if (forExp->conditions.size() > 1) {
         error_at(__LINE__);
@@ -790,30 +860,30 @@ void CodeGenerator::generate_for(AbstractExpression *exp)
     if (!forExp->conditions.empty()) {
         AbstractExpression *cond = forExp->conditions.front();
         GENERATE_OP(cond, DeclType::none_)
-        opcodes.push_back((luint8_t)(OpCode::op_test));
-        gotoEnd = opcodes.size();
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_test));
+        gotoEnd = (on_var_decl ? var_init_codes : opcodes).size();
     }
 
     vector<lint32_t> *p = nullptr;
     GENERATE_BODY(forExp->body, p)
 
     // 跳回条件处
-    opcodes.push_back((luint8_t)(OpCode::op_goto));
+    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_goto));
     const char *idx2char = (const char *)(&forContinue);
-    LOAD_IDX_4(opcodes, forContinue)
+    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), forContinue)
 
-    lint32_t forBreak = opcodes.size();
+    lint32_t forBreak = (on_var_decl ? var_init_codes : opcodes).size();
     idx2char = (const char *)(&forBreak);
 
     // Note. 修正跳转的位置信息
     for (auto &it : forBreaks) {
         for (int i = 0; i < 4; ++i) {
-            opcodes[it + i] = idx2char[i];
+            (on_var_decl ? var_init_codes : opcodes)[it + i] = idx2char[i];
         }    
     }
 
     for (int i = 0; i < 4; ++i) {
-        opcodes[gotoEnd + i] = idx2char[i];
+        (on_var_decl ? var_init_codes : opcodes)[gotoEnd + i] = idx2char[i];
     } 
 }
 
@@ -831,13 +901,13 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
             error_at(__LINE__);
         }
 
-        generate_decl(it, false);
+        generate_decl(it);
     }
 
     GENERATE_OP(fe->container, DeclType::none_)
-    opcodes.push_back((luint8_t)(OpCode::op_foreach_step1));
+    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_foreach_step1));
 
-    lint32_t forContinue = opcodes.size();
+    lint32_t forContinue = (on_var_decl ? var_init_codes : opcodes).size();
 
     vector<Local> &scopeLocals = locals[cur_scope];
     lint8_t i = 0;
@@ -845,15 +915,15 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
         VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(it);
         lint16_t idx = find_local_idx(var->name->strval, scopeLocals);
         // 到这里，idx 不应该不存在
-        opcodes.push_back((luint8_t)(OpCode::op_load_local));
-        LOAD_IDX_2(opcodes, idx)
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_local));
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
 
         // load 起迭代器的第 i 个值
-        opcodes.push_back((luint8_t)(OpCode::op_foreach_step2));
-        opcodes.push_back((luint8_t)(i++));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_foreach_step2));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(i++));
 
         // 给上面的声明的变量赋值
-        opcodes.push_back((luint8_t)(OpCode::op_assign));
+        //(on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_assign));
     }
 
     vector<lint32_t> forBreaks;
@@ -861,16 +931,16 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
     GENERATE_BODY(fe->body, p)
 
     // 跳回赋值处
-    opcodes.push_back((luint8_t)(OpCode::op_goto));
+    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_goto));
     const char *idx2char = (const char *)(&forContinue);
-    LOAD_IDX_4(opcodes, forContinue)
+    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), forContinue)
 
-    lint32_t t = opcodes.size();
+    lint32_t t = (on_var_decl ? var_init_codes : opcodes).size();
     const char *idxCode = (const char *)&t;
     // Note. 修正跳转的位置信息
     for (auto &it : forBreaks) {
         for (int i = 0; i < 4; ++i) {
-            opcodes[it + i] = idxCode[i];
+            (on_var_decl ? var_init_codes : opcodes)[it + i] = idxCode[i];
         }    
     }
 }
@@ -878,66 +948,66 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
 void CodeGenerator::generate_while(AbstractExpression *exp)
 {
     whileExpression *w = dynamic_cast<whileExpression *>(exp);
-    lint32_t forContinue = opcodes.size();
+    lint32_t forContinue = (on_var_decl ? var_init_codes : opcodes).size();
     vector<lint32_t> forBreaks;
     GENERATE_OP(w->cond, DeclType::none_)
-    opcodes.push_back((luint8_t)(OpCode::op_test));
-    lint32_t gotoEnd = opcodes.size();
+    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_test));
+    lint32_t gotoEnd = (on_var_decl ? var_init_codes : opcodes).size();
 
     vector<lint32_t> *p = nullptr;
     GENERATE_BODY(w->body, p)
 
     // 跳回条件处
-    opcodes.push_back((luint8_t)(OpCode::op_goto));
+    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_goto));
     const char *idx2char = (const char *)(&forContinue);
-    LOAD_IDX_4(opcodes, forContinue)
+    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), forContinue)
 
-    lint32_t t = opcodes.size();
+    lint32_t t = (on_var_decl ? var_init_codes : opcodes).size();
     const char *idxCode = (const char *)&t;
     // Note. 修正跳转的位置信息
     for (auto &it : forBreaks) {
         for (int i = 0; i < 4; ++i) {
-            opcodes[it + i] = idxCode[i];
+            (on_var_decl ? var_init_codes : opcodes)[it + i] = idxCode[i];
         }    
     }
     
     for (int i = 0; i < 4; ++i) {
-        opcodes[gotoEnd + i] = idxCode[i];
+        (on_var_decl ? var_init_codes : opcodes)[gotoEnd + i] = idxCode[i];
     } 
 }
 
 void CodeGenerator::generate_do_while(AbstractExpression *exp)
 {
     DoWhileExpression *dw = dynamic_cast<DoWhileExpression *>(exp);
-    lint32_t forContinue = opcodes.size();
+    lint32_t forContinue = (on_var_decl ? var_init_codes : opcodes).size();
     vector<lint32_t> forBreaks;
     vector<lint32_t> forContinues;
     vector<lint32_t> *p = &forContinues;
-    lint32_t gotoBegin = opcodes.size();
+    lint32_t gotoBegin = (on_var_decl ? var_init_codes : opcodes).size();
     GENERATE_BODY(dw->body, p)
 
-    lint32_t gotoCond = opcodes.size();
+    lint32_t gotoCond = (on_var_decl ? var_init_codes : opcodes).size();
     GENERATE_OP(dw->cond, DeclType::none_)
 
     const char *idxCode = (const char *)&gotoCond;
     for (auto &it : forContinues) {
         for (int i = 0; i < 4; ++i) {
-            opcodes[it + i] = idxCode[i];
+            (on_var_decl ? var_init_codes : opcodes)[it + i] = idxCode[i];
         }    
     }
 
-    lint32_t t = opcodes.size();
+    lint32_t t = (on_var_decl ? var_init_codes : opcodes).size();
     idxCode = (const char *)&t;
     // Note. 修正跳转的位置信息
     for (auto &it : forBreaks) {
         for (int i = 0; i < 4; ++i) {
-            opcodes[it + i] = idxCode[i];
+            (on_var_decl ? var_init_codes : opcodes)[it + i] = idxCode[i];
         }    
     }
     
-    opcodes.push_back((luint8_t)(OpCode::op_test));
+    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_test));
     const char *idx2char = nullptr;
-    LOAD_IDX_4(opcodes, gotoBegin)
+    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), gotoBegin)
 }
 
 void CodeGenerator::generate_switch_case(AbstractExpression *exp)
@@ -993,17 +1063,17 @@ void CodeGenerator::generate_index(AbstractExpression *exp, bool lhs)
                 error(val->val.sval);
             }
             loc = &locals[object_name][idx];
-            opcodes.push_back((luint8_t)(OpCode::op_load_global));
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_global));
         } else {
             loc = &scopeLocals[idx];
-            opcodes.push_back((luint8_t)(OpCode::op_load_local));
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_local));
         }
 
         if (loc->type != DeclType::mapping_ || !loc->is_arr) {
             error_at(__LINE__);
         }
 
-        LOAD_IDX_2(opcodes, idx)
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
     } else if (idex->l->get_type() == ExpressionType::call_) {
         generate_call(idex->l);
     } else if (idex->l->get_type() == ExpressionType::index_) {
@@ -1028,19 +1098,15 @@ void CodeGenerator::generate_index(AbstractExpression *exp, bool lhs)
                 intConsts.push_back(end); 
             } 
 
-            opcodes.push_back((luint8_t)(OpCode::op_load_iconst)); 
-            LOAD_IDX_2(opcodes, idx)
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_iconst)); 
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
         } else {
             GENERATE_OP(idex->idx1, DeclType::none_)
         }
 
-        opcodes.push_back((luint8_t)(OpCode::op_sub_arr));
-    } else {
-        if (lhs) {
-            opcodes.push_back((luint8_t)(OpCode::op_upset));
-        } else {
-            opcodes.push_back((luint8_t)(OpCode::op_index));
-        }
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_sub_arr));
+    } else if (!lhs) {
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_index));
     }
 }
 
@@ -1135,8 +1201,8 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
             stringConsts.push_back(id->val.sval->strval);
         } 
         
-        opcodes.push_back((luint8_t)(OpCode::op_load_sconst));
-        LOAD_IDX_2(opcodes, idx)
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_sconst));
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
 
         string call_other = "call_other";
         funIdx = find_fun_idx(call_other, 1);
@@ -1147,28 +1213,28 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         extArgs = 2;
     }
 
-    opcodes.push_back((luint8_t)(OpCode::op_call));
+    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call));
     if (type == DeclType::none_){
-        opcodes.push_back((luint8_t)(3));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(3));
     } else if (is_sfun) {
         Func &f = sfuns[funIdx];
         if (call->params.size() > f.nparams) {
             error_at(__LINE__);
         }
 
-        opcodes.push_back((luint8_t)(2));
-        LOAD_IDX_2(opcodes, funIdx)
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(2));
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funIdx)
     } else {
-        opcodes.push_back((luint8_t)(1));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(1));
         // 调用的 efun 位置
-        LOAD_IDX_2(opcodes, funIdx)
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funIdx)
 
         Func &f = efuns[funIdx];
         if (!f.is_varargs && call->params.size() > f.nparams) {
             error_at(__LINE__);
         }
 
-        opcodes.push_back((luint8_t)(call->params.size() + extArgs));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(call->params.size() + extArgs));
     }
 }
 
@@ -1184,7 +1250,7 @@ void CodeGenerator::generate_return(AbstractExpression *exp)
         }
     }
 
-    opcodes.push_back((luint8_t)(OpCode::op_return));
+    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_return));
 }
 
 void CodeGenerator::generate_func(AbstractExpression *exp)
@@ -1212,7 +1278,7 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
     Func &f = funcs[funDecl->name->strval];
     if (!preDef) {
         lint16_t idx = 0;
-        f.fromPc = opcodes.size();
+        f.fromPc = (on_var_decl ? var_init_codes : opcodes).size();
         for (auto &it : funDecl->params) {
             VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(it);
             scope->push_back({false, var->dtype, var->name, var->varargs, idx, var->is_arr});
@@ -1224,7 +1290,7 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
         for (auto &it : funDecl->body) {
             switch (it->get_type()) {
                 case ExpressionType::var_decl_: {
-                    generate_decl(it, false);
+                    generate_decl(it);
                     break;
                 }
                 case ExpressionType::oper_: {
@@ -1266,9 +1332,6 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
                 }
 
                 case ExpressionType::return_: {
-                    if (funDecl->returnType == DeclType::void_) {
-                        error_at(__LINE__);
-                    }
                     generate_return(it);
                     break;
                 }
@@ -1282,7 +1345,7 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
         pre_decl_funcs.insert(funDecl->name->strval);
     }
 
-    f.toPc = opcodes.size() - 1;
+    f.toPc = (on_var_decl ? var_init_codes : opcodes).size() - 1;
     f.nlocals = scope->size();
     funcs[funDecl->name->strval] = f;
 }
@@ -1398,7 +1461,7 @@ void CodeGenerator::dump()
     out.write((char *)&sz, 4);
     out.write(reinterpret_cast<char *>(var_init_codes.data()), sz);
 
-    sz = this->opcodes.size();
+    sz = opcodes.size();
     out.write((char *)&sz, 4);
-    out.write(reinterpret_cast<char *>(opcodes.data()), sz);
+    out.write(reinterpret_cast<char *>((on_var_decl ? var_init_codes : opcodes).data()), sz);
 }

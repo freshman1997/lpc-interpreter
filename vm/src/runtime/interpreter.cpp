@@ -141,59 +141,6 @@ void vm::eval(lpc_vm_t *lvm)
         }
 
 
-        case OpCode::op_assign: {
-            lpc_value_t *val1 = sk->pop();
-            lpc_value_t *val2 = sk->pop();
-            sk->push(val2);
-            break;
-        }
-        case OpCode::op_add_assign: {
-            lpc_value_t *val1 = sk->pop();
-            lpc_value_t *val2 = sk->pop();
-            if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-
-            }
-            sk->push(val1);
-            break;
-        }
-        case OpCode::op_sub_assign: {
-
-            break;
-        }
-        case OpCode::op_mul_assign: {
-
-            break;
-        }
-        case OpCode::op_div_assign: {
-
-            break;
-        }
-        case OpCode::op_mod_assign: {
-
-            break;
-        }
-        case OpCode::op_binary_lm_assign: {
-
-            break;
-        }
-        case OpCode::op_binary_rm_assign: {
-
-            break;
-        }
-        case OpCode::op_binary_and_assign: {
-
-            break;
-        }
-        case OpCode::op_binary_or_assign: {
-
-            break;
-        }
-        case OpCode::op_binary_xor_assign: {
-
-            break;
-        }
-
-
         case OpCode::op_cmp_and: {
 
             break;
