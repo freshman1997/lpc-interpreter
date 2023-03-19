@@ -24,7 +24,7 @@ lpc_value_t * lpc_stack_t::get(int idx)
 
 lpc_value_t * lpc_stack_t::top()
 {
-    return this->get(idx);
+    return this->get(idx == 0 ? idx : idx - 1);
 }
 
 lpc_value_t * lpc_stack_t::pop()
@@ -41,4 +41,12 @@ bool lpc_stack_t::pop_n(int n)
     idx -= n;
     return true;
 }
+void lpc_stack_t::set_local_size(int n)
+{
+    for (int i = idx; i < idx + n; ++i) {
+        stack[i].type = value_type::int_;
+        stack[i].subtype = value_type::null_;
+    }
 
+    idx += n;
+}

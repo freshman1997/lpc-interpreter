@@ -329,8 +329,7 @@ public:
     virtual ExpressionType get_type();
 
     AbstractExpression *caser = nullptr;
-    vector<vector<AbstractExpression *>> bodys;
-    vector<AbstractExpression *> body;
+    vector<AbstractExpression *> bodys;
 };
 
 class DefaultExpression : public CaseExpression

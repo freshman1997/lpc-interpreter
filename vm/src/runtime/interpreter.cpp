@@ -45,7 +45,7 @@ new_frame:
     for(;;) {
         std::cout << "diff: " << pc - start << std::endl;
         OpCode op = (OpCode)*(pc++);
-        if (pc - start > sz) {
+        if (pc - start > fun->toPC + 1) {
             std::cout << "Exit normally.\n";
             break;
         }
@@ -386,6 +386,15 @@ new_frame:
         case OpCode::op_or: {
             lpc_value_t *val1 = sk->pop();
             lpc_value_t *val2 = sk->pop();
+            if (val1->subtype == value_type::null_) {
+                sk->push(val2);
+            } else {
+                if ((val1->type == value_type::int_ && val1->pval.number == 0) || (val1->type == value_type::float_ && val1->pval.real == 0)) {
+                    sk->push(val2);
+                } else {
+                    sk->push(val1);
+                }
+            }
             break;
         }
 
@@ -407,10 +416,11 @@ new_frame:
             EXTRACT_4_PARAMS
             const0.type = value_type::array_;
             lpc_array_t *arr = lvm->get_alloc()->allocate_array(idx);
-            for (int i = 0; i < idx; ++i) {
-                arr->set(sk->pop(), i, OpCode::op_load_global);
+            for (int i = idx; i >= 1; --i) {
+                arr->set(sk->pop(), i - 1, OpCode::op_load_global);
             }
             const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(arr);
+            sk->push(&const0);
             break;
         }
         case OpCode::op_sub_arr: {
@@ -421,7 +431,7 @@ new_frame:
             EXTRACT_4_PARAMS
             const0.type = value_type::mappig_;
             lpc_mapping_t *map = lvm->get_alloc()->allocate_mapping();
-            for (int i = 0; i < idx; ++i) {
+            for (int i = idx; i >= 1; --i) {
                 lpc_value_t *v = sk->pop();
                 lpc_value_t *k = sk->pop();
                 map->set(k, v);
@@ -533,31 +543,52 @@ new_frame:
         case OpCode::op_foreach_step1: {
             lpc_value_t *val = sk->top();
             // setup iterator
-            if (val->type == value_type::array_) {
-
-            } else if (val->type == value_type::mappig_) {
-
-            } else {
+            if (val->type != value_type::array_ && val->type != value_type::mappig_) {
                 // TODO report error
+                std::cout << "cant traverse type: " << (lint32_t)val->type << std::endl;
+                exit(-1);
             }
-            break;
-        }
-        case OpCode::op_foreach_step2: {
-            lpc_value_t *val = sk->top();
-            lint8_t i = *(pc++);
-
-            if (val->type == value_type::array_) {
-
-            } else if (val->type == value_type::mappig_) {
-
-            } else {
-                // TODO report error
-            }
+            const0.type = value_type::int_;
+            const0.pval.number = 0;
             sk->push(&const0);
             break;
         }
-        case OpCode::op_foreach_step3: {
-            sk->pop();
+        case OpCode::op_foreach_step2: {
+            lpc_value_t *iter = sk->pop();
+            lpc_value_t *val = sk->top();
+            lint8_t sz = *(pc++);
+            EXTRACT_4_PARAMS
+
+            if (val->type != value_type::array_ || val->type != value_type::mappig_) {
+                // TODO report error
+            }
+            
+            if (val->type != value_type::array_ && sz != 1) {
+                // TODO report error
+            }
+
+            if (val->type != value_type::mappig_ && sz != 2) {
+                // TODO report error
+            }
+
+            lint32_t index = iter->pval.number;
+            ++iter->pval.number;
+            sk->push(iter);
+
+            if (sz > 1) {
+                
+            } else {
+                lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(val->gcobj);
+                if (index >= arr->get_size()) {
+                    // 退出循环
+                    sk->pop();
+                    pc = start + idx;
+                    break;
+                }
+
+                lpc_value_t *field = arr->get(index);
+                sk->push(field);
+            }
             break;
         }
 

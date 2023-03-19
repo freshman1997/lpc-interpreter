@@ -988,7 +988,7 @@ static AbstractExpression * parse_case_or_default(Token *tok, Token *t)
     }
 
     AbstractExpression *exp = nullptr;
-    vector<vector<AbstractExpression *>> *bodys = nullptr;
+    vector<AbstractExpression *> *bodys = nullptr;
     if (type == 0) {
         CaseExpression *ca = new CaseExpression;
         bodys = &ca->bodys;
@@ -1006,7 +1006,7 @@ static AbstractExpression * parse_case_or_default(Token *tok, Token *t)
     while (tok) {
         if (tok->kind == TokenKind::k_symbol_qg1) {
             bodys->push_back({});
-            READ_BODY(bodys->back(), tok)
+            READ_BODY((*bodys), tok)
             tok = t->next->next;
             new_block = true;
         }
@@ -1031,7 +1031,7 @@ static AbstractExpression * parse_case_or_default(Token *tok, Token *t)
             tok = t->next;
         }
 
-        bodys->back().push_back(element);
+        bodys->push_back(element);
     }
 
     t->next = tok;

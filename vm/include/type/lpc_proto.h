@@ -6,7 +6,7 @@
 enum class variasble_type
 {
     none_,
-    int_,
+    lint32_t_,
     float_,
     string_,
     mapping_,
@@ -19,12 +19,12 @@ class function_proto_t
 public:
     const char *name;
     bool is_static;
-    int nargs = 0;
-    int nlocal = 0;
-    int nupvalue = 0;
-    int offset;
-    int fromPC = 0;                // 在当前对象指令的位置
-    int toPC = 0;
+    lint32_t nargs = 0;
+    lint32_t nlocal = 0;
+    lint32_t nupvalue = 0;
+    lint32_t offset;
+    lint32_t fromPC = 0;                // 在当前对象指令的位置
+    lint32_t toPC = 0;
 };
 
 class variable_proto_t
@@ -32,13 +32,13 @@ class variable_proto_t
 public:
     const char *name = nullptr;
     variasble_type type = variasble_type::none_;
-    int offset;
+    lint32_t offset;
 };
 
 class class_proto_t
 {
 public:
-    lint16_t nfield;
+    lint32_t nfield;
     bool is_static;
     variable_proto_t *field_table;
 };
@@ -46,7 +46,7 @@ public:
 union const_t
 {
     const char *str;
-    int number;
+    lint32_t number;
     float real;
 };
 
@@ -67,15 +67,21 @@ public:
 
 };
 
+struct siwtch_item
+{
+    lint32_t caser;
+    lint32_t gotoW;
+};
+
 class object_proto_t
 {
 public:
     const char *name;
     const char *instructions;
-    int instruction_size;
+    lint32_t instruction_size;
 
     const char *var_init_codes;
-    int init_code_size;
+    lint32_t init_code_size;
 
     variable_proto_t *variable_table;
 
@@ -85,11 +91,12 @@ public:
 
     class_proto_t *class_table;
     function_proto_t *func_table;
-    int nvariable = 0;
+    lint32_t nvariable = 0;
     bool *loc_tags;
-    int nfunction = 0;
-    int nclass = 0;
-    int nconst = 0;
+    lint32_t nfunction = 0;
+    lint32_t nclass = 0;
+    lint32_t nconst = 0;
+    lint32_t nswitch = 0;
 };
 
 #endif

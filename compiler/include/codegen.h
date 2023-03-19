@@ -15,7 +15,8 @@ void init_sfun_and_efun(const char *sfunFile, const char *efunDefFile);
 struct efun_decl
 {
     std::string name;
-    
+    std::vector<DeclType> paramTypes;
+    bool varargs = false;
 };
 
 struct Func
@@ -67,7 +68,7 @@ public:
     void generate_foreach(AbstractExpression *);
     void generate_while(AbstractExpression *);
     void generate_do_while(AbstractExpression *);
-    void generate_switch_case(AbstractExpression *);
+    void generate_switch_case(AbstractExpression *, lint32_t);
     void generate_class(AbstractExpression *);
     void generate_index(AbstractExpression *, bool);
     void generate_call(AbstractExpression *, DeclType type = DeclType::none_);
@@ -126,6 +127,8 @@ private:
     std::vector<std::string> stringConsts;
     std::vector<lint32_t> intConsts;
     std::vector<lfloat32_t> floatConsts;
+
+    std::vector<std::vector<std::pair<lint32_t, lint32_t>>> lookup_switch;
 };
 
 #endif

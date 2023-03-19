@@ -191,6 +191,9 @@ static lint16_t find_fun_idx(const string &name, int type)
                 break; \
             } \
             case ExpressionType::continue_: { \
+                if (forContinue < 0) { \
+                    error_at(__LINE__); \
+                } \
                 push_code((luint8_t)(OpCode::op_goto)); \
                 if (cons != nullptr) { \
                     cons->push_back((on_var_decl ? var_init_codes : opcodes).size()); \
@@ -200,7 +203,7 @@ static lint16_t find_fun_idx(const string &name, int type)
                 break; \
             } \
             case ExpressionType::switch_case_: { \
-                generate_switch_case(it); \
+                generate_switch_case(it, forContinue); \
                 break; \
             } \
             \
@@ -1024,15 +1027,23 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
 
     GENERATE_OP(fe->container, DeclType::none_)
 
-    lint32_t forContinue = opcodes.size();
     opcodes.push_back((luint8_t)(OpCode::op_foreach_step1));
 
-    lint8_t i = 0;
+    luint8_t sz = (luint8_t)fe->decls.size();
+    if (sz <= 0 || sz > 2) {
+        error_at(__LINE__);
+    }
+
+    lint32_t forContinue = opcodes.size();
+    opcodes.push_back((luint8_t)(OpCode::op_foreach_step2));
+    opcodes.push_back((luint8_t)(sz));
+    lint32_t end = opcodes.size();
+    // 结束后跳转位置
+    const char *idx2char = nullptr;
+    LOAD_IDX_4(opcodes, end)
+
     for (auto &it : fe->decls) {
         // 这里需要容器还在栈中
-        opcodes.push_back((luint8_t)(OpCode::op_foreach_step2));
-        opcodes.push_back((luint8_t)(i++));
-
         VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(it);
         lint16_t idx = find_local_idx(var->name->strval, scopeLocals);
         // 到这里，idx 不应该不存在
@@ -1046,11 +1057,8 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
 
     // 跳回赋值处
     opcodes.push_back((luint8_t)(OpCode::op_goto));
-    const char *idx2char = (const char *)(&forContinue);
+    idx2char = (const char *)(&forContinue);
     LOAD_IDX_4(opcodes, forContinue)
-
-    // remove 
-    opcodes.push_back((luint8_t)(OpCode::op_foreach_step3));
 
     lint32_t t = opcodes.size();
     const char *idxCode = (const char *)&t;
@@ -1060,78 +1068,132 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
             opcodes[it + i] = idxCode[i];
         }    
     }
+
+    for (int i = 0; i < 4; ++i) {
+        opcodes[end + i] = idxCode[i];
+    } 
 }
 
 void CodeGenerator::generate_while(AbstractExpression *exp)
 {
     whileExpression *w = dynamic_cast<whileExpression *>(exp);
-    lint32_t forContinue = (on_var_decl ? var_init_codes : opcodes).size();
+    lint32_t forContinue = opcodes.size();
     vector<lint32_t> forBreaks;
     GENERATE_OP(w->cond, DeclType::none_)
-    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_test));
-    lint32_t gotoEnd = (on_var_decl ? var_init_codes : opcodes).size();
+    opcodes.push_back((luint8_t)(OpCode::op_test));
+    lint32_t gotoEnd = opcodes.size();
     const char *idx2char = nullptr;
-    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), gotoEnd)
+    LOAD_IDX_4(opcodes, gotoEnd)
 
     vector<lint32_t> *p = nullptr;
     GENERATE_BODY(w->body, p)
 
     // 跳回条件处
-    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_goto));
+    opcodes.push_back((luint8_t)(OpCode::op_goto));
     idx2char = (const char *)(&forContinue);
-    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), forContinue)
+    LOAD_IDX_4(opcodes, forContinue)
 
-    lint32_t t = (on_var_decl ? var_init_codes : opcodes).size();
+    lint32_t t = opcodes.size();
     const char *idxCode = (const char *)&t;
     // Note. 修正跳转的位置信息
     for (auto &it : forBreaks) {
         for (int i = 0; i < 4; ++i) {
-            (on_var_decl ? var_init_codes : opcodes)[it + i] = idxCode[i];
+            opcodes[it + i] = idxCode[i];
         }    
     }
     
     for (int i = 0; i < 4; ++i) {
-        (on_var_decl ? var_init_codes : opcodes)[gotoEnd + i] = idxCode[i];
+        opcodes[gotoEnd + i] = idxCode[i];
     } 
 }
 
 void CodeGenerator::generate_do_while(AbstractExpression *exp)
 {
     DoWhileExpression *dw = dynamic_cast<DoWhileExpression *>(exp);
-    lint32_t forContinue = (on_var_decl ? var_init_codes : opcodes).size();
+    lint32_t forContinue = opcodes.size();
     vector<lint32_t> forBreaks;
     vector<lint32_t> forContinues;
     vector<lint32_t> *p = &forContinues;
-    lint32_t gotoBegin = (on_var_decl ? var_init_codes : opcodes).size();
+    lint32_t gotoBegin = opcodes.size();
     GENERATE_BODY(dw->body, p)
 
-    lint32_t gotoCond = (on_var_decl ? var_init_codes : opcodes).size();
+    lint32_t gotoCond = opcodes.size();
     GENERATE_OP(dw->cond, DeclType::none_)
 
     const char *idxCode = (const char *)&gotoCond;
     for (auto &it : forContinues) {
         for (int i = 0; i < 4; ++i) {
-            (on_var_decl ? var_init_codes : opcodes)[it + i] = idxCode[i];
+            opcodes[it + i] = idxCode[i];
         }    
     }
 
-    lint32_t t = (on_var_decl ? var_init_codes : opcodes).size();
+    lint32_t t = opcodes.size();
     idxCode = (const char *)&t;
     // Note. 修正跳转的位置信息
     for (auto &it : forBreaks) {
         for (int i = 0; i < 4; ++i) {
-            (on_var_decl ? var_init_codes : opcodes)[it + i] = idxCode[i];
+            opcodes[it + i] = idxCode[i];
         }    
     }
     
-    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_test));
+    opcodes.push_back((luint8_t)(OpCode::op_test));
     const char *idx2char = nullptr;
-    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), gotoBegin)
+    LOAD_IDX_4(opcodes, gotoBegin)
 }
 
-void CodeGenerator::generate_switch_case(AbstractExpression *exp)
+void CodeGenerator::generate_switch_case(AbstractExpression *exp, lint32_t forContinue)
 {
+    SwitchCaseExpression *sce = dynamic_cast<SwitchCaseExpression *>(exp);
+    
 
+    if (sce->cases.empty()) {
+        return;
+    }
+    lint32_t t = lookup_switch.size();
+    lookup_switch.push_back({});
+    GENERATE_OP(sce->selector, DeclType::none_)
+    opcodes.push_back((luint8_t)(OpCode::op_switch));
+    const char *idx2char = nullptr;
+    LOAD_IDX_4(opcodes, t)
+
+    vector<pair<lint32_t, lint32_t>> &talbe = lookup_switch.back();
+
+    vector<lint32_t> forBreaks;
+    vector<lint32_t> forContinues;
+    vector<lint32_t> *p = &forContinues;
+    for (auto &it1 : sce->cases) {
+        if (it1->get_type() == ExpressionType::case_) {
+            CaseExpression *c = dynamic_cast<CaseExpression *>(it1);
+            if (c->caser->get_type() != ExpressionType::value_) {
+                error_at(__LINE__);
+            }
+
+            ValueExpression *val = dynamic_cast<ValueExpression *>(c->caser);
+            // 目前支持整形的
+            if (val->valType > 0) {
+                error_at(__LINE__);
+            }
+
+            talbe.push_back({val->val.ival, opcodes.size()});
+
+            GENERATE_BODY(c->bodys, p)
+        } else if (it1->get_type() == ExpressionType::default_) {
+            DefaultExpression *d = dynamic_cast<DefaultExpression *>(it1);
+            talbe.push_back({0, -1});
+            GENERATE_BODY(d->bodys, p)
+        } else {
+            error_at(__LINE__);
+        }
+    }
+
+    t = opcodes.size();
+    const char *idxCode = (const char *)&t;
+    // Note. 修正跳转的位置信息
+    for (auto &it : forBreaks) {
+        for (int i = 0; i < 4; ++i) {
+            opcodes[it + i] = idxCode[i];
+        }    
+    }
 }
 
 void CodeGenerator::generate_class(AbstractExpression *exp)
@@ -1486,7 +1548,7 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
                     break;
                 }
                 case ExpressionType::switch_case_: {
-                    // generate_do_while(it)
+                    generate_switch_case(it, -1);
                     break;
                 }
 
@@ -1561,9 +1623,19 @@ void CodeGenerator::dump()
     luint32_t sz = name.size();
     out.write((char *)&sz, 4);
     out.write(name.c_str(), sz);*/
+    luint32_t sz = this->lookup_switch.size();
+    out.write((char *)&sz, 4);
+    for (auto &it : lookup_switch) {
+        sz = it.size();
+        out.write((char *)&sz, 4);
+        for (auto &it1 : it) {
+            out.write((char *)&it1.first, 4);
+            out.write((char *)&it1.second, 4);
+        }
+    }
 
     bool is_static = false;
-    luint32_t sz = this->funcs.size();
+    sz = this->funcs.size();
     out.write((char *)&sz, 4);
     for (auto &it : funcs) {
         sz = it.name->strval.size();

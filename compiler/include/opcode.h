@@ -73,8 +73,6 @@ enum class OpCode
 
     op_foreach_step1,           // setup iterator, init first or next
     op_foreach_step2,           // assign
-    op_foreach_step3,           // remove from stack
-
 };
 
 #endif

@@ -13,10 +13,7 @@ public:
     lpc_value_t * pop();
     bool pop_n(int n);
     
-    void set_local_size(int n)
-    {
-        idx += n;
-    }
+    void set_local_size(int n);
 
 private:
     lpc_value_t *stack;
