@@ -11,7 +11,7 @@ class lpc_gc_t;
 
 struct call_info_t
 {
-    call_info_t *pre, *next;
+    call_info_t *pre = nullptr, *next = nullptr;
     const char *savepc;         // 当前执行到的指令
     lpc_value_t *top;           // 栈顶位置
     lpc_value_t *base;          // 开始执行栈底位置
@@ -41,12 +41,17 @@ public:
     void call_efun();
     void call_sfun();
     
-    call_info_t * new_frame();
+    void new_frame(lpc_object_t *, lint16_t idx);
     void pop_frame();
     lpc_gc_t * get_gc();
 
     object_proto_t * load_object_proto(const char *name);
     lpc_object_t * load_object(const char *name);
+
+    lpc_allocator_t * get_alloc()
+    {
+        return this->alloc;
+    }
 
 private:
     lpc_vm_t();

@@ -1,6 +1,7 @@
 #ifndef __LPC_PROTO__
 #define __LPC_PROTO__
-#include "lpc_value.h"
+#include <unordered_map>
+#include "lpc.h"
 
 enum class variasble_type
 {
@@ -37,7 +38,7 @@ public:
 class class_proto_t
 {
 public:
-    int nfield;
+    lint16_t nfield;
     bool is_static;
     variable_proto_t *field_table;
 };
@@ -68,9 +69,6 @@ public:
 
 class object_proto_t
 {
-public:
-    lpc_gc_object_header_t header; // if reload
-
 public:
     const char *name;
     const char *instructions;

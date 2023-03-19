@@ -12,6 +12,12 @@
 
 void init_sfun_and_efun(const char *sfunFile, const char *efunDefFile);
 
+struct efun_decl
+{
+    std::string name;
+    
+};
+
 struct Func
 {
     bool is_static = false;
@@ -24,6 +30,7 @@ struct Func
     luint32_t fromPc = 0;
     luint32_t toPc = 0;
     const char *efunName = nullptr;
+    lint16_t idx = 0;
 };
 
 struct Local
@@ -94,12 +101,10 @@ public:
         return this->opcodes;
     }
 
-    std::unordered_map<std::string, Func> & get_funcs()
+    std::vector<Func> & get_funcs()
     {
         return this->funcs;
     }
-
-    lint16_t find_local_idx(const string &name, const std::vector<Local> &);
 
     void dump();
 
@@ -112,7 +117,7 @@ private:
 
     std::vector<ClassDecl> clazz;
     std::set<std::string> pre_decl_funcs;
-    std::unordered_map<std::string, Func> funcs;
+    std::vector<Func> funcs;
 
     // 一个 block 就会有一层，主要是 switch case 下面的声明
     std::unordered_map<std::string, std::vector<Local>> locals;

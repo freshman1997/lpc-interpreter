@@ -2243,6 +2243,7 @@ static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
         }
 
         tprec = get_pre(tok->kind);
+        kind = tok->kind;
     }
 
     return exp1;

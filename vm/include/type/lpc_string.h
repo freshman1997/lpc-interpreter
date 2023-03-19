@@ -1,12 +1,10 @@
 ﻿#ifndef __LPC_STRING__
 #define __LPC_STRING__
-#include "lpc_value.h"
 
+#include "type/lpc_array.h"
+struct lpc_value_t;
 class lpc_string_t
 {
-public:
-    lpc_gc_object_header_t header;
-
 public:
     lpc_string_t(const char * _str);
     lpc_string_t(lpc_string_t &);

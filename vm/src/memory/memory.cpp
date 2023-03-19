@@ -5,6 +5,7 @@
 #include "type/lpc_mapping.h"
 #include "type/lpc_proto.h"
 #include "type/lpc_object.h"
+#include "type/lpc_string.h"
 
 lpc_array_t * lpc_allocator_t::allocate_array(luint32_t size)
 {
@@ -43,9 +44,12 @@ lpc_value_t * lpc_allocator_t::allocate_closure()
     return nullptr;
 }
 
-lpc_value_t * lpc_allocator_t::allocate_string()
+lpc_string_t * lpc_allocator_t::allocate_string(const char *init)
 {
-    return nullptr;
+    lpc_string_t *str = (lpc_string_t *)vm->get_gc()->allocate(sizeof(lpc_string_t));
+    new(str)lpc_string_t(init);
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(str), value_type::string_);
+    return str;
 }
 
 lpc_value_t * lpc_allocator_t::allocate_buffer(luint32_t size)

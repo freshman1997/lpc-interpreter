@@ -44,8 +44,6 @@ union lpc_function_component
 
 class lpc_function_t
 {
-public:
-    lpc_gc_object_header_t header;
     
 public:
     lpc_function_t(lpc_function_t &) = delete;

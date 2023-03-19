@@ -1,7 +1,7 @@
 ﻿#ifndef __LPC_ARRAY_H__
 #define __LPC_ARRAY_H__
 #include "lpc.h"
-#include "lpc_value.h"
+#include "opcode.h"
 
 struct lpc_value_t;
 class lpc_array_iterator_t;
@@ -11,12 +11,9 @@ class lpc_array_t
 {
     friend lpc_array_iterator_t;
 public:
-    lpc_gc_object_header_t header;
-    
-public:
     lpc_array_t(luint32_t sz, lpc_value_t *);
     lpc_value_t * get(int i);
-    void set(lpc_value_t *val, int i);
+    void set(lpc_value_t *val, lint32_t i, OpCode op);
     lpc_value_t * copy();
     luint32_t get_size() const;
     

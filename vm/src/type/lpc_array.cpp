@@ -6,12 +6,24 @@ lpc_array_t::lpc_array_t(luint32_t sz, lpc_value_t *m) : size(sz), members(m){}
 
 lpc_value_t * lpc_array_t::get(int i)
 {
-    return nullptr;
+    return &this->members[i];
 }
 
-void lpc_array_t::set(lpc_value_t *val, int i)
+void lpc_array_t::set(lpc_value_t *val, lint32_t i, OpCode op)
 {
+    if (op == OpCode::op_add) {
 
+    } else if (op == OpCode::op_minus) {
+
+    } else if (op == OpCode::op_mul) {
+
+    } else if (op == OpCode::op_div) {
+
+    } else if (op == OpCode::op_mod) {
+
+    } // ...
+    
+    this->members[i] = *val;
 }
 
 luint32_t lpc_array_t::get_size() const

@@ -18,9 +18,6 @@ enum class OpCode
     op_load_0,                  // for false, 0 
     op_load_1,                  // for true
 
-    op_push,
-    op_pop,
-
     op_add,
     op_sub,
     op_mul,
@@ -49,7 +46,6 @@ enum class OpCode
     op_cmp_lte,
 
     op_or,
-    op_pointor,                 // ->
 
     op_test,                    // 一个参数，4个字节
 
@@ -73,12 +69,11 @@ enum class OpCode
 
     op_goto,                    // 一个参数，4个字节
 
-    op_switch_select,
     op_switch,                  // TODO  table switch implement
 
-    op_foreach_step1,           // setup iterator
+    op_foreach_step1,           // setup iterator, init first or next
     op_foreach_step2,           // assign
-    op_foreach_step3,           // next
+    op_foreach_step3,           // remove from stack
 
 };
 

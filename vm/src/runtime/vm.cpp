@@ -41,8 +41,8 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
         func_proto[i].name = fname;
         in.read((char *)&func_proto[i].is_static, 1);
 
-        in.read((char *)&func_proto[i].nlocal, 2);
         in.read((char *)&func_proto[i].nargs, 2);
+        in.read((char *)&func_proto[i].nlocal, 2);
         in.read((char *)&func_proto[i].fromPC, 4);
         in.read((char *)&func_proto[i].toPC, 4);
 
@@ -50,6 +50,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     }
 
     proto->func_table = func_proto;
+    proto->nfunction = sz;
 
     in.read((char *)&sz, 4);
     bool *loc_tag = new bool[sz];
@@ -93,8 +94,8 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
         for (int i = 0; i < sz; ++i) {
             in.read((char *)&len, 4);
             char *buf = new char[len + 1];
-            buf[len + 1] = '\0';
             in.read(buf, len);
+            buf[len + 1] = '\0';
             sconsts[i].item.str = buf;
         }
         proto->sconst = sconsts;
@@ -108,7 +109,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
         class_proto_t *sproto = new class_proto_t[sz];
         for (int i = 0; i < sz; ++i) {
             in.read((char *)&sproto[i].is_static, 1);
-            in.read((char *)&sproto[i].nfield, 4);
+            in.read((char *)&sproto[i].nfield, 2);
         }
 
         proto->class_table = sproto;
@@ -136,6 +137,8 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
         proto->instruction_size = sz;
     }
 
+    in.close();
+
     return proto;
 }
 
@@ -158,7 +161,8 @@ lpc_vm_t::lpc_vm_t()
     ci->cur_obj = load_object(entry);
 
     // TODO 设置开始执行的位置、给全局变量赋值啥的
-    ci->savepc = ci->cur_obj->get_pc();
+    ci->savepc = ci->cur_obj->get_pc() + ci->cur_obj->get_proto()->func_table[1].fromPC;
+    ci->funcIdx = 1;
 
     this->ci = ci;
     this->cur_ci = ci;
@@ -203,17 +207,33 @@ call_info_t * lpc_vm_t::get_call_info()
     return this->cur_ci;
 }
 
-call_info_t * lpc_vm_t::new_frame()
+ void lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx)
 {
-    // TODO
-
-
-    return cur_ci;
+    call_info_t *nci = new call_info_t;
+    object_proto_t *proto = obj->get_proto();
+    const function_proto_t &f = proto->func_table[idx];
+    nci->savepc = proto->instructions + f.fromPC;
+    nci->funcIdx = idx;
+    nci->cur_obj = obj;
+    nci->pre = cur_ci;
+    nci->base = stack->top() - f.nargs;
+    cur_ci->next = nci;
+    cur_ci = nci;
 }
 
 void lpc_vm_t::pop_frame()
 {
+    call_info_t *pre = cur_ci;
+    cur_ci = pre->pre;
+    if (!cur_ci) {
+        cur_ci = pre;
+        return;
+    }
 
+    cur_ci->next = nullptr;
+    const function_proto_t &f = pre->cur_obj->get_proto()->func_table[pre->funcIdx];
+    stack->pop_n(f.nlocal);
+    delete pre;
 }
 
 lpc_gc_t * lpc_vm_t::get_gc()
