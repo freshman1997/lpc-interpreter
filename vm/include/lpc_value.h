@@ -8,8 +8,7 @@
 #include "type/lpc_closure.h"
 #include "type/lpc_function.h"
 #include "type/lpc_buffer.h"
-
-
+#include "type/lpc_proto.h"
 
 enum class value_type
 {
@@ -38,18 +37,9 @@ class lpc_object_t;
 class lpc_buffer_t;
 class object_proto_t;
 
-union lpc_gc_object_t;
-
-struct lpc_gc_object_header_t
-{
-    lpc_gc_object_t *next;
-    bool marked;
-    value_type type; // for gc using
-};
-
 union lpc_gc_object_t 
 {
-    lpc_gc_object_header_t head;    // 每个 gc obj 都有这个头部
+    gc_header head;    // 每个 gc obj 都有这个头部
 
     lpc_string_t   str;
     lpc_array_t    arr;

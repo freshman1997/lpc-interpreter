@@ -16,5 +16,10 @@ typedef const char *            lstring_t;
 
 #define lpc_assert
 
+struct gc_header{
+    void * next;
+    lint8_t marked;
+    lint8_t type;
+};
 
 #endif

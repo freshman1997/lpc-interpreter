@@ -11,6 +11,9 @@ class lpc_array_t
 {
     friend lpc_array_iterator_t;
 public:
+    gc_header header;
+
+public:
     lpc_array_t(luint32_t sz, lpc_value_t *);
     lpc_value_t * get(int i);
     void set(lpc_value_t *val, lint32_t i, OpCode op);

@@ -100,7 +100,7 @@ int hash_(const char *str)
 
 int hash_pointer(int x)
 {
-  return MAP_POINTER_HASH(x);
+    return MAP_POINTER_HASH(x);
 }
 
 ////////////////////////////////////// lua hash ///////////////////////////////////////////

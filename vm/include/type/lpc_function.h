@@ -1,7 +1,7 @@
 #ifndef __LPC_FUNCTION__
 #define __LPC_FUNCTION__
+#include "lpc.h"
 #include "lpc_array.h"
-#include "lpc_proto.h"
 
 class lpc_object_t;
 
@@ -45,6 +45,9 @@ union lpc_function_component
 class lpc_function_t
 {
     
+public:
+    gc_header header;
+
 public:
     lpc_function_t(lpc_function_t &) = delete;
     lpc_function_t *operator=(lpc_function_t *);

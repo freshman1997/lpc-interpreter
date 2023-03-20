@@ -1005,7 +1005,6 @@ static AbstractExpression * parse_case_or_default(Token *tok, Token *t)
     bool new_block = true;
     while (tok) {
         if (tok->kind == TokenKind::k_symbol_qg1) {
-            bodys->push_back({});
             READ_BODY((*bodys), tok)
             tok = t->next->next;
             new_block = true;
@@ -1016,7 +1015,6 @@ static AbstractExpression * parse_case_or_default(Token *tok, Token *t)
         }
 
         if (new_block) {
-            bodys->push_back({});
             new_block = false;
         }
 

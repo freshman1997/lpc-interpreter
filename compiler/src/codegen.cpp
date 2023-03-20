@@ -1144,17 +1144,19 @@ void CodeGenerator::generate_do_while(AbstractExpression *exp)
 void CodeGenerator::generate_switch_case(AbstractExpression *exp, lint32_t forContinue)
 {
     SwitchCaseExpression *sce = dynamic_cast<SwitchCaseExpression *>(exp);
-    
-
     if (sce->cases.empty()) {
         return;
     }
+    
     lint32_t t = lookup_switch.size();
+    if (t >= MAX_LOCAL) {
+        error_at(__LINE__);
+    }
+
     lookup_switch.push_back({});
     GENERATE_OP(sce->selector, DeclType::none_)
     opcodes.push_back((luint8_t)(OpCode::op_switch));
-    const char *idx2char = nullptr;
-    LOAD_IDX_4(opcodes, t)
+    LOAD_IDX_2(opcodes, t)
 
     vector<pair<lint32_t, lint32_t>> &talbe = lookup_switch.back();
 
@@ -1179,7 +1181,7 @@ void CodeGenerator::generate_switch_case(AbstractExpression *exp, lint32_t forCo
             GENERATE_BODY(c->bodys, p)
         } else if (it1->get_type() == ExpressionType::default_) {
             DefaultExpression *d = dynamic_cast<DefaultExpression *>(it1);
-            talbe.push_back({0, -1});
+            talbe.push_back({0, - opcodes.size()});
             GENERATE_BODY(d->bodys, p)
         } else {
             error_at(__LINE__);
@@ -1573,6 +1575,16 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
     f.nlocals = scope->size();
     opcodes.push_back((luint8_t)(OpCode::op_return));
     f.toPc = opcodes.size() - 1;
+
+    if (f.name) {
+        if (f.name->strval == "create") {
+            this->create_idx = f.idx;
+        } else if (f.name->strval == "on_loadin") {
+            this->onload_in_idx = f.idx;
+        } else if (f.name->strval == "on_destruct") {
+            this->on_destruct_idx = f.idx;
+        }
+    }
 }
 
 extern string get_cwd();
@@ -1623,6 +1635,11 @@ void CodeGenerator::dump()
     luint32_t sz = name.size();
     out.write((char *)&sz, 4);
     out.write(name.c_str(), sz);*/
+
+    out.write((char *)&create_idx, 2);
+    out.write((char *)&onload_in_idx, 2);
+    out.write((char *)&on_destruct_idx, 2);
+
     luint32_t sz = this->lookup_switch.size();
     out.write((char *)&sz, 4);
     for (auto &it : lookup_switch) {

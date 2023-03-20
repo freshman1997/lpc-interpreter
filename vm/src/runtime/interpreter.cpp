@@ -29,6 +29,24 @@
     } \
     sk->push(v2);
 
+#define SOME_CMP(op) \
+        lpc_value_t *val1 = sk->pop(); \
+        lpc_value_t *val2 = sk->pop(); \
+        const0.type = value_type::int_; \
+        if (val1->type == value_type::int_ && val2->type == value_type::int_) { \
+            const0.pval.number = val2->pval.number op val1->pval.number; \
+        } else if (val1->type == value_type::int_ && val2->type == value_type::int_) { \
+            const0.pval.number = val2->pval.real op val1->pval.real; \
+        } else if (val1->type == value_type::int_ && val2->type == value_type::float_) { \
+            const0.pval.number = val2->pval.number op val1->pval.real; \
+        } else if (val1->type == value_type::float_ && val2->type == value_type::int_) { \
+            const0.pval.number = val2->pval.real op val1->pval.number; \
+        } else { \
+            std::cout << "cant compare type: " << (int)val1->type << " with " << (int)val2->type << std::endl; \
+            exit(-1); \
+        } \
+        sk->push(&const0);
+
 void vm::eval(lpc_vm_t *lvm)
 {
     lpc_value_t const0;
@@ -36,10 +54,16 @@ void vm::eval(lpc_vm_t *lvm)
 new_frame:
     call_info_t *ci = lvm->get_call_info();
     lpc_stack_t *sk = lvm->get_stack();
-    const char *start = ci->cur_obj->get_proto()->instructions;
-    const char *pc = ci->savepc;
-    lint32_t sz = ci->cur_obj->get_proto()->instruction_size;
-    function_proto_t *fun = &ci->cur_obj->get_proto()->func_table[ci->funcIdx];
+    function_proto_t *fun;
+    const char *pc = ci->savepc, *start;
+    if (ci->funcIdx > 0) {
+        start = ci->cur_obj->get_proto()->instructions;
+        fun = &ci->cur_obj->get_proto()->func_table[ci->funcIdx];
+    } else {
+        start = ci->cur_obj->get_proto()->init_codes;
+        fun = ci->cur_obj->get_proto()->init_fun;
+    }
+
     sk->set_local_size(fun->nlocal);
 
     for(;;) {
@@ -95,7 +119,7 @@ new_frame:
         case OpCode::op_load_sconst: {
             EXTRACT_2_PARAMS
             const0.type = value_type::string_;
-            lpc_string_t *s = lvm->get_alloc()->allocate_string(ci->cur_obj->get_proto()->sconst[idx].item.str);
+            lpc_string_t *s = ci->cur_obj->get_proto()->sconst[idx].item.str;
             const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(s);
             sk->push(&const0);
             break;
@@ -257,9 +281,14 @@ new_frame:
         }
         case OpCode::op_cmp_not: {
             lpc_value_t *val1 = sk->pop();
-            lpc_value_t *val2 = sk->pop();
             const0.type = value_type::int_;
-            const0.pval.number = val1->pval.number != 0 || val2->pval.number != 0;
+            if (val1->type == value_type::int_) {
+                const0.pval.number = !val1->pval.number;
+            } else if (val1->type == value_type::float_) {
+                const0.pval.number = !val1->pval.real;
+            } else {
+                const0.pval.number = val1->subtype == value_type::null_ ? 1 : 0;
+            }
             sk->push(&const0);
             break;
         }
@@ -278,8 +307,7 @@ new_frame:
             } else if (val1->type == value_type::string_ && val2->type == value_type::string_) {
                 lpc_string_t *str1 = reinterpret_cast<lpc_string_t *>(val1->gcobj);
                 lpc_string_t *str2 = reinterpret_cast<lpc_string_t *>(val2->gcobj);
-
-                // TODO
+                const0.pval.number = str1->get_hash() == str2->get_hash();
             } else {
                 const0.pval.number = val1->gcobj == val2->gcobj;
             }
@@ -301,8 +329,7 @@ new_frame:
             } else if (val1->type == value_type::string_ && val2->type == value_type::string_) {
                 lpc_string_t *str1 = reinterpret_cast<lpc_string_t *>(val1->gcobj);
                 lpc_string_t *str2 = reinterpret_cast<lpc_string_t *>(val2->gcobj);
-
-                // TODO
+                const0.pval.number = str1->get_hash() != str2->get_hash();
             } else {
                 const0.pval.number = val1->gcobj != val2->gcobj;
             }
@@ -310,75 +337,19 @@ new_frame:
             break;
         }
         case OpCode::op_cmp_gt: {
-            lpc_value_t *val1 = sk->pop();
-            lpc_value_t *val2 = sk->pop();
-            const0.type = value_type::int_;
-            if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.number > val1->pval.number;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.real > val1->pval.real;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::float_) {
-                const0.pval.number = val2->pval.number > val1->pval.real;
-            } else if (val1->type == value_type::float_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.real > val1->pval.number;
-            } else {
-                // TODO error
-            }
-            sk->push(&const0);
+            SOME_CMP(>)
             break;
         }
         case OpCode::op_cmp_gte: {
-            lpc_value_t *val1 = sk->pop();
-            lpc_value_t *val2 = sk->pop();
-            const0.type = value_type::int_;
-            if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.number >= val1->pval.number;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.real >= val1->pval.real;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::float_) {
-                const0.pval.number = val2->pval.number >= val1->pval.real;
-            } else if (val1->type == value_type::float_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.real >= val1->pval.number;
-            } else {
-                // TODO error
-            }
-            sk->push(&const0);
+            SOME_CMP(>=)
             break;
         }
         case OpCode::op_cmp_lt: {
-            lpc_value_t *val1 = sk->pop();
-            lpc_value_t *val2 = sk->pop();
-            const0.type = value_type::int_;
-            if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.number < val1->pval.number;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.real < val1->pval.real;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::float_) {
-                const0.pval.number = val2->pval.number < val1->pval.real;
-            } else if (val1->type == value_type::float_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.real < val1->pval.number;
-            } else {
-                // TODO error
-            }
-            sk->push(&const0);
+            SOME_CMP(<)
             break;
         }
         case OpCode::op_cmp_lte: {
-            lpc_value_t *val1 = sk->pop();
-            lpc_value_t *val2 = sk->pop();
-            const0.type = value_type::int_;
-            if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.number <= val1->pval.number;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.real <= val1->pval.real;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::float_) {
-                const0.pval.number = val2->pval.number <= val1->pval.real;
-            } else if (val1->type == value_type::float_ && val2->type == value_type::int_) {
-                const0.pval.number = val2->pval.real <= val1->pval.number;
-            } else {
-                // TODO error
-            }
-            sk->push(&const0);
+            SOME_CMP(<=)
             break;
         }
 
@@ -434,7 +405,7 @@ new_frame:
             for (int i = idx; i >= 1; --i) {
                 lpc_value_t *v = sk->pop();
                 lpc_value_t *k = sk->pop();
-                map->set(k, v);
+                map->set(*k, *v);
             }
             const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(map);
             break;
@@ -453,7 +424,7 @@ new_frame:
                 arr->set(v, k->pval.number, OpCode(op));
             } else if (con->type == value_type::mappig_) {
                 lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(con->gcobj);
-                map->set(k, v);
+                map->set(*k, *v);
             } else {
                 // TODO error
             }
@@ -526,6 +497,7 @@ new_frame:
             break;
         }
         case OpCode::op_switch: {
+            EXTRACT_2_PARAMS
             lpc_value_t *val = sk->pop();
             if (val->type == value_type::string_) {
                 lpc_string_t *str = reinterpret_cast<lpc_string_t *>(val->gcobj);
@@ -535,8 +507,17 @@ new_frame:
             } else {
                 // TODO report error
             }
-            // TODO 查找跳转表
             
+            // 查找跳转表
+            object_proto_t *proto = ci->cur_obj->get_proto();
+            std::unordered_map<lint32_t, lint32_t> &map = proto->lookup_table[idx];
+            if (map.count(const0.pval.number)) {
+                pc = start + map[const0.pval.number];
+            } else if (proto->defaults.count(idx)) {
+                pc = start + proto->defaults[idx];
+            } else {
+                // TODO report error
+            }
             break;
         }
 
@@ -576,7 +557,16 @@ new_frame:
             sk->push(iter);
 
             if (sz > 1) {
-                
+                lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(val->gcobj);
+                if (index >= map->get_size()) {
+                    sk->pop();
+                    pc = start + idx;
+                    break;
+                }
+
+                bucket_t *b = map->get_bucket(index);
+                sk->push(&b->pair[0]);
+                sk->push(&b->pair[1]);
             } else {
                 lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(val->gcobj);
                 if (index >= arr->get_size()) {
@@ -593,7 +583,8 @@ new_frame:
         }
 
         default:
-            std::cout << "xxxxxxxxxxxxxxxxxx \n";
+            std::cout << "unexpected!!! \n";
+            exit(-1);
             break;
         }
     }

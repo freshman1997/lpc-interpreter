@@ -119,6 +119,9 @@ private:
     std::vector<ClassDecl> clazz;
     std::set<std::string> pre_decl_funcs;
     std::vector<Func> funcs;
+    lint16_t create_idx = -1;
+    lint16_t onload_in_idx = -1;
+    lint16_t on_destruct_idx = -1;
 
     // 一个 block 就会有一层，主要是 switch case 下面的声明
     std::unordered_map<std::string, std::vector<Local>> locals;

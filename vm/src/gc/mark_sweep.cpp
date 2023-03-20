@@ -13,7 +13,7 @@ void mark_sweep_gc::mark(lpc_gc_object_t *gcobj)
 {
     while (gcobj) {
         gcobj->head.marked = true;
-        switch (gcobj->head.type) {
+        switch ((value_type)gcobj->head.type) {
             case value_type::array_: {
                 mark_array(gcobj);
                 break;
@@ -55,7 +55,7 @@ void mark_sweep_gc::mark(lpc_gc_object_t *gcobj)
             }
         }
 
-        gcobj = gcobj->head.next;
+        gcobj = (lpc_gc_object_t *)gcobj->head.next;
     }
 }
 
@@ -95,7 +95,7 @@ void * mark_sweep_gc::allocate(luint32_t sz)
 void mark_sweep_gc::link(lpc_gc_object_t *gcobj, value_type type)
 {
     gcobj->head.next = this->root;
-    gcobj->head.type = type;
+    gcobj->head.type = (lint8_t)type;
     this->root = gcobj;
 }
 

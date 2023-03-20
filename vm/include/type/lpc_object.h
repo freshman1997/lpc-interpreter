@@ -6,6 +6,9 @@
 struct lpc_value_t;
 class lpc_object_t
 {
+public: 
+    gc_header header;
+
 public:
     ~lpc_object_t();
     lpc_value_t * copy();

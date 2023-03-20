@@ -1,7 +1,9 @@
 #ifndef __LPC_PROTO__
 #define __LPC_PROTO__
 #include <unordered_map>
+#include <vector>
 #include "lpc.h"
+#include "type/lpc_string.h"
 
 enum class variasble_type
 {
@@ -45,7 +47,7 @@ public:
 
 union const_t
 {
-    const char *str;
+    lpc_string_t *str;
     lint32_t number;
     float real;
 };
@@ -67,21 +69,23 @@ public:
 
 };
 
-struct siwtch_item
-{
-    lint32_t caser;
-    lint32_t gotoW;
-};
-
 class object_proto_t
 {
+public:
+    gc_header header;
+
 public:
     const char *name;
     const char *instructions;
     lint32_t instruction_size;
 
-    const char *var_init_codes;
-    lint32_t init_code_size;
+    lint16_t create_idx;
+    lint16_t on_load_in_idx;
+    lint16_t on_destruct_idx;
+
+    const char *init_codes;
+    lint32_t ninit;
+    function_proto_t *init_fun;
 
     variable_proto_t *variable_table;
 
@@ -96,7 +100,12 @@ public:
     lint32_t nfunction = 0;
     lint32_t nclass = 0;
     lint32_t nconst = 0;
+
     lint32_t nswitch = 0;
+    // 第几个：case：goto
+    std::vector<std::unordered_map<lint32_t, lint32_t>> lookup_table;
+    // 第几个：goto
+    std::unordered_map<lint32_t, lint32_t> defaults;
 };
 
 #endif

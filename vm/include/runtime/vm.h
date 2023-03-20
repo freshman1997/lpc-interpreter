@@ -31,7 +31,7 @@ public:
     static lpc_vm_t * create_vm();
 
     void bootstrap();
-    void set_entry();
+    void set_entry(const char *);
     void on_start();
     void on_exit();
 
@@ -53,12 +53,21 @@ public:
         return this->alloc;
     }
 
+    void register_efun(void **efuns)
+    {
+        this->efuns = efuns;
+    }
+
+    void eval_init_codes(lpc_object_t *obj);
+    void on_create_object(lpc_object_t *obj);
+    void on_load_in_object(lpc_object_t *obj);
+    void on_destruct_object(lpc_object_t *obj);
+
 private:
     lpc_vm_t();
     const char *entry;
     exit_hook_t hook;
     lpc_mapping_t *loaded_protos;
-    call_info_t *ci;
     call_info_t *cur_ci;
     lpc_stack_t *stack;
     int init_stack_size;

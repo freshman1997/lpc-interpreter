@@ -8,9 +8,11 @@
 #include "type/lpc_object.h"
 #include "memory/memory.h"
 #include "gc/gc.h"
+#include "runtime/interpreter.h"
 
 using namespace std;
 extern string get_cwd();
+extern void init_efuns(lpc_vm_t *);
 
 object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 {
@@ -28,7 +30,29 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 
     object_proto_t *proto = alloc->allocate_object_proto();
 
-    luint32_t sz;
+    in.read((char *)&proto->create_idx, 2);
+    in.read((char *)&proto->on_load_in_idx, 2);
+    in.read((char *)&proto->on_destruct_idx, 2);
+
+    luint32_t sz = 0;
+    in.read((char *)&sz, 4);
+    proto->nswitch = sz;
+    lint32_t caser = 0, gotoW = 0;
+    for (int i = 0; i < sz; ++i) {
+        lint32_t sz1;
+        in.read((char *)&sz1, 4);
+        proto->lookup_table.push_back({});
+        for (int j = 0; j < sz1; ++j) {
+            in.read((char *)&caser, 4);
+            in.read((char *)&gotoW, 4);
+            if (gotoW < 0) {
+                proto->defaults[i] = -gotoW;
+            } else {
+                proto->lookup_table.back()[caser] = gotoW;
+            }
+        }
+    }
+
     in.read((char *)&sz, 4);
     function_proto_t *func_proto = new function_proto_t[sz];
     for (int i = 0; i < sz; ++i) {
@@ -96,7 +120,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
             char *buf = new char[len + 1];
             in.read(buf, len);
             buf[len + 1] = '\0';
-            sconsts[i].item.str = buf;
+            sconsts[i].item.str = alloc->allocate_string(buf);
         }
         proto->sconst = sconsts;
     }
@@ -116,14 +140,18 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     }
 
     in.read((char *)&sz, 4);
-    proto->var_init_codes = nullptr;
-    proto->init_code_size = 0;
+    proto->init_codes = nullptr;
+    proto->ninit = 0;
     if (sz > 0) {
-        char *var_inits = new char[sz];
+        function_proto_t *init_fun = new function_proto_t;
+        char *var_inits = new char[sz + 1];
         in.read(var_inits, sz);
-
-        proto->var_init_codes = var_inits;
-        proto->init_code_size = sz;
+        var_inits[sz + 1] = (char)OpCode::op_return;
+        proto->init_codes = var_inits;
+        proto->ninit = sz;
+        init_fun->fromPC = 0;
+        init_fun->toPC = sz + 1;
+        proto->init_fun = init_fun;
     }
 
     in.read((char *)&sz, 4);
@@ -146,50 +174,59 @@ lpc_object_t * lpc_vm_t::load_object(const char *name)
 {
     lpc_object_t *obj = alloc->allocate_object();
     obj->set_proto(load_object_proto(name));
+    if (obj->get_proto()->init_codes) {
+        this->eval_init_codes(obj);
+    }
 
+    this->on_create_object(obj);
+    lpc_string_t *k = alloc->allocate_string(name);
+
+    // TODO
+    lpc_value_t key;
+    key.type = value_type::string_;
+    key.gcobj = reinterpret_cast<lpc_gc_object_t *>(k);
+
+    lpc_value_t val;
+    val.type = value_type::object_;
+    val.gcobj = reinterpret_cast<lpc_gc_object_t *>(obj);
+    loaded_protos->set(key, val);
+    this->on_load_in_object(obj);
     return obj;
 }
 
 lpc_vm_t::lpc_vm_t()
 {
+    init_efuns(this);
     this->stack = new lpc_stack_t(20000);
     this->alloc = new lpc_allocator_t(this);
     this->gc = new lpc_gc_t;
-    entry = "1";
-    call_info_t *ci = new call_info_t;
-    ci->base = stack->top();
-    ci->cur_obj = load_object(entry);
-
-    // TODO 设置开始执行的位置、给全局变量赋值啥的
-    ci->savepc = ci->cur_obj->get_pc() + ci->cur_obj->get_proto()->func_table[1].fromPC;
-    ci->funcIdx = 1;
-
-    this->ci = ci;
-    this->cur_ci = ci;
-    //sfun_object_name = "rc/simulate/main.c";
-    //this->sfun_obj = load_object(sfun_object_name);
 }
 
 lpc_vm_t * lpc_vm_t::create_vm()
 {
     lpc_vm_t *vm = new lpc_vm_t();
-
+    vm->bootstrap();
     return vm;
 }
 
 void lpc_vm_t::bootstrap()
 {
+    // TODO
+    //sfun_object_name = "rc/simulate/main.c";
+    //this->sfun_obj = load_object(sfun_object_name);
 
+    entry = "1";
+    load_object(entry);
 }
 
-void lpc_vm_t::set_entry()
+void lpc_vm_t::set_entry(const char *entry)
 {
-
+    this->entry = entry;
 }
 
 void lpc_vm_t::on_start()
 {
-
+    // init something
 }
 
 void lpc_vm_t::on_exit()
@@ -217,8 +254,12 @@ call_info_t * lpc_vm_t::get_call_info()
     nci->cur_obj = obj;
     nci->pre = cur_ci;
     nci->base = stack->top() - f.nargs;
-    cur_ci->next = nci;
-    cur_ci = nci;
+    if (cur_ci) {
+        cur_ci->next = nci;
+        cur_ci = nci;
+    } else {
+        cur_ci = nci;
+    }
 }
 
 void lpc_vm_t::pop_frame()
@@ -239,4 +280,51 @@ void lpc_vm_t::pop_frame()
 lpc_gc_t * lpc_vm_t::get_gc()
 {
     return this->gc;
+}
+
+void lpc_vm_t::eval_init_codes(lpc_object_t *obj)
+{
+    object_proto_t *proto = obj->get_proto();
+    if (!proto->init_codes) {
+        return;
+    }
+
+    new_frame(obj, -1);
+    vm::eval(this);
+}
+
+void lpc_vm_t::on_create_object(lpc_object_t *obj)
+{
+    object_proto_t *proto = obj->get_proto();
+    if (proto->create_idx < 0) {
+        // TODO warning
+        return;
+    }
+
+    new_frame(obj, proto->create_idx);
+    vm::eval(this);
+}
+
+void lpc_vm_t::on_load_in_object(lpc_object_t *obj)
+{
+    object_proto_t *proto = obj->get_proto();
+    if (proto->on_load_in_idx < 0) {
+        // TODO warning
+        return;
+    }
+
+    new_frame(obj, proto->on_load_in_idx);
+    vm::eval(this);
+}
+
+void lpc_vm_t::on_destruct_object(lpc_object_t *obj)
+{
+    object_proto_t *proto = obj->get_proto();
+    if (proto->on_destruct_idx < 0) {
+        // TODO warning
+        return;
+    }
+
+    new_frame(obj, proto->on_destruct_idx);
+    vm::eval(this);
 }
