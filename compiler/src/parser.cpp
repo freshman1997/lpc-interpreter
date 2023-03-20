@@ -1210,6 +1210,7 @@ static AbstractExpression * parse_while(Token *tok, Token *t)
 
     bool skip = false;
     whileExpression *w = new whileExpression;
+    w->cond = exp;
 
     tok = tok->next;
     if (tok->kind != TokenKind::k_symbol_qg1) {
@@ -1412,12 +1413,14 @@ static AbstractExpression * parse_if_exp(Token *tok, Token *t)
             if (type == 2) {
                 skip = false;
                 tok = t->next;
+                ifExp->exps.push_back(if_);
                 break;
             }
 
             if (t->next && t->next->kind != TokenKind::k_key_word_else) {
                 tok = t->next;
                 skip = false;
+                ifExp->exps.push_back(if_);
                 break;
             }
         } else {

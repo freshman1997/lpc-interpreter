@@ -171,7 +171,7 @@ new_frame:
             lpc_value_t *v1 = sk->pop();
             lpc_value_t *v2 = sk->pop();
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
-                v2->pval.number = v1->pval.number % v2->pval.number;
+                v2->pval.number = v2->pval.number % v1->pval.number;
             } else {
                 // TODO report error
             }
