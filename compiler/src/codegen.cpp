@@ -11,14 +11,19 @@
 
 using namespace std;
 
-static vector<Func> efuns = {
-    {false, true, nullptr, DeclType::void_, nullptr, 0, 0, 0, 0, "call_other"},
-    {false, true, nullptr, DeclType::void_, nullptr, 0, 0, 0, 0, "debug_message"},
+static vector<EfunDecl> efuns = {
+    {"call_other", {DeclType::object_, DeclType::varargs_}, true},
+    {"debug_message", {DeclType::string_, DeclType::varargs_}, true},
+    {"intp", {DeclType::object_}, false},
+    {"floatp", {DeclType::object_}, false},
+    {"stringp", {DeclType::object_}, false},
+    {"arrayp", {DeclType::object_}, false},
+    {"mapp", {DeclType::object_}, false},
 };
 
 static vector<Func> sfuns = {};
 
-void init_sfun_and_efun(const char *sfunFile, const char *efunDefFile)
+void init_sfun_and_efun(const char *sfunFile)
 {
     // TODO
     
@@ -26,13 +31,20 @@ void init_sfun_and_efun(const char *sfunFile, const char *efunDefFile)
 
 static lint16_t find_fun_idx(const string &name, int type)
 {
-    vector<Func> &con = type ? efuns : sfuns;
     lint16_t idx = 0;
-    for (auto &it : con) {
-        if (it.efunName == name) {
-            return idx;
+    if (type == 0) {
+        for (auto &it : sfuns) {
+            if (it.efunName == name) {
+                return idx;
+            }
+            ++idx;
         }
-        ++idx;
+    } else {
+        for (int i = 0; i < efuns.size(); ++i) {
+            if (efuns[i].name == name) {
+                return i;
+            }
+        }
     }
 
     return -1;
@@ -62,8 +74,8 @@ static lint16_t find_fun_idx(const string &name, int type)
     } else if (val->valType == 1) { \
         lint16_t idx = find_const<lfloat32_t>(val->val.dval, floatConsts); \
         if (idx < 0) { \
-            idx = intConsts.size(); \
-            intConsts.push_back(val->val.dval); \
+            idx = floatConsts.size(); \
+            floatConsts.push_back(val->val.dval); \
         } \
         \
         (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_fconst)); \
@@ -72,7 +84,7 @@ static lint16_t find_fun_idx(const string &name, int type)
         /* TODO optimize */ \
         lint16_t idx = find_const<string>(val->val.sval->strval, stringConsts); \
         if (idx < 0) { \
-            idx = intConsts.size(); \
+            idx = stringConsts.size(); \
             stringConsts.push_back(val->val.sval->strval); \
         } \
         \
@@ -90,7 +102,7 @@ static lint16_t find_fun_idx(const string &name, int type)
             /* TODO optimize */ \
             lint16_t idx = find_const<string>(val->val.sval->strval, stringConsts); \
             if (idx < 0) { \
-                idx = intConsts.size(); \
+                idx = stringConsts.size(); \
                 stringConsts.push_back(val->val.sval->strval); \
             } \
             \
@@ -209,6 +221,10 @@ static lint16_t find_fun_idx(const string &name, int type)
             \
             case ExpressionType::return_: { \
                 generate_return(it); \
+                break; \
+            } \
+            case ExpressionType::call_: { \
+                generate_call(it, DeclType::none_); \
                 break; \
             } \
             default: { \
@@ -1329,16 +1345,14 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
             cout << "undefined function: " << id->val.sval->strval << endl;
             exit(-1);
         }
-    }
-
-    lint16_t idx = -1;
-    if (type == DeclType::none_) {
-        idx = find_func_idx(id->val.sval->strval, funcs);
-        if (idx < 0) {
+    } else if (type == DeclType::none_) {
+        funIdx = find_func_idx(id->val.sval->strval, funcs);
+        lint32_t type = 0;
+        if (funIdx < 0) {
             error_at(__LINE__);
         }
         
-        const Func &f = funcs[idx];
+        const Func &f = funcs[funIdx];
         // 参数类型检查，查找当前上下文
         // 1、变量类型，2、函数调用返回值类型，4、op操作类型最后的类型
         // 参数数量是否一致
@@ -1352,8 +1366,12 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         switch (it->get_type()) {
             case ExpressionType::value_: {
                 vector<Local> &scopeLocals = locals[cur_scope];
-                vector<Local> &callScope = locals[id->val.sval->strval];
-                GENERATE_VALUE(it, callScope[i].type)
+                if (locals.count(id->val.sval->strval)) {
+                    vector<Local> &callScope = locals[id->val.sval->strval];
+                    GENERATE_VALUE(it, callScope[i].type)
+                } else {
+                    GENERATE_VALUE(it, DeclType::none_)
+                }
                 break;
             }
             case ExpressionType::oper_: {
@@ -1408,9 +1426,9 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
     }
 
     (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call));
-    if (type == DeclType::none_){
+    if (type == DeclType::none_ && locals.count(id->val.sval->strval)) {
         (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(3));
-        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funcs[idx].idx)
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funcs[funIdx].idx)
     } else if (is_sfun) {
         Func &f = sfuns[funIdx];
         if (call->params.size() > f.nparams) {
@@ -1424,8 +1442,9 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         // 调用的 efun 位置
         LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funIdx)
 
-        Func &f = efuns[funIdx];
-        if (!f.is_varargs && call->params.size() > f.nparams) {
+        EfunDecl &f = efuns[funIdx];
+        lint16_t nparam  = f.varargs ? f.paramTypes.size() - 1 : f.paramTypes.size();
+        if (!f.varargs && call->params.size() > nparam) {
             error_at(__LINE__);
         }
 

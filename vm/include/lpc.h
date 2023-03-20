@@ -22,4 +22,8 @@ struct gc_header{
     lint8_t type;
 };
 
+class lpc_stack_t;
+
+typedef void (*efun_t)(lpc_stack_t *, lint32_t);
+
 #endif

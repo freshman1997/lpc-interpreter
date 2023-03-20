@@ -51,6 +51,7 @@ enum class DeclType
     func_,
     class_,
     user_define_,
+    varargs_,
 };
 
 class ExpressionVisitor

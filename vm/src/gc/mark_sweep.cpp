@@ -89,6 +89,8 @@ void * mark_sweep_gc::allocate(luint32_t sz)
         // TODO
     }
 
+    blocks += sz;
+
     return p;
 }
 
@@ -97,5 +99,6 @@ void mark_sweep_gc::link(lpc_gc_object_t *gcobj, value_type type)
     gcobj->head.next = this->root;
     gcobj->head.type = (lint8_t)type;
     this->root = gcobj;
+    ++total_objects;
 }
 

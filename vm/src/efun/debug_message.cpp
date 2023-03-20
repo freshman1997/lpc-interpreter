@@ -168,7 +168,24 @@ void debug_message(const char *fmt, ...)
     }
 }
 #else 
-// win32 实现
 
+#define V_DCL(x)
+#define V_START(vlist, last_arg) va_start(vlist, last_arg)
+#define V_VAR(type, var, vlist)
+
+// win32 实现
+void debug_message(const char *fmt, ...)
+{
+    time_t tm;
+    va_list args;
+    FILE *fp = NULL;
+    V_DCL(char *fmt);
+    // 写到控制台
+    V_START(args, fmt);
+    V_VAR(char *, fmt, args);
+    vfprintf(stderr, fmt, args);
+    fflush(stderr);
+    va_end(args);
+}
 
 #endif

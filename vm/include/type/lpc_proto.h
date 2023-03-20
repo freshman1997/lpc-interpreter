@@ -90,8 +90,13 @@ public:
     variable_proto_t *variable_table;
 
     constant_proto_t *iconst;
+    lint32_t niconst;
+
     constant_proto_t *fconst;
+    lint32_t nfconst;
+    
     constant_proto_t *sconst;
+    lint32_t nsconst;
 
     class_proto_t *class_table;
     function_proto_t *func_table;

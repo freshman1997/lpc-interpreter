@@ -10,9 +10,9 @@
 
 #define MAX_LOCAL (0xffff)
 
-void init_sfun_and_efun(const char *sfunFile, const char *efunDefFile);
+void init_sfun_and_efun(const char *sfunFile);
 
-struct efun_decl
+struct EfunDecl
 {
     std::string name;
     std::vector<DeclType> paramTypes;

@@ -56,7 +56,7 @@ new_frame:
     lpc_stack_t *sk = lvm->get_stack();
     function_proto_t *fun;
     const char *pc = ci->savepc, *start;
-    if (ci->funcIdx > 0) {
+    if (ci->funcIdx >= 0) {
         start = ci->cur_obj->get_proto()->instructions;
         fun = &ci->cur_obj->get_proto()->func_table[ci->funcIdx];
     } else {
@@ -64,10 +64,8 @@ new_frame:
         fun = ci->cur_obj->get_proto()->init_fun;
     }
 
-    sk->set_local_size(fun->nlocal);
-
     for(;;) {
-        std::cout << "diff: " << pc - start << std::endl;
+        //std::cout << "diff: " << pc - start << std::endl;
         OpCode op = (OpCode)*(pc++);
         if (pc - start > fun->toPC + 1) {
             std::cout << "Exit normally.\n";
@@ -105,6 +103,11 @@ new_frame:
         case OpCode::op_load_iconst: {
             EXTRACT_2_PARAMS
             const0.type = value_type::int_;
+            if (ci->cur_obj->get_proto()->niconst <= idx) {
+                std::cout << "error found: int const index over range!!!\n";
+                exit(-1);
+            }
+
             const0.pval.number = ci->cur_obj->get_proto()->iconst[idx].item.number;
             sk->push(&const0);
             break;
@@ -112,6 +115,11 @@ new_frame:
         case OpCode::op_load_fconst: {
             EXTRACT_2_PARAMS
             const0.type = value_type::float_;
+            if (ci->cur_obj->get_proto()->nfconst <= idx) {
+                std::cout << "error found: float const index over range!!!\n";
+                exit(-1);
+            }
+
             const0.pval.real = ci->cur_obj->get_proto()->fconst[idx].item.real;
             sk->push(&const0);
             break;
@@ -119,6 +127,11 @@ new_frame:
         case OpCode::op_load_sconst: {
             EXTRACT_2_PARAMS
             const0.type = value_type::string_;
+            if (ci->cur_obj->get_proto()->nsconst <= idx) {
+                std::cout << "error found: string const index over range!!!\n";
+                exit(-1);
+            }
+
             lpc_string_t *s = ci->cur_obj->get_proto()->sconst[idx].item.str;
             const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(s);
             sk->push(&const0);
@@ -434,17 +447,19 @@ new_frame:
         case OpCode::op_call: {
             lint8_t type = *(pc++);
             EXTRACT_2_PARAMS
+            ci->savepc = pc;
             if (type == 3) {
-                ci->savepc = pc;
                 lvm->new_frame(ci->cur_obj, idx);
                 goto new_frame;
             } else if (type == 2) {
                 // sfun
-
+                lvm->new_frame(lvm->get_sfun_object(), idx);
+                goto new_frame;
             } else if (type == 1) {
                 // efun
                 lint8_t nargs = *(pc++);
-
+                efun_t *efuns = lvm->get_efuns();
+                efuns[idx](sk, nargs);
             }
             break;
         }

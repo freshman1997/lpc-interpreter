@@ -53,9 +53,19 @@ public:
         return this->alloc;
     }
 
-    void register_efun(void **efuns)
+    void register_efun(efun_t *efuns)
     {
         this->efuns = efuns;
+    }
+
+    efun_t * get_efuns()
+    {
+        return this->efuns;
+    }
+
+    lpc_object_t * get_sfun_object()
+    {
+        return sfun_obj;
     }
 
     void eval_init_codes(lpc_object_t *obj);
@@ -73,7 +83,7 @@ private:
     int init_stack_size;
     int ncall;
 
-    void **efuns;               // efun table
+    efun_t *efuns;               // efun table
     int size_efun;
 
     const char *sfun_object_name;

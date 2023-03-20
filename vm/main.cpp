@@ -59,6 +59,5 @@ int main(int argc, char **argv)
 	cout << "random value: " << os::random() << endl;
 
     lpc_vm_t *vm = lpc_vm_t::create_vm();
-    vm::eval(vm);
 	return 0;
 }
