@@ -1,5 +1,6 @@
 ﻿#include <string>
 #include <fstream>
+#include <iostream>
 
 #include "lpc_value.h"
 #include "runtime/vm.h"
@@ -8,7 +9,6 @@
 #include "type/lpc_object.h"
 #include "memory/memory.h"
 #include "gc/gc.h"
-#include "runtime/interpreter.h"
 
 using namespace std;
 extern string get_cwd();
@@ -19,7 +19,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 {
     if (!name) return nullptr;
     const string &cwd = get_cwd();
-    string realName = "D:/code/src/vs/lpc-interpreter/build/compiler/Debug/1.b";
+    string realName = "/home/yuan/codes/test/lpc/build/compiler/" + string(name) + ".b";
 
     // TODO 检查文件夹啥的
 
@@ -177,8 +177,51 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 lpc_object_t * lpc_vm_t::load_object(const char *name)
 {
     lpc_object_t *obj = alloc->allocate_object();
-    obj->set_proto(load_object_proto(name));
+    object_proto_t *proto = load_object_proto(name);
+    if (!proto) {
+        cout << "can not load object: " << name << endl;
+        exit(-1);
+    }
+
+    obj->set_proto(proto);
     return obj;
+}
+
+void lpc_vm_t::on_loaded_object(lpc_object_t *obj, const char *name)
+{
+    if (obj->get_proto()->init_codes) {
+        this->eval_init_codes(obj);
+    }
+
+    this->on_create_object(obj);
+    lpc_string_t *k = alloc->allocate_string(name);
+
+    lpc_value_t key;
+    key.type = value_type::string_;
+    key.gcobj = reinterpret_cast<lpc_gc_object_t *>(k);
+
+    lpc_value_t val;
+    val.type = value_type::object_;
+    val.gcobj = reinterpret_cast<lpc_gc_object_t *>(obj);
+    this->on_load_in_object(obj);
+    loaded_protos->set(&key, &val);
+}
+
+lpc_object_t * lpc_vm_t::find_oject(lpc_value_t *name)
+{
+    if (name->type != value_type::string_) {
+        return nullptr;
+    }
+
+    lpc_value_t *val = loaded_protos->get_value(name);
+    if (val) {
+        return reinterpret_cast<lpc_object_t *>(val->gcobj);
+    } else {
+        lpc_string_t *str = reinterpret_cast<lpc_string_t *>(name->gcobj);
+        lpc_object_t *obj = load_object(str->get_str());
+        on_loaded_object(obj, str->get_str());
+        return obj;
+    }
 }
 
 lpc_vm_t::lpc_vm_t()
@@ -187,6 +230,15 @@ lpc_vm_t::lpc_vm_t()
     this->stack = new lpc_stack_t(20000);
     this->alloc = new lpc_allocator_t(this);
     this->gc = new lpc_gc_t;
+
+    loaded_protos = alloc->allocate_mapping();
+    base_ci = nullptr;
+    cur_ci = nullptr;
+    entry = "1";
+
+    // TODO
+    //sfun_object_name = "rc/simulate/main.c";
+    //this->sfun_obj = load_object(sfun_object_name);
 }
 
 lpc_vm_t * lpc_vm_t::create_vm()
@@ -198,32 +250,8 @@ lpc_vm_t * lpc_vm_t::create_vm()
 
 void lpc_vm_t::bootstrap()
 {
-    // TODO
-    //sfun_object_name = "rc/simulate/main.c";
-    //this->sfun_obj = load_object(sfun_object_name);
-
-    loaded_protos = alloc->allocate_mapping();
-    cur_ci = nullptr;
-
-    entry = "1";
     lpc_object_t *obj = load_object(entry);
-    if (obj->get_proto()->init_codes) {
-        this->eval_init_codes(obj);
-    }
-
-    this->on_create_object(obj);
-    lpc_string_t *k = alloc->allocate_string(entry);
-
-    // TODO
-    lpc_value_t key;
-    key.type = value_type::string_;
-    key.gcobj = reinterpret_cast<lpc_gc_object_t *>(k);
-
-    lpc_value_t val;
-    val.type = value_type::object_;
-    val.gcobj = reinterpret_cast<lpc_gc_object_t *>(obj);
-    loaded_protos->set(key, val);
-    this->on_load_in_object(obj);
+    on_loaded_object(obj, entry);
 }
 
 void lpc_vm_t::set_entry(const char *entry)
@@ -251,7 +279,7 @@ call_info_t * lpc_vm_t::get_call_info()
     return this->cur_ci;
 }
 
- void lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx)
+call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx)
 {
     call_info_t *nci = new call_info_t;
     object_proto_t *proto = obj->get_proto();
@@ -268,7 +296,13 @@ call_info_t * lpc_vm_t::get_call_info()
         cur_ci = nci;
     }
 
+    if (!base_ci) {
+        base_ci = nci;
+    }
+
     stack->set_local_size(f.nlocal);
+
+    return nci;
 }
 
 void lpc_vm_t::pop_frame()

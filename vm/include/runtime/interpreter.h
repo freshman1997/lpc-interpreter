@@ -1,7 +1,7 @@
 ﻿#ifndef __INTERPRETER_H__
 #define __INTERPRETER_H__
-#include "vm.h"
 
+class lpc_vm_t;
 namespace vm {
     void eval(lpc_vm_t *);
 }

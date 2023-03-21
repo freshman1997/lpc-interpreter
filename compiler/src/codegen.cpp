@@ -6,6 +6,7 @@
 #include <unistd.h>
 #endif
 
+#include "parser.h"
 #include "codegen.h"
 #include "opcode.h"
 
@@ -25,8 +26,12 @@ static vector<Func> sfuns = {};
 
 void init_sfun_and_efun(const char *sfunFile)
 {
-    // TODO
-    
+    Parser parser;
+	ExpressionVisitor *doc = parser.parse(sfunFile);
+	CodeGenerator g;
+	g.generate(dynamic_cast<AbstractExpression *>(doc));
+	g.dump();
+    sfuns = g.get_funcs();
 }
 
 static lint16_t find_fun_idx(const string &name, int type)
@@ -34,7 +39,7 @@ static lint16_t find_fun_idx(const string &name, int type)
     lint16_t idx = 0;
     if (type == 0) {
         for (auto &it : sfuns) {
-            if (it.efunName == name) {
+            if (it.name->strval == name) {
                 return idx;
             }
             ++idx;
@@ -1339,6 +1344,7 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         funIdx = find_fun_idx(id->val.sval->strval, 1);
         if (funIdx < 0) {
             funIdx = find_fun_idx(id->val.sval->strval, 0);
+            is_sfun = funIdx >= 0;
         }
 
         if (funIdx < 0) {
@@ -1347,7 +1353,6 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         }
     } else if (type == DeclType::none_) {
         funIdx = find_func_idx(id->val.sval->strval, funcs);
-        lint32_t type = 0;
         if (funIdx < 0) {
             error_at(__LINE__);
         }
@@ -1360,6 +1365,27 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
             error_at(__LINE__);
         }
     } 
+
+    lint8_t extArgs = 0;
+    if (type == DeclType::user_define_) {
+        /* TODO optimize */
+        lint16_t idx = find_const<string>(id->val.sval->strval, stringConsts);
+        if (idx < 0) {
+            idx = stringConsts.size();
+            stringConsts.push_back(id->val.sval->strval);
+        } 
+        
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_sconst));
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
+
+        string call_other = "call_other";
+        funIdx = find_fun_idx(call_other, 1);
+        if (funIdx < 0) {
+            error_at(__LINE__);
+        }
+
+        extArgs = 2;
+    }
 
     int i = 0;
     for (auto &it : call->params) {
@@ -1402,27 +1428,6 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         }
 
         ++i;
-    }
-
-    lint8_t extArgs = 0;
-    if (type == DeclType::user_define_) {
-        /* TODO optimize */
-        lint16_t idx = find_const<string>(id->val.sval->strval, stringConsts);
-        if (idx < 0) {
-            idx = intConsts.size();
-            stringConsts.push_back(id->val.sval->strval);
-        } 
-        
-        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_sconst));
-        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
-
-        string call_other = "call_other";
-        funIdx = find_fun_idx(call_other, 1);
-        if (funIdx < 0) {
-            error_at(__LINE__);
-        }
-
-        extArgs = 2;
     }
 
     (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call));
@@ -1512,7 +1517,6 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
             0,
             0,
             0,
-            nullptr, 
             (lint16_t)funcs.size()
         });
     }

@@ -30,7 +30,6 @@ struct Func
     luint16_t nlocals = 0;
     luint32_t fromPc = 0;
     luint32_t toPc = 0;
-    const char *efunName = nullptr;
     lint16_t idx = 0;
 };
 

@@ -10,6 +10,7 @@
 #include "runtime/stack.h"
 #include "memory/memory.h"
 #include "type/lpc_string.h"
+#include "runtime/vm.h"
 
 #define EXTRACT_2_PARAMS lint16_t idx = *(pc) | *(pc + 1); pc += 2;
 #define EXTRACT_4_PARAMS lint32_t idx = *(pc) | *(pc + 1) | *(pc + 2) | *(pc + 3); pc += 4;
@@ -67,6 +68,7 @@ new_frame:
     for(;;) {
         //std::cout << "diff: " << pc - start << std::endl;
         OpCode op = (OpCode)*(pc++);
+        std::cout << "diff: " << pc - start << std::endl;
         if (pc - start > fun->toPC + 1) {
             std::cout << "Exit normally.\n";
             break;
@@ -418,7 +420,7 @@ new_frame:
             for (int i = idx; i >= 1; --i) {
                 lpc_value_t *v = sk->pop();
                 lpc_value_t *k = sk->pop();
-                map->set(*k, *v);
+                map->set(k, v);
             }
             const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(map);
             break;
@@ -437,7 +439,7 @@ new_frame:
                 arr->set(v, k->pval.number, OpCode(op));
             } else if (con->type == value_type::mappig_) {
                 lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(con->gcobj);
-                map->set(*k, *v);
+                map->set(k, v);
             } else {
                 // TODO error
             }
@@ -447,7 +449,7 @@ new_frame:
         case OpCode::op_call: {
             lint8_t type = *(pc++);
             EXTRACT_2_PARAMS
-            ci->savepc = pc;
+            ci->savepc = pc + 1;
             if (type == 3) {
                 lvm->new_frame(ci->cur_obj, idx);
                 goto new_frame;
@@ -459,12 +461,12 @@ new_frame:
                 // efun
                 lint8_t nargs = *(pc++);
                 efun_t *efuns = lvm->get_efuns();
-                efuns[idx](sk, nargs);
+                efuns[idx](lvm, nargs);
             }
             break;
         }
         case OpCode::op_return: {
-            ci->savepc = pc;
+            ci->savepc = pc;  // 最后一帧用的
             lvm->pop_frame();
             goto new_frame;
             break;

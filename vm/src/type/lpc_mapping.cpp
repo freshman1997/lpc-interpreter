@@ -30,25 +30,25 @@ lpc_mapping_t::lpc_mapping_t(lpc_gc_t *gc)
     this->gc = gc;
 }
 
-bucket_t * lpc_mapping_t::get(lpc_value_t k)
+bucket_t * lpc_mapping_t::get(lpc_value_t *k)
 {
-    int hash = calc_hash(&k) % size;
+    int hash = calc_hash(k) % size;
     bucket_t *b = &members[hash];
     bucket_t *target = nullptr;
     while (b->next) {
         lpc_value_t &key = b->pair[0];
         lpc_value_t &val = b->pair[1];
-        if (k.type == value_type::int_ || k.type == value_type::float_) {
+        if (k->type == value_type::int_ || k->type == value_type::float_) {
             if (key.type == value_type::int_ || key.type == value_type::float_) {
-                if (key.pval.number != k.pval.number) {
+                if (key.pval.number != k->pval.number) {
                     b = b->next;
                 } else {
                     target = b;
                     break;
                 }
             }
-        } else if (k.type == value_type::string_ && key.type == value_type::string_) {
-            lpc_string_t *str1 = reinterpret_cast<lpc_string_t *>(k.gcobj);
+        } else if (k->type == value_type::string_ && key.type == value_type::string_) {
+            lpc_string_t *str1 = reinterpret_cast<lpc_string_t *>(k->gcobj);
             lpc_string_t *str2 = reinterpret_cast<lpc_string_t *>(key.gcobj);
             if (str1->get_hash() != str2->get_hash()) {
                 b = b->next;
@@ -64,9 +64,15 @@ bucket_t * lpc_mapping_t::get(lpc_value_t k)
     return target ? target : nullptr;
 }
 
-void lpc_mapping_t::set(lpc_value_t k, lpc_value_t v)
+lpc_value_t * lpc_mapping_t::get_value(lpc_value_t *k)
 {
-    int hash = calc_hash(&k) % size;
+    bucket_t *b = get(k);
+    return b ? &b->pair[1] : nullptr;
+}
+
+void lpc_mapping_t::set(lpc_value_t *k, lpc_value_t *v)
+{
+    int hash = calc_hash(k) % size;
     bucket_t *b = &members[hash];
     bucket_t *t = b;
     while (b->next) {
@@ -75,18 +81,18 @@ void lpc_mapping_t::set(lpc_value_t k, lpc_value_t v)
 
     if (t == b) {
         b->pair = new lpc_value_t[2];
-        b->pair[0] = k;
-        b->pair[1] = v;
+        b->pair[0] = *k;
+        b->pair[1] = *v;
     } else {
         bucket_t *b1 = new bucket_t;
         b1->pair = new lpc_value_t[2];
-        b1->pair[0] = k;
-        b1->pair[1] = v;
+        b1->pair[0] = *k;
+        b1->pair[1] = *v;
         b->next = b1;
     }
 }
 
-void lpc_mapping_t::upset(lpc_value_t k, lpc_value_t v)
+void lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v)
 {
     bucket_t *found = get(k);
     if (found) {
@@ -95,10 +101,10 @@ void lpc_mapping_t::upset(lpc_value_t k, lpc_value_t v)
             found->pair = new lpc_value_t[2];
         }
         
-        found->pair[0] = k;
-        found->pair[1] = v;
+        found->pair[0] = *k;
+        found->pair[1] = *v;
     } else {
-        int hash = calc_hash(&k) % this->size;
+        int hash = calc_hash(k) % this->size;
         bucket_t *b = &members[hash];
         bucket_t *t = b;
         while (b->next) {
@@ -107,22 +113,22 @@ void lpc_mapping_t::upset(lpc_value_t k, lpc_value_t v)
 
         if (t != b) {
             bucket_t *node = new bucket_t;
-            node->pair[0] = k;
-            node->pair[1] = v;
+            node->pair[0] = *k;
+            node->pair[1] = *v;
             b->next = node;
         } else {
-            b->pair[0] = k;
-            b->pair[1] = v;
+            b->pair[0] = *k;
+            b->pair[1] = *v;
         }
     }
 }
 
-void lpc_mapping_t::remove(lpc_value_t k)
+void lpc_mapping_t::remove(lpc_value_t *k)
 {
     bucket_t *found = get(k);
     if (!found) return;
 
-    int hash = calc_hash(&k) % this->size;
+    int hash = calc_hash(k) % this->size;
     bucket_t *b = &members[hash];
     bucket_t *slot = b;
 
@@ -168,7 +174,7 @@ lpc_array_t * mapping_keys(lpc_mapping_t *m)
     return nullptr;
 }
 
-void map_delete(lpc_mapping_t *map, lpc_value_t k)
+void map_delete(lpc_mapping_t *map, lpc_value_t *k)
 {
     map->remove(k);
 }

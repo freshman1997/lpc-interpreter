@@ -9,6 +9,10 @@ public:
     lpc_stack_t(int sz);
     bool push(lpc_value_t *);
     lpc_value_t * get(int idx);
+    int get_idx() 
+    {
+        return idx;
+    }
     lpc_value_t * top();
     lpc_value_t * pop();
     bool pop_n(int n);

@@ -24,14 +24,15 @@ public:
 public:
     lpc_mapping_t(lpc_gc_t *);
     lpc_value_t * copy();
-    bucket_t * get(lpc_value_t k);
-    void set(lpc_value_t k, lpc_value_t v);
-    void upset(lpc_value_t k, lpc_value_t v);
+    bucket_t * get(lpc_value_t *k);
+    lpc_value_t * get_value(lpc_value_t *k);
+    void set(lpc_value_t *k, lpc_value_t *v);
+    void upset(lpc_value_t *k, lpc_value_t *v);
     bucket_t * get_members();
     luint32_t get_size();
     bucket_t * get_bucket(int i);
     int calc_hash(lpc_value_t *);
-    void remove(lpc_value_t);
+    void remove(lpc_value_t *);
 
     void grow();
 

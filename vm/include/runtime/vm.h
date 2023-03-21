@@ -3,6 +3,7 @@
 #include "type/lpc_proto.h"
 #include "type/lpc_mapping.h"
 #include "type/lpc_object.h"
+#include "runtime/interpreter.h"
 
 struct lpc_value_t;
 class lpc_stack_t;
@@ -34,6 +35,10 @@ public:
     void set_entry(const char *);
     void on_start();
     void on_exit();
+    void run() 
+    {
+        vm::eval(this);
+    }
 
     call_info_t * get_call_info();
     lpc_stack_t * get_stack();
@@ -41,12 +46,14 @@ public:
     void call_efun();
     void call_sfun();
     
-    void new_frame(lpc_object_t *, lint16_t idx);
+    call_info_t * new_frame(lpc_object_t *, lint16_t idx);
     void pop_frame();
     lpc_gc_t * get_gc();
 
     object_proto_t * load_object_proto(const char *name);
     lpc_object_t * load_object(const char *name);
+    void on_loaded_object(lpc_object_t *, const char *);
+    lpc_object_t * find_oject(lpc_value_t *);
 
     lpc_allocator_t * get_alloc()
     {
@@ -79,6 +86,7 @@ private:
     exit_hook_t hook;
     lpc_mapping_t *loaded_protos;
     call_info_t *cur_ci;
+    call_info_t *base_ci;
     lpc_stack_t *stack;
     int init_stack_size;
     int ncall;
