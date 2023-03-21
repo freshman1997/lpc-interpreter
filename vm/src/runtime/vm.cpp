@@ -19,7 +19,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 {
     if (!name) return nullptr;
     const string &cwd = get_cwd();
-    string realName = "/home/yuan/codes/test/lpc/build/compiler/" + string(name) + ".b";
+    string realName = "D:/code/src/vs/lpc-interpreter/build/compiler/Debug/" + string(name) + ".b";
 
     // TODO 检查文件夹啥的
 
@@ -244,7 +244,6 @@ lpc_vm_t::lpc_vm_t()
 lpc_vm_t * lpc_vm_t::create_vm()
 {
     lpc_vm_t *vm = new lpc_vm_t();
-    vm->bootstrap();
     return vm;
 }
 

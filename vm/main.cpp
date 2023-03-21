@@ -33,7 +33,7 @@ string get_cwd()
 
 int main(int argc, char **argv)
 {
-    #if LUNIX
+#if LUNIX
 	char buf[PATHNAME_MAX];
 	if (NULL == getcwd(buf, sizeof(buf))) {
         perror("getcwd error");
@@ -51,13 +51,14 @@ int main(int argc, char **argv)
 		cwd = buf;
 		free(buf);
 	}
+	system("chcp 65001");
 #endif
-
     lint64_t seed = time(NULL);
 	//debug_message("xxxxxxxxxxxxxxxxxxxxx %d:%d,%d,%d\n", 100, _abs(-1), hash_("hello"), luaS_hash("hello", 5, (unsigned int)(seed)));
 	os::init_seed(seed);
 	cout << "random value: " << os::random() << endl;
 
     lpc_vm_t *vm = lpc_vm_t::create_vm();
+    vm->bootstrap();
 	return 0;
 }

@@ -68,7 +68,6 @@ new_frame:
     for(;;) {
         //std::cout << "diff: " << pc - start << std::endl;
         OpCode op = (OpCode)*(pc++);
-        std::cout << "diff: " << pc - start << std::endl;
         if (pc - start > fun->toPC + 1) {
             std::cout << "Exit normally.\n";
             break;
@@ -394,8 +393,35 @@ new_frame:
         }
 
         case OpCode::op_index: {
-            lpc_value_t *val1 = sk->pop();
-            lpc_value_t *val2 = sk->pop();
+            lpc_value_t *key = sk->pop();
+            lpc_value_t *con = sk->pop();
+            if (con->type == value_type::mappig_) {
+                lpc_mapping_t *mapping = reinterpret_cast<lpc_mapping_t *>(con->gcobj);
+                lpc_value_t *val = mapping->get_value(key);
+                if (!val) {
+                    const0.subtype = value_type::null_;
+                    sk->push(&const0);
+                } else {
+                    sk->push(val);
+                }
+            } else if (con->type == value_type::array_) {
+                if (key->type != value_type::int_) {
+                    std::cerr << "Only integer can index an array!!\n";
+                    exit(-1);
+                }
+
+                lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(con->gcobj);
+                if (arr->get_size() <= key->pval.number || key->pval.number < 0) {
+                    std::cerr << "Negative indexing key: " << key->pval.number << "\n";
+                    exit(-1);
+                }
+
+                lpc_value_t *val = arr->get(key->pval.number);
+                sk->push(val);
+            } else {
+                std::cerr << "error type to index: " << (int)con->type << "\n";
+                exit(-1);
+            }
             break;
         }
         case OpCode::op_new_array: {
@@ -423,12 +449,13 @@ new_frame:
                 map->set(k, v);
             }
             const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(map);
+            sk->push(&const0);
             break;
         }
         case OpCode::op_upset: {
-            lpc_value_t *v = sk->pop();
             lpc_value_t *k = sk->pop();
             lpc_value_t *con = sk->pop();
+            lpc_value_t *v = sk->pop();
             lint8_t op = *(pc++);
             if (con->type == value_type::array_) {
                 if (k->type != value_type::int_) {
@@ -439,9 +466,10 @@ new_frame:
                 arr->set(v, k->pval.number, OpCode(op));
             } else if (con->type == value_type::mappig_) {
                 lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(con->gcobj);
-                map->set(k, v);
+                map->upset(k, v);
             } else {
-                // TODO error
+                std::cerr << "error type to index: " << (int)con->type << "\n";
+                exit(-1);
             }
             break;
         }

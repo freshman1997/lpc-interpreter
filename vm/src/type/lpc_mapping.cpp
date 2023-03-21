@@ -34,8 +34,12 @@ bucket_t * lpc_mapping_t::get(lpc_value_t *k)
 {
     int hash = calc_hash(k) % size;
     bucket_t *b = &members[hash];
+    if (!b->pair) {
+        return nullptr;
+    }
+
     bucket_t *target = nullptr;
-    while (b->next) {
+    while (b) {
         lpc_value_t &key = b->pair[0];
         lpc_value_t &val = b->pair[1];
         if (k->type == value_type::int_ || k->type == value_type::float_) {
@@ -117,6 +121,9 @@ void lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v)
             node->pair[1] = *v;
             b->next = node;
         } else {
+            if (!b->pair) {
+                b->pair = new lpc_value_t[2];
+            }
             b->pair[0] = *k;
             b->pair[1] = *v;
         }

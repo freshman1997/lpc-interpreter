@@ -318,6 +318,27 @@ start:
                 luint8_t c = scanner->read();
                 while (c != '"' && !is_eof()) {
                     t->strval.push_back(c);
+                    // 下面是正常读取中文字符的
+                    /*
+                    int next = 1;
+                    if ((c & 0x80) == 0x00) {
+                        t->strval.push_back(c);
+                    } else if ((c & 0xE0) == 0xC0) {
+                        next = 2;
+                        t->strval.push_back(c);
+                        t->strval.push_back(scanner->read());
+                    } else if ((c & 0xF0) == 0xE0) {
+                        next = 3;
+                        t->strval.push_back(c);
+                        t->strval.push_back(scanner->read());
+                        t->strval.push_back(scanner->read());
+                    } else if ((c & 0xF8) == 0xF0) {
+                        next = 4;
+                        t->strval.push_back(c);
+                        t->strval.push_back(scanner->read());
+                        t->strval.push_back(scanner->read());
+                        t->strval.push_back(scanner->read());
+                    }*/
                     c = scanner->read();
                 }
                 scanner->peek1();

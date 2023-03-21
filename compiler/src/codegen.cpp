@@ -1273,7 +1273,7 @@ void CodeGenerator::generate_index(AbstractExpression *exp, bool lhs)
             (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_local));
         }
 
-        if (loc->type != DeclType::mapping_ || !loc->is_arr) {
+        if (loc->type != DeclType::mapping_ && !loc->is_arr) {
             error_at(__LINE__);
         }
 
