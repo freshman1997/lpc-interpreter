@@ -4,6 +4,7 @@
 #include <cstring>
 
 #ifdef WIN32
+#include <io.h>
 #else 
 #include <unistd.h>
 #include <dirent.h>
@@ -2448,6 +2449,39 @@ AbstractExpression * Parser::parse_one(const char *filename)
 static void find_all_file(vector<string> &all, string dirName)
 {
 #ifdef WIN32
+    if( (_access( "crt_ACCESS.C", 0 )) != -1 ) {
+        all.push_back(dirName);
+        return;
+    }
+    
+    // 这里用 long 来保存会出现错误，原因是 long 不同平台长度是不一样的，然后 x64 平台下出现负数，故出错了，intptr_t 做了处理，各平台一样
+    intptr_t hFile = 0;
+	//文件信息    
+	struct _finddata_t fileinfo;  //用来存储文件信息的结构体    
+	string p;
+	if ((hFile = _findfirst(p.assign(dirName).append("\\*").c_str(), &fileinfo)) != -1)  //第一次查找  
+	{
+        cout << p << endl;
+		do {
+			if ((fileinfo.attrib &  _A_SUBDIR)) {
+				if (strcmp(fileinfo.name, ".") != 0 && strcmp(fileinfo.name, "..") != 0)  //进入文件夹查找  
+				{
+					cout << "dir: " << fileinfo.name << endl;
+					find_all_file(all, p.assign(dirName).append("\\").append(fileinfo.name));
+				}
+			} else {
+                const char *pFile = strrchr(fileinfo.name, '.');
+                if (pFile != NULL && strcmp(pFile, ".txt") == 0) {
+                    all.push_back(string().assign(dirName).append("\\").append(fileinfo.name));
+                }
+			}
+		} while (_findnext(hFile, &fileinfo) == 0);
+
+		_findclose(hFile); //结束查找  
+	} else {
+        cout << "error on finding files!!! \n";
+        exit(-1);
+    }
 
 #else
     struct stat statbuf;

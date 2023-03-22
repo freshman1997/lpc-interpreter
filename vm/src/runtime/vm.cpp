@@ -281,6 +281,11 @@ call_info_t * lpc_vm_t::get_call_info()
 call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx)
 {
     call_info_t *nci = new call_info_t;
+    if (idx < 0) {
+        idx = -idx;
+        nci->call_other = true;
+    }
+    
     object_proto_t *proto = obj->get_proto();
     const function_proto_t &f = proto->func_table[idx];
     nci->savepc = proto->instructions + f.fromPC;

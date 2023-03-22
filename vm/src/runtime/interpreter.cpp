@@ -68,8 +68,7 @@ new_frame:
     for(;;) {
         //std::cout << "diff: " << pc - start << std::endl;
         OpCode op = (OpCode)*(pc++);
-        if (pc - start > fun->toPC + 1) {
-            std::cout << "Exit normally.\n";
+        if (pc - start >= fun->toPC) {
             break;
         }
 
@@ -477,7 +476,7 @@ new_frame:
         case OpCode::op_call: {
             lint8_t type = *(pc++);
             EXTRACT_2_PARAMS
-            ci->savepc = pc + 1;
+            ci->savepc = pc;
             if (type == 3) {
                 lvm->new_frame(ci->cur_obj, idx);
                 goto new_frame;
@@ -494,7 +493,11 @@ new_frame:
             break;
         }
         case OpCode::op_return: {
-            ci->savepc = pc;  // 最后一帧用的
+            if (ci->call_other) {
+                lvm->pop_frame();
+                return;
+            }
+
             lvm->pop_frame();
             goto new_frame;
             break;

@@ -18,6 +18,7 @@ struct call_info_t
     lpc_value_t *base;          // 开始执行栈底位置
     lpc_object_t *cur_obj;      // 当前执行的对象
     int funcIdx;                // 当前对象执行的函数的位置
+    bool call_other = false;
 };
 
 typedef void (*exit_hook_t)(void);
@@ -43,9 +44,6 @@ public:
     call_info_t * get_call_info();
     lpc_stack_t * get_stack();
 
-    void call_efun();
-    void call_sfun();
-    
     call_info_t * new_frame(lpc_object_t *, lint16_t idx);
     void pop_frame();
     lpc_gc_t * get_gc();
@@ -87,6 +85,9 @@ private:
     lpc_mapping_t *loaded_protos;
     call_info_t *cur_ci;
     call_info_t *base_ci;
+
+    call_info_t *single_ci = nullptr;
+    
     lpc_stack_t *stack;
     int init_stack_size;
     int ncall;

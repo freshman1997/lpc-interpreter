@@ -58,7 +58,11 @@ int main(int argc, char **argv)
 	os::init_seed(seed);
 	cout << "random value: " << os::random() << endl;
 
+	time_t start = clock();
     lpc_vm_t *vm = lpc_vm_t::create_vm();
     vm->bootstrap();
+	cout << "Exited normally.\n";
+	time_t end = clock();
+	cout << "spent: " << (end - start) << endl;
 	return 0;
 }

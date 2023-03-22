@@ -63,7 +63,7 @@ static void call_other(lpc_vm_t *vm, lint32_t nparam)
 
     sk->pop_n(nparam + 2);
 
-    call_info_t *ci = vm->new_frame(obj, funIdx);
+    call_info_t *ci = vm->new_frame(obj, -funIdx);
 
     // 初始化传入的参数
     for (int i = nparam; i > 0; --i) {
