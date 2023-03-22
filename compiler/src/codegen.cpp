@@ -1378,44 +1378,23 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         }
     } 
 
+    // 特殊处理，函数名和对象名最后才压入栈
+    bool skip = id->val.sval->strval == "call_other";
+
     int i = 0;
     for (auto &it : call->params) {
-        switch (it->get_type()) {
-            case ExpressionType::value_: {
-                vector<Local> &scopeLocals = locals[cur_scope];
-                if (locals.count(id->val.sval->strval)) {
-                    vector<Local> &callScope = locals[id->val.sval->strval];
-                    GENERATE_VALUE(it, callScope[i].type)
-                } else {
-                    GENERATE_VALUE(it, DeclType::none_)
-                }
-                break;
-            }
-            case ExpressionType::oper_: {
-                generate_binary(it);
-                break;
-            }
-            case ExpressionType::uop_: {
-                generate_unop(it);
-                break;
-            }
-            case ExpressionType::index_: {
-                generate_index(it, false);
-                break;
-            }
-            case ExpressionType::call_: {
-                CallExpression *argCall = dynamic_cast<CallExpression *>(it);
-                ValueExpression *id1 = dynamic_cast<ValueExpression *>(argCall->callee);
-                if (!locals.count(id1->val.sval->strval)) {
-                    cout << "undefined function: " << id1->val.sval->strval << endl;
-                    exit(-1);
-                }
+        if (skip && i < 2) continue;
 
-                generate_call(it);
-                break;
+        if (it->get_type() == ExpressionType::value_) {
+            vector<Local> &scopeLocals = locals[cur_scope];
+            if (locals.count(id->val.sval->strval)) {
+                vector<Local> &callScope = locals[id->val.sval->strval];
+                GENERATE_VALUE(it, callScope[i].type)
+            } else {
+                GENERATE_VALUE(it, DeclType::none_)
             }
-
-            default: break;
+        } else {
+            GENERATE_OP(it, DeclType::none_);
         }
 
         ++i;
@@ -1440,6 +1419,27 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         }
 
         extArgs = 2;
+    }
+
+    if (skip) {
+        if (call->params.size() < 2) {
+            error_at(__LINE__);
+        }
+
+        for (i = 1; i >= 0; --i) {
+            auto &it = call->params[i];
+            if (it->get_type() == ExpressionType::value_) {
+                vector<Local> &scopeLocals = locals[cur_scope];
+                if (locals.count(id->val.sval->strval)) {
+                    vector<Local> &callScope = locals[id->val.sval->strval];
+                    GENERATE_VALUE(it, callScope[i].type)
+                } else {
+                    GENERATE_VALUE(it, DeclType::none_)
+                }
+            } else {
+                GENERATE_OP(it, DeclType::none_);
+            }
+        }
     }
 
     (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call));
