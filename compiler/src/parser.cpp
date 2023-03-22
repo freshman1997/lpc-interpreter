@@ -1,6 +1,15 @@
 #include <iostream>
 #include <set>
 #include <ctime>
+#include <cstring>
+
+#ifdef WIN32
+#else 
+#include <unistd.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#endif
 
 #include "ast.h"
 #include "parser.h"
@@ -20,7 +29,7 @@ void error(Token *tok)
 
     cerr << "\n\t error found near line "<< tok->lineno << ", file: " << tok->filename << "\n";
     Token *cur = tok;
-    int len = 20, sum = 0;
+    int len = 10;
     print_space(9);
     while (cur && len) {
         if (cur->kind == TokenKind::k_string) cerr << '"';
@@ -36,13 +45,6 @@ void error(Token *tok)
     for (int i = 0; i < 4; ++i) cerr << '~';
     cerr << "^\n";
     throw "\t An error occured!\n";
-}
-
-static string build_include_path(const string &headerName)
-{
-    const string &cwd = get_cwd();
-    string res = cwd + "/" + headerName;
-    return res;
 }
 
 void Parser::init_base_include(const vector<string> &includes)
@@ -352,7 +354,6 @@ Token * Parser::preprocessing(Token *tok)
     Token *cur = tok;
     Token *pre = nullptr;
     Token *pre1 = nullptr;
-    Token *last = nullptr;
 
     while (cur) {
         if (cur->kind == TokenKind::k_identity) {
@@ -1521,6 +1522,7 @@ static AbstractExpression * parse_function_decl(Token *tok, Token *t)
 
     FunctionDeclExpression *func = new FunctionDeclExpression;
     func->returnType = retType;
+    func->is_arr = is_arr;
     func->name = nameToken; 
     func->is_static = is_static;
     func->dtype = DeclType::func_;
@@ -2250,25 +2252,6 @@ static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
     return exp1;
 }
 
-static AbstractExpression * transfer_2_decl(AbstractExpression *dexp, bool is_static, DeclType dtype)
-{
-    ValueExpression *val = dynamic_cast<ValueExpression *>(dexp);
-    if (!val || val->valType != 4) {
-        error(nullptr);
-    }
-
-    VarDeclExpression *decl = new VarDeclExpression;
-    decl->dtype = dtype;
-    decl->name = val->val.sval;
-    decl->is_static = is_static;
-    decl->is_arr = val->is_arr;
-    decl->user_define_type = nullptr;
-
-    delete val;
-
-    return decl;
-}
-
 static bool parse_multi_decl(vector<AbstractExpression *> &contents, AbstractExpression *exp, Token *t)
 {
     if (!exp) return false;
@@ -2377,6 +2360,17 @@ static AbstractExpression * do_parse(Token *tok)
     Token *cur = tok;
     Token t{};
     while (cur) {
+        if (cur->kind == TokenKind::k_key_word_inherit) {
+            if (cur->next->kind != TokenKind::k_string) {
+                error(cur);
+            }
+
+            doc->inherits.push_back(cur->next->strval);
+            require_expect(cur->next->next, &t, ";");
+            cur = t.next;
+            continue;
+        }
+
         AbstractExpression *exp = parse_binay(cur, -1, &t);
         if (!exp) {
             error(cur);
@@ -2437,29 +2431,93 @@ unordered_map<string, Macro *> * Parser::get_macros()
     return &this->macros;
 }
 
-ExpressionVisitor * Parser::parse(const char *filename)
+
+AbstractExpression * Parser::parse_one(const char *filename)
 {
-    // TODO Check filename is file or directory
-    add_built_in_macro();
-    set_compile_file(filename);
+    cur_file = filename;
     Token *tok = parse_file(filename);
     Token *cur = preprocessing(tok);
-    DocumentExpression *exp = nullptr;
-    // 用这个 try catch 的好处是可以跳回到开始点
-    try {
-        // 正式开始处理
-        exp = dynamic_cast<DocumentExpression *>(do_parse(cur));
-        exp->file_name = filename;
-        if (exp->contents.empty()) {
-            cout << "[error] parse " << filename << " failed!\n";
-            exit(-1);
+    // 正式开始处理
+    DocumentExpression *exp = dynamic_cast<DocumentExpression *>(do_parse(cur));
+    exp->file_name = filename;
+    
+
+    return exp;
+}
+
+static void find_all_file(vector<string> &all, string dirName)
+{
+#ifdef WIN32
+
+#else
+    struct stat statbuf;
+	int res = -1;
+	res = lstat(dirName.c_str(), &statbuf);//获取linux操作系统下文件的属性
+	//参数1是传入参数，填写文件的绝对路径 | 参数2是传出参数,一个struct stat类型的结构体指针
+
+	if (0 != res) {
+		printf("lstat failed");
+        exit(1);
+	}
+
+	if (!S_ISDIR(statbuf.st_mode)) {
+        const char *pFile = strrchr(dirName.c_str(), '.');
+        if (pFile != NULL && strcmp(pFile, ".txt") == 0) {
+            all.push_back(dirName);
         }
-    } catch(const char *e) {
-        // TODO
-        exit(-1);
+	} else {
+        DIR *dir;
+        struct dirent *pDir;
+        if((dir = opendir(dirName.c_str())) == NULL){
+            cout << "open dir Faild" << endl;
+            exit(1);
+        }
+
+        while((pDir = readdir(dir)) != NULL) {
+            if(strcmp(pDir->d_name,".") == 0 || strcmp(pDir->d_name,"..") == 0){
+                continue;
+            } else if(pDir->d_type == 8) { // 文件
+                const char *pFile = strrchr(pDir->d_name, '.');
+                if (pFile != NULL && strcmp(pFile, ".txt") == 0) {
+                    all.push_back(dirName + "/" + pDir->d_name);
+                }
+            } else if(pDir->d_type == 10){
+                continue;
+            } else if(pDir->d_type == 4) { // 子目录
+                string strNextdir = dirName + "/" + pDir->d_name;
+                find_all_file(all, strNextdir);
+            }
+        }
+
+        closedir(dir);
+    }
+#endif
+}
+
+vector<AbstractExpression *> * Parser::parse(const char *filename)
+{
+    // TODO Check filename must be directory
+    add_built_in_macro();
+    // 用这个 try catch 的好处是可以跳回到开始点
+    vector<string> files;
+    find_all_file(files, filename);
+    for (auto &it : files) {
+        try {
+            AbstractExpression *exp = parse_one(it.c_str());
+            DocumentExpression *doc = dynamic_cast<DocumentExpression *>(exp);
+            if (doc->contents.empty()) {
+                cout << "[error] parse " << doc->file_name << " failed!\n";
+                continue;
+            }
+            parsed.push_back(exp);
+        } catch(...) {
+            // TODO
+            cout << "[error] parse " << it << " failed!\n";
+            continue;
+        }
     }
 
     on_compile_success(this);
-    cout << "[success] " << filename << "\n";
-    return exp;
+    
+    return &parsed;
 }

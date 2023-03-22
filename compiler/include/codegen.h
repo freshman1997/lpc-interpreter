@@ -6,11 +6,11 @@
 #include <set>
 #include "token.h"
 #include "type_decl.h"
-#include "ast.h"
+#include "parser.h"
 
 #define MAX_LOCAL (0xffff)
 
-void init_sfun_and_efun(const char *sfunFile);
+void init_sfun(const char *sfunFile, Parser &parser);
 
 struct EfunDecl
 {
@@ -106,6 +106,11 @@ public:
         return this->funcs;
     }
 
+    void set_parsed_files(vector<AbstractExpression *> *parsed_files)
+    {
+        this->parsed_files = parsed_files;
+    }
+
     void dump();
 
 private:
@@ -131,6 +136,8 @@ private:
     std::vector<lfloat32_t> floatConsts;
 
     std::vector<std::vector<std::pair<lint32_t, lint32_t>>> lookup_switch;
+
+    vector<AbstractExpression *> *parsed_files;      // 前面语法分析的所有文件结果集，继承的时候从这里面查找、获取未继承函数、未覆盖的全局变量
 };
 
 #endif

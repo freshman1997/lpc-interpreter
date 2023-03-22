@@ -155,6 +155,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
+    bool is_arr = false;
     bool lambda = false;
     bool is_varargs = false;
     DeclType returnType = DeclType::void_;
@@ -378,6 +379,7 @@ public:
     string file_name;
     // funcs, fields
     vector<AbstractExpression *> contents;
+    vector<string> inherits;
 };
 
 #endif

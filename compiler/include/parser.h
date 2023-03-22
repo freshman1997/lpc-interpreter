@@ -38,7 +38,8 @@ class Parser
 public:
     void init_base_include(const vector<string> &includes);
     Token * preprocessing(Token *);
-    ExpressionVisitor * parse(const char *filename);
+    vector<AbstractExpression *> * parse(const char *filename);
+    AbstractExpression * parse_one(const char *filename);
     Token * parse_file(const char *filename);
 
     pair<bool, Macro *> find_macro(const string &);
@@ -60,6 +61,7 @@ private:
     unordered_map<string, Macro *> builtInMacro;
     unordered_map<string, Macro *> macros;
     vector<string> parsed_files;
+    vector<AbstractExpression *> parsed;
 };
 
 
