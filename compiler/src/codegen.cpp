@@ -1,10 +1,5 @@
 #include <iostream>
 #include <fstream>
-#ifdef WIN32
-#else
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 
 #include "parser.h"
 #include "codegen.h"
@@ -22,23 +17,33 @@ static vector<EfunDecl> efuns = {
     {"mapp", {DeclType::object_}, false},
 };
 
-static vector<Func> sfuns = {};
+static vector<Func> *sfuns = nullptr;
 
-void init_sfun_and_efun(const char *sfunFile)
+void init_sfun(const char *sfunFile, Parser &parser)
 {
-    Parser parser;
-	ExpressionVisitor *doc = parser.parse(sfunFile);
-	CodeGenerator g;
-	g.generate(dynamic_cast<AbstractExpression *>(doc));
-	g.dump();
-    sfuns = g.get_funcs();
+    try {
+        AbstractExpression *exp = parser.parse_one(sfunFile);
+        DocumentExpression *doc = dynamic_cast<DocumentExpression *>(exp);
+        if (doc->contents.empty()) {
+            cout << "init simulate object: " << sfunFile << "fail !!!\n";
+            exit(-1);
+        }
+
+        CodeGenerator g;
+        g.generate(exp);
+        g.dump();
+        sfuns = &g.get_funcs();
+    } catch (...) {
+        cout << "init simulate object: " << sfunFile << "fail !!!\n";
+        exit(-1);
+    }
 }
 
 static lint16_t find_fun_idx(const string &name, int type)
 {
     lint16_t idx = 0;
     if (type == 0) {
-        for (auto &it : sfuns) {
+        for (auto &it : *sfuns) {
             if (it.name->strval == name) {
                 return idx;
             }
@@ -1435,7 +1440,7 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(3));
         LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funcs[funIdx].idx)
     } else if (is_sfun) {
-        Func &f = sfuns[funIdx];
+        Func &f = (*sfuns)[funIdx];
         if (call->params.size() > f.nparams) {
             error_at(__LINE__);
         }
@@ -1607,34 +1612,6 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
         } else if (f.name->strval == "on_destruct") {
             this->on_destruct_idx = f.idx;
         }
-    }
-}
-
-extern string get_cwd();
-
-static void recurve_mkdir(const string &file)
-{
-    string cwd = get_cwd();
-    luint32_t idx = 0;
-    for (;;) {
-#ifdef WIN32
-#else
-    luint32_t pos = file.find("/", idx);
-    if (pos == string::npos) {
-        break;
-    }
-
-    string dir = cwd + "/" + file.substr(0, pos);
-    if (access(dir.c_str(), 0) == -1) {
-        if (mkdir(dir.c_str(), 0777)) //如果不存在就用mkdir函数来创建
-        {
-            printf("creat dir failed!!!\n");
-            exit(-1);
-        }
-    }
-
-    idx = pos + 1;
-#endif
     }
 }
 
