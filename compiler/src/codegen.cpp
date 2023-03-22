@@ -43,6 +43,8 @@ static lint16_t find_fun_idx(const string &name, int type)
 {
     lint16_t idx = 0;
     if (type == 0) {
+        if (!sfuns) return -1;
+
         for (auto &it : *sfuns) {
             if (it.name->strval == name) {
                 return idx;
@@ -679,7 +681,7 @@ try_parse_field:
                     GENERATE_OP(left, DeclType::none_)
                 }
             } else {
-                if (!assignSet.count(bin->oper)) {
+                if (!assignSet.count(bin->oper) && bin->oper != TokenKind::k_oper_pointer) {
                     GENERATE_OP(left, DeclType::none_)
                 }
             }
@@ -740,15 +742,20 @@ try_parse_field:
                     (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_set_class_field));
                     LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
                 } else {
-                    if (right->get_type() == ExpressionType::call_) {
-                        // ""->hello(), user->GetId()
-                        generate_call(right, DeclType::user_define_);
-                    } else {
-                        error_at(__LINE__);
-                    }
+                    error_at(__LINE__);
                 }
             } else if (right->get_type() == ExpressionType::call_) {
+                // ""->hello(), user->GetId()
                 generate_call(right, DeclType::user_define_);
+                char pre[5];
+                for (int i = 4; i >= 0; --i) {
+                    pre[i] = opcodes[opcodes.size() - 1];
+                    opcodes.pop_back();
+                }
+                GENERATE_OP(left, DeclType::none_)
+                for (int i = 0; i < 5; ++i) {
+                    opcodes.push_back(pre[i]);
+                }
             } else {
                 error_at(__LINE__);
             }
@@ -1371,27 +1378,6 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         }
     } 
 
-    lint8_t extArgs = 0;
-    if (type == DeclType::user_define_) {
-        /* TODO optimize */
-        lint16_t idx = find_const<string>(id->val.sval->strval, stringConsts);
-        if (idx < 0) {
-            idx = stringConsts.size();
-            stringConsts.push_back(id->val.sval->strval);
-        } 
-        
-        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_sconst));
-        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
-
-        string call_other = "call_other";
-        funIdx = find_fun_idx(call_other, 1);
-        if (funIdx < 0) {
-            error_at(__LINE__);
-        }
-
-        extArgs = 2;
-    }
-
     int i = 0;
     for (auto &it : call->params) {
         switch (it->get_type()) {
@@ -1433,6 +1419,27 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
         }
 
         ++i;
+    }
+
+    lint8_t extArgs = 0;
+    if (type == DeclType::user_define_) {
+        /* TODO optimize */
+        lint16_t idx = find_const<string>(id->val.sval->strval, stringConsts);
+        if (idx < 0) {
+            idx = stringConsts.size();
+            stringConsts.push_back(id->val.sval->strval);
+        } 
+        
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_sconst));
+        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
+
+        string call_other = "call_other";
+        funIdx = find_fun_idx(call_other, 1);
+        if (funIdx < 0) {
+            error_at(__LINE__);
+        }
+
+        extArgs = 2;
     }
 
     (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call));

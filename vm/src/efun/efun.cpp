@@ -20,12 +20,11 @@ static void print(lpc_vm_t *vm, lint32_t nparam)
 
 static void call_other(lpc_vm_t *vm, lint32_t nparam)
 {
-    nparam -= 2;
     lpc_stack_t *sk = vm->get_stack();
-    int idx = sk->get_idx();
 
-    // 最开始的位置是对象名，接下来是函数名
-    lpc_value_t *funcName = sk->get(idx - nparam - 1);
+    // 最后的位置是对象名，接下来是函数名
+    lpc_value_t *object_name = sk->pop();
+    lpc_value_t *funcName = sk->pop();
     lpc_string_t *fNameStr = reinterpret_cast<lpc_string_t *>(funcName->gcobj);
     if (funcName->type != value_type::string_) {
         cout << "Expecting a function name is string type but not!!" << endl;
@@ -33,7 +32,7 @@ static void call_other(lpc_vm_t *vm, lint32_t nparam)
     }
 
     // 入参
-    lpc_value_t *object_name = sk->get(idx - nparam - 2);
+    
     if (object_name->type != value_type::string_) {
         cout << "Not a string value to find object !!" << endl;
         exit(-1);
@@ -61,14 +60,10 @@ static void call_other(lpc_vm_t *vm, lint32_t nparam)
         exit(-1);
     }
 
-    sk->pop_n(nparam + 2);
-
     call_info_t *ci = vm->new_frame(obj, -funIdx);
 
-    // 初始化传入的参数
-    for (int i = nparam; i > 0; --i) {
-        *(ci->base + i) = *sk->pop();
-    }
+    // 修正位置
+    ci->base = sk->top() - (nparam - 2);
 
     vm->run();
 }
