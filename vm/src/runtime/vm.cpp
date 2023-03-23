@@ -154,7 +154,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
         function_proto_t *init_fun = new function_proto_t;
         char *var_inits = new char[sz + 1];
         in.read(var_inits, sz);
-        var_inits[sz + 1] = (char)OpCode::op_return;
+        var_inits[sz] = (char)OpCode::op_return;
         proto->init_codes = var_inits;
         proto->ninit = sz;
         init_fun->fromPC = 0;
@@ -282,21 +282,29 @@ call_info_t * lpc_vm_t::get_call_info()
     return this->cur_ci;
 }
 
-call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx)
+call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
 {
     call_info_t *nci = new call_info_t;
-    if (idx < 0) {
+    if (idx < 0 && !init) {
         idx = -idx;
         nci->call_other = true;
     }
     
     object_proto_t *proto = obj->get_proto();
-    const function_proto_t &f = proto->func_table[idx];
-    nci->savepc = proto->instructions + f.fromPC;
+    const function_proto_t *f = nullptr;
+    if (init) {
+        f = proto->init_fun;
+        nci->call_init = true;
+        nci->savepc = proto->init_codes;
+    } else {
+        f = &proto->func_table[idx];
+        nci->savepc = proto->instructions + f->fromPC;
+    }
+    
     nci->funcIdx = idx;
     nci->cur_obj = obj;
     nci->pre = cur_ci;
-    nci->base = stack->top() - f.nargs;
+    nci->base = stack->top() - f->nargs;
     if (cur_ci) {
         cur_ci->next = nci;
         cur_ci = nci;
@@ -304,11 +312,11 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx)
         cur_ci = nci;
     }
 
-    if (!base_ci) {
+    if (!base_ci && !init) {
         base_ci = nci;
     }
 
-    stack->set_local_size(f.nlocal);
+    stack->set_local_size(f->nlocal);
 
     return nci;
 }
@@ -316,14 +324,26 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx)
 void lpc_vm_t::pop_frame()
 {
     call_info_t *pre = cur_ci;
+    if (pre->call_init) {
+        cur_ci = nullptr;
+        delete pre;
+        return;
+    }
+    
     cur_ci = pre->pre;
     if (!cur_ci) {
+        if (pre->call_other) {
+            cur_ci = nullptr;
+            delete pre;
+            return;
+        }
         cur_ci = pre;
         return;
     }
 
     cur_ci->next = nullptr;
-    const function_proto_t &f = pre->cur_obj->get_proto()->func_table[pre->funcIdx];
+    object_proto_t *proto = pre->cur_obj->get_proto();
+    const function_proto_t &f = proto->func_table[pre->funcIdx];
     stack->pop_n(f.nlocal);
     delete pre;
 }
@@ -340,7 +360,7 @@ void lpc_vm_t::eval_init_codes(lpc_object_t *obj)
         return;
     }
 
-    new_frame(obj, -1);
+    new_frame(obj, -1, true);
     vm::eval(this);
 }
 
@@ -352,7 +372,7 @@ void lpc_vm_t::on_create_object(lpc_object_t *obj)
         return;
     }
 
-    new_frame(obj, proto->create_idx);
+    new_frame(obj, -proto->create_idx);
     vm::eval(this);
 }
 
@@ -364,7 +384,7 @@ void lpc_vm_t::on_load_in_object(lpc_object_t *obj)
         return;
     }
 
-    new_frame(obj, proto->on_load_in_idx);
+    new_frame(obj, -proto->on_load_in_idx);
     vm::eval(this);
 }
 
@@ -376,6 +396,6 @@ void lpc_vm_t::on_destruct_object(lpc_object_t *obj)
         return;
     }
 
-    new_frame(obj, proto->on_destruct_idx);
+    new_frame(obj, -proto->on_destruct_idx);
     vm::eval(this);
 }

@@ -56,7 +56,7 @@ static void call_other(lpc_vm_t *vm, lint32_t nparam)
 
     if (funIdx < 0) {
         lpc_string_t *objName = reinterpret_cast<lpc_string_t *>(object_name->gcobj);
-        cout << "no such function found: " << fNameStr->get_str() << " in object " << objName->get_str() << endl;
+        cout << "no such function: " << fNameStr->get_str() << " in object " << objName->get_str() << endl;
         exit(-1);
     }
 

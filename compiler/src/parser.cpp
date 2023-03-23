@@ -2461,12 +2461,10 @@ static void find_all_file(vector<string> &all, string dirName)
 	string p;
 	if ((hFile = _findfirst(p.assign(dirName).append("\\*").c_str(), &fileinfo)) != -1)  //第一次查找  
 	{
-        cout << p << endl;
 		do {
 			if ((fileinfo.attrib &  _A_SUBDIR)) {
 				if (strcmp(fileinfo.name, ".") != 0 && strcmp(fileinfo.name, "..") != 0)  //进入文件夹查找  
 				{
-					cout << "dir: " << fileinfo.name << endl;
 					find_all_file(all, p.assign(dirName).append("\\").append(fileinfo.name));
 				}
 			} else {

@@ -124,7 +124,7 @@ static lint16_t find_fun_idx(const string &name, int type)
             lint16_t idx = find_local_idx(val->val.sval->strval, scopeLocals); \
             Local *loc = nullptr; \
             if (idx < 0) { \
-                idx = find_local_idx(object_name, locals[object_name]); \
+                idx = find_local_idx(val->val.sval->strval, locals[object_name]); \
                 if (idx < 0) { \
                     /* TODO undefine identifier */ error_at(__LINE__); \
                 } \
@@ -307,7 +307,7 @@ void CodeGenerator::generate(AbstractExpression *exp)
             }
             case ExpressionType::import_: {
                 // 这个引入符号的，应当有个地方存储起来
-
+                generate_import(it);
                 break;
             }
             default: {
@@ -319,14 +319,32 @@ void CodeGenerator::generate(AbstractExpression *exp)
     }
 }
 
-void generate_import(AbstractExpression *exp)
+void CodeGenerator::generate_import(AbstractExpression *exp)
 {
     ImportExpression *imp = dynamic_cast<ImportExpression *>(exp);
-    for (int i = 0; i < imp->path.size(); ++i) {
-
+    string &str = imp->path[0]->strval;
+    for (int i = 1; i < imp->path.size(); ++i) {
+        str.push_back('/');
+        str.append(imp->path[i]->strval);
     }
-    VarDeclExpression *dec = new VarDeclExpression;
 
+    VarDeclExpression *dec = new VarDeclExpression;
+    dec->dtype = DeclType::string_;
+    dec->name = imp->asName;
+    ValueExpression *val = new ValueExpression;
+    val->valType = 2;
+    val->val.sval = imp->path[0];
+
+    BinaryExpression *bin = new BinaryExpression;
+    bin->l = dec;
+    bin->r = val;
+    bin->oper = TokenKind::k_oper_assign;
+
+    delete imp;
+
+    on_var_decl = true;
+    generate_binary(bin);
+    on_var_decl = false;
 }
 
 
@@ -700,7 +718,14 @@ try_parse_field:
         }
     }
 
-    vector<Local> &scopeLocals = locals[cur_scope];
+    vector<Local> *t = nullptr;
+    if (on_var_decl) {
+        t = &locals[object_name];
+    } else {
+        t = &locals[cur_scope];
+    }
+
+    vector<Local> &scopeLocals = *t;
     if (bin->oper == TokenKind::k_oper_pointer) {
         if (left->get_type() == ExpressionType::value_) {
             // h->id, user->GetId(), ""->xx, ""->hello()
@@ -837,13 +862,20 @@ try_parse_field:
             }
 
             lint16_t idx = find_local_idx(*str, scopeLocals);
-            if (idx < 0) {
-                idx = find_local_idx(*str, locals[object_name]);
+            if (on_var_decl) {
                 if (idx < 0) {
                     error_at(__LINE__);
                 }
+
                 (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_global);
             } else {
+                if (idx < 0) {
+                    idx = find_local_idx(*str, locals[object_name]);
+                    if (idx < 0) {
+                        error_at(__LINE__);
+                    }
+                } 
+
                 (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_local);
             }
             LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)

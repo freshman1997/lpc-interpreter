@@ -19,6 +19,7 @@ struct call_info_t
     lpc_object_t *cur_obj;      // 当前执行的对象
     int funcIdx;                // 当前对象执行的函数的位置
     bool call_other = false;
+    bool call_init = false;
 };
 
 typedef void (*exit_hook_t)(void);
@@ -44,7 +45,7 @@ public:
     call_info_t * get_call_info();
     lpc_stack_t * get_stack();
 
-    call_info_t * new_frame(lpc_object_t *, lint16_t idx);
+    call_info_t * new_frame(lpc_object_t *, lint16_t idx, bool init = false);
     void pop_frame();
     lpc_gc_t * get_gc();
 
