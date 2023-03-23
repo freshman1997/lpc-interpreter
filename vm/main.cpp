@@ -33,15 +33,7 @@ string get_cwd()
 
 int main(int argc, char **argv)
 {
-#if LUNIX
-	char buf[PATHNAME_MAX];
-	if (NULL == getcwd(buf, sizeof(buf))) {
-        perror("getcwd error");
-        exit(1);
-    }
-
-	cwd = buf;
-#else
+#if WIN32
 	char *buf;
 	// Get the current working directory:
 	if ( (buf = getcwd( NULL, 0 )) == NULL ) {
@@ -52,6 +44,15 @@ int main(int argc, char **argv)
 		free(buf);
 	}
 	system("chcp 65001");
+	
+#else
+	char buf[PATHNAME_MAX];
+	if (NULL == getcwd(buf, sizeof(buf))) {
+        perror("getcwd error");
+        exit(1);
+    }
+
+	cwd = buf;
 #endif
     lint64_t seed = time(NULL);
 	//debug_message("xxxxxxxxxxxxxxxxxxxxx %d:%d,%d,%d\n", 100, _abs(-1), hash_("hello"), luaS_hash("hello", 5, (unsigned int)(seed)));

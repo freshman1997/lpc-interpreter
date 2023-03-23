@@ -307,6 +307,7 @@ void CodeGenerator::generate(AbstractExpression *exp)
             }
             case ExpressionType::import_: {
                 // 这个引入符号的，应当有个地方存储起来
+
                 break;
             }
             default: {
@@ -317,6 +318,17 @@ void CodeGenerator::generate(AbstractExpression *exp)
         }
     }
 }
+
+void generate_import(AbstractExpression *exp)
+{
+    ImportExpression *imp = dynamic_cast<ImportExpression *>(exp);
+    for (int i = 0; i < imp->path.size(); ++i) {
+
+    }
+    VarDeclExpression *dec = new VarDeclExpression;
+
+}
+
 
 void CodeGenerator::generate_unop(AbstractExpression *exp)
 {

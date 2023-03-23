@@ -58,6 +58,7 @@ class CodeGenerator
 public:
     void generate(AbstractExpression *);
 
+    void generate_import(AbstractExpression *);
     void generate_decl(AbstractExpression *);
     void generate_unop(AbstractExpression *);
     void generate_binary(AbstractExpression *);
