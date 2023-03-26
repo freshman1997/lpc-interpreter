@@ -12,22 +12,23 @@
 #include "type/lpc_string.h"
 #include "runtime/vm.h"
 
-#define EXTRACT_2_PARAMS lint16_t idx = *(pc) | *(pc + 1); pc += 2;
-#define EXTRACT_4_PARAMS lint32_t idx = *(pc) | *(pc + 1) | *(pc + 2) | *(pc + 3); pc += 4;
+#define EXTRACT_2_PARAMS luint16_t idx = luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc)); pc += 2;
+#define EXTRACT_4_PARAMS luint32_t idx = luint8_t(*(pc + 3)) << 24 | luint8_t(*(pc + 2)) << 16 | luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc)); pc += 4;
 
 #define OPER(op) \
     lpc_value_t *v1 = sk->pop(); \
     lpc_value_t *v2 = sk->pop();  \
     if (v1->type == value_type::int_ && v2->type == value_type::int_) { \
-        v2->pval.number = v1->pval.number op v2->pval.number; \
+        v2->pval.number = v2->pval.number op v1->pval.number; \
     } else if (v1->type == value_type::float_ && v2->type == value_type::int_) { \
         v2->type = value_type::float_; \
-        v2->pval.real = v1->pval.real op v2->pval.number; \
+        v2->pval.real = v2->pval.real op v1->pval.number; \
     } else if (v1->type == value_type::int_ && v2->type == value_type::float_) { \
-        v2->pval.real = v1->pval.real op v2->pval.number; \
+        v2->pval.real = v2->pval.real op v1->pval.number; \
     } else if (v1->type == value_type::float_ && v2->type == value_type::float_){ \
-        v2->pval.real = v1->pval.real op v2->pval.real; \
+        v2->pval.real = v2->pval.real op v1->pval.real; \
     } \
+    std::cout << "val: " << v2->pval.number << std::endl;\
     sk->push(v2);
 
 #define SOME_CMP(op) \
@@ -43,7 +44,7 @@
         } else if (val1->type == value_type::float_ && val2->type == value_type::int_) { \
             const0.pval.number = val2->pval.real op val1->pval.number; \
         } else { \
-            std::cout << "cant compare type: " << (int)val1->type << " with " << (int)val2->type << std::endl; \
+            std::cout << "cant compare type: " << (int)val1->type << " with " << (int)val2->type  << ", "#op << std::endl; \
             exit(-1); \
         } \
         sk->push(&const0);
@@ -66,22 +67,25 @@ new_frame:
     }
 
     for(;;) {
-        //std::cout << "diff: " << pc - start << std::endl;
         OpCode op = (OpCode)*(pc++);
-        if (pc - start >= fun->toPC) {
-            break;
-        }
-
         switch (op)
         {
         case OpCode::op_load_global: {
             EXTRACT_2_PARAMS
+            if (idx >= ci->cur_obj->get_proto()->nvariable) {
+                std::cout << "invalid number to indexing glable varibal: " << idx << "\n";
+                exit(-1);
+            }
             lpc_value_t *val = &ci->cur_obj->get_locals()[idx];
             sk->push(val);
             break;
         }
         case OpCode::op_store_global: {
             EXTRACT_2_PARAMS
+            if (idx >= ci->cur_obj->get_proto()->nvariable) {
+                std::cout << "invalid number to indexing glable varibal: " << idx << "\n";
+                exit(-1);
+            }
             lpc_value_t *val = &ci->cur_obj->get_locals()[idx];
             lpc_value_t *val1 = sk->pop();
             *val = *val1;
@@ -89,17 +93,24 @@ new_frame:
         }
         case OpCode::op_load_local: {
             EXTRACT_2_PARAMS
+            if (idx >= fun->nlocal) {
+                std::cout << "invalid number to indexing local varibal: " << idx << "\n";
+                exit(-1);
+            }
             sk->push(ci->base + idx);
             break;
         }
         case OpCode::op_store_local: {
             EXTRACT_2_PARAMS
+            if (idx >= fun->nlocal) {
+                std::cout << "invalid number to indexing local varibal: " << idx << "\n";
+                exit(-1);
+            }
             lpc_value_t *val = ci->base + idx;
             lpc_value_t *val1 = sk->pop();
             *val = *val1;
             break;
         }
-
         case OpCode::op_load_iconst: {
             EXTRACT_2_PARAMS
             const0.type = value_type::int_;
@@ -150,7 +161,6 @@ new_frame:
             sk->push(&const0);
             break;
         }
-
         case OpCode::op_add: {
             OPER(+)
             break;
@@ -178,7 +188,6 @@ new_frame:
             sk->push(v2);
             break;
         }
-
         case OpCode::op_binary_lm: {
             lpc_value_t *v1 = sk->pop();
             lpc_value_t *v2 = sk->pop();
@@ -244,7 +253,6 @@ new_frame:
             sk->push(v2);
             break;
         }
-
         case OpCode::op_inc: {
             lpc_value_t *val = sk->pop();
             if (val->type == value_type::int_) {
@@ -365,8 +373,6 @@ new_frame:
             SOME_CMP(<=)
             break;
         }
-
-
         case OpCode::op_or: {
             lpc_value_t *val1 = sk->pop();
             lpc_value_t *val2 = sk->pop();
@@ -381,7 +387,6 @@ new_frame:
             }
             break;
         }
-
         case OpCode::op_test: {
             lpc_value_t *val = sk->pop();
             EXTRACT_4_PARAMS
@@ -390,7 +395,6 @@ new_frame:
             }
             break;
         }
-
         case OpCode::op_index: {
             lpc_value_t *key = sk->pop();
             lpc_value_t *con = sk->pop();
@@ -442,7 +446,7 @@ new_frame:
             EXTRACT_4_PARAMS
             const0.type = value_type::mappig_;
             lpc_mapping_t *map = lvm->get_alloc()->allocate_mapping();
-            for (int i = idx; i >= 1; --i) {
+            for (int i = idx; i > 0; i -= 2) {
                 lpc_value_t *v = sk->pop();
                 lpc_value_t *k = sk->pop();
                 map->set(k, v);
@@ -472,28 +476,42 @@ new_frame:
             }
             break;
         }
-
         case OpCode::op_call: {
             lint8_t type = *(pc++);
-            EXTRACT_2_PARAMS
-            ci->savepc = pc;
-            if (type == 3) {
-                lvm->new_frame(ci->cur_obj, idx);
+            if (type != 0) {
+                EXTRACT_2_PARAMS
+                ci->savepc = pc;
+                if (type == 3) {
+                    lvm->new_frame(ci->cur_obj, idx);
+                    goto new_frame;
+                } else if (type == 2) {
+                    // sfun
+                    lvm->new_frame(lvm->get_sfun_object(), idx);
+                    goto new_frame;
+                } else if (type == 1) {
+                    // efun
+                    lint8_t nargs = *(pc++);
+                    efun_t *efuns = lvm->get_efuns();
+                    efuns[idx](lvm, nargs);
+                }
+            } else {
+                lpc_value_t *val = sk->pop();
+                if (val->type != value_type::function_) {
+                    // error
+                }
+
+                lpc_function_t *f = reinterpret_cast<lpc_function_t *>(val->gcobj);
+                if (f->idx < 0) {
+                    // error
+                }
+
+                lvm->new_frame(ci->cur_obj, f->idx);
                 goto new_frame;
-            } else if (type == 2) {
-                // sfun
-                lvm->new_frame(lvm->get_sfun_object(), idx);
-                goto new_frame;
-            } else if (type == 1) {
-                // efun
-                lint8_t nargs = *(pc++);
-                efun_t *efuns = lvm->get_efuns();
-                efuns[idx](lvm, nargs);
             }
             break;
         }
         case OpCode::op_return: {
-            if (ci->call_other) {
+            if (ci->call_other || ci->call_init) {
                 lvm->pop_frame();
                 return;
             }
@@ -502,7 +520,6 @@ new_frame:
             goto new_frame;
             break;
         }
-
         case OpCode::op_set_upvalue: {
 
             break;
@@ -511,7 +528,6 @@ new_frame:
 
             break;
         }
-
         case OpCode::op_new_class: {
             EXTRACT_2_PARAMS
             class_proto_t &cl = ci->cur_obj->get_proto()->class_table[idx];
@@ -539,6 +555,23 @@ new_frame:
             arr.set(val, idx, OpCode::op_load_global);
             break;
         }
+        case OpCode::op_load_class_field: {
+            EXTRACT_2_PARAMS
+            lpc_value_t *clazz = sk->pop();
+            lpc_value_t *val = sk->pop(); 
+            if (clazz->type != value_type::array_ || clazz->subtype != value_type::class_) {
+                // TODO
+                std::cout << "error found!\n";
+                exit(-1);
+            }
+            lpc_array_t &arr = clazz->gcobj->arr;
+            if (arr.get_size() <= idx) {
+                // TODO
+            }
+            const0 = *arr.get(idx);
+            sk->push(&const0);
+            break;
+        }
         case OpCode::op_goto: {
             EXTRACT_4_PARAMS
             pc = start + idx;
@@ -564,11 +597,11 @@ new_frame:
             } else if (proto->defaults.count(idx)) {
                 pc = start + proto->defaults[idx];
             } else {
-                // TODO report error
+                luint32_t idx1 = luint8_t(*(pc + 3)) << 24 | luint8_t(*(pc + 2)) << 16 | luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc));
+                pc = start + idx1;
             }
             break;
         }
-
         case OpCode::op_foreach_step1: {
             lpc_value_t *val = sk->top();
             // setup iterator
@@ -613,8 +646,8 @@ new_frame:
                 }
 
                 bucket_t *b = map->get_bucket(index);
-                sk->push(&b->pair[0]);
                 sk->push(&b->pair[1]);
+                sk->push(&b->pair[0]);
             } else {
                 lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(val->gcobj);
                 if (index >= arr->get_size()) {
@@ -629,7 +662,6 @@ new_frame:
             }
             break;
         }
-
         default:
             std::cout << "unexpected!!! \n";
             exit(-1);

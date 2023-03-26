@@ -27,6 +27,7 @@ lpc_mapping_t::lpc_mapping_t(lpc_gc_t *gc)
     this->size = 200;
     this->members = new bucket_t[size];
     fill = 0;
+    used = 0;
     this->gc = gc;
 }
 
@@ -84,15 +85,41 @@ void lpc_mapping_t::set(lpc_value_t *k, lpc_value_t *v)
     }
 
     if (t == b) {
-        b->pair = new lpc_value_t[2];
-        b->pair[0] = *k;
-        b->pair[1] = *v;
+        if (!b->pair) {
+            b->pair = new lpc_value_t[2];
+            ++used;
+            ++fill;
+            b->pair[0] = *k;
+            b->pair[1] = *v;
+            if (!begin) {
+                begin = b;
+            }
+
+            if (cur) {
+                cur->next = b;
+                cur = b;
+            } else {
+                cur = b;
+            }
+        } else {
+            bucket_t *b1 = new bucket_t;
+            b1->pair = new lpc_value_t[2];
+            b1->pair[0] = *k;
+            b1->pair[1] = *v;
+            b->next = b1;
+            ++used;
+            cur->next = b1;
+            cur = b1;
+        }
     } else {
         bucket_t *b1 = new bucket_t;
         b1->pair = new lpc_value_t[2];
         b1->pair[0] = *k;
         b1->pair[1] = *v;
         b->next = b1;
+        ++used;
+        cur->next = b1;
+        cur = b1;
     }
 }
 
@@ -100,11 +127,6 @@ void lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v)
 {
     bucket_t *found = get(k);
     if (found) {
-        // TODO free or not
-        if (!found->pair) {
-            found->pair = new lpc_value_t[2];
-        }
-        
         found->pair[0] = *k;
         found->pair[1] = *v;
     } else {
@@ -120,13 +142,23 @@ void lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v)
             node->pair[0] = *k;
             node->pair[1] = *v;
             b->next = node;
+            cur->next = node;
+            cur = node;
         } else {
             if (!b->pair) {
                 b->pair = new lpc_value_t[2];
+                ++fill;
             }
             b->pair[0] = *k;
             b->pair[1] = *v;
+
+            if (!begin) {
+                begin = b;
+                cur = b;
+            }
         }
+
+        ++used;
     }
 }
 
@@ -149,6 +181,8 @@ void lpc_mapping_t::remove(lpc_value_t *k)
     slot->next = nullptr;
     slot->pair[0].gcobj = nullptr;
     slot->pair[1].gcobj = nullptr;
+    --fill;
+    --used;
 }
 
 
@@ -159,7 +193,7 @@ bucket_t * lpc_mapping_t::get_members()
 
 luint32_t lpc_mapping_t::get_size()
 {
-    return this->size;
+    return this->used;
 }
 
 bucket_t * lpc_mapping_t::get_bucket(int i)

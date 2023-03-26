@@ -8,15 +8,14 @@ enum class OpCode
     op_store_global,
     op_store_local,
 
-    op_load_class_field,
-    op_store_class_field,
-
     op_load_iconst,
     op_load_fconst,
     op_load_sconst,
     
     op_load_0,                  // for false, 0 
     op_load_1,                  // for true
+
+    op_pop,
 
     op_add,
     op_sub,
@@ -64,8 +63,9 @@ enum class OpCode
     op_set_upvalue,
     op_get_upvalue,
 
-    op_new_class,
-    op_set_class_field,         // h->id
+    op_new_class,               // 两个字节参数
+    op_set_class_field,         // h->id        两个字节参数
+    op_load_class_field,        // ss = h->id;  两个字节参数
 
     op_goto,                    // 一个参数，4个字节
 

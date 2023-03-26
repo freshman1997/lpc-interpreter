@@ -28,17 +28,5 @@ private:
 lpc_array_t * array_add(lpc_array_t *l, lpc_array_t *r, lpc_gc_t *gc);
 lpc_array_t * array_sub(lpc_array_t *l, lpc_array_t *r, lpc_gc_t *gc);
 
-class lpc_array_iterator_t
-{
-public:
-    lpc_array_iterator_t() : idx(0), arr(nullptr) {}
-    void set_array(lpc_array_t *);
-    bool has_next();
-    lpc_value_t *next();
-
-private:
-    luint32_t idx;
-    lpc_array_t *arr;
-};
 
 #endif

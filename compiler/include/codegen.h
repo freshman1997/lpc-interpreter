@@ -8,7 +8,7 @@
 #include "type_decl.h"
 #include "parser.h"
 
-#define MAX_LOCAL (0xffff)
+#define MAX_LOCAL (0x7fff)
 
 void init_sfun(const char *sfunFile, Parser &parser);
 
@@ -17,6 +17,7 @@ struct EfunDecl
     std::string name;
     std::vector<DeclType> paramTypes;
     bool varargs = false;
+    DeclType retType;
 };
 
 struct Func
@@ -26,8 +27,8 @@ struct Func
     Token *name = nullptr;      // optional
     DeclType retType = DeclType::void_;
     Token *udef = nullptr;
-    luint16_t nparams = 0;
-    luint16_t nlocals = 0;
+    lint16_t nparams = 0;
+    lint16_t nlocals = 0;
     luint32_t fromPc = 0;
     luint32_t toPc = 0;
     lint16_t idx = 0;
@@ -48,9 +49,9 @@ struct ClassDecl
 {
     bool is_static = false;
     Token *name = nullptr;
-    lint16_t nfields = 0;
+    luint16_t nfields = 0;
     // 位置：声明类型（如果是用户定义的class，则需要保存class的位置）
-    std::vector<std::pair<std::pair<std::string, DeclType>, lint16_t>> fields;
+    std::vector<std::pair<std::pair<std::string, DeclType>, luint16_t>> fields;
 };
 
 class CodeGenerator
@@ -58,10 +59,11 @@ class CodeGenerator
 public:
     void generate(AbstractExpression *);
 
+    void generate_ctor(AbstractExpression *);
     void generate_import(AbstractExpression *);
     void generate_decl(AbstractExpression *);
     void generate_unop(AbstractExpression *);
-    void generate_binary(AbstractExpression *);
+    void generate_binary(AbstractExpression *, bool fromAssign = false);
     void generate_if_else(AbstractExpression *, lint32_t forContinue, std::vector<lint32_t> &forBreaks);
     void generate_triple(AbstractExpression *);
     void generate_for(AbstractExpression *);
@@ -124,9 +126,9 @@ private:
     std::vector<ClassDecl> clazz;
     std::set<std::string> pre_decl_funcs;
     std::vector<Func> funcs;
-    lint16_t create_idx = -1;
-    lint16_t onload_in_idx = -1;
-    lint16_t on_destruct_idx = -1;
+    luint16_t create_idx = -1;
+    luint16_t onload_in_idx = -1;
+    luint16_t on_destruct_idx = -1;
 
     // 一个 block 就会有一层，主要是 switch case 下面的声明
     std::unordered_map<std::string, std::vector<Local>> locals;

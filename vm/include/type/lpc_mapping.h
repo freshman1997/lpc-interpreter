@@ -33,6 +33,10 @@ public:
     bucket_t * get_bucket(int i);
     int calc_hash(lpc_value_t *);
     void remove(lpc_value_t *);
+    bucket_t * get_begin()
+    {
+        return this->begin;
+    }
 
     void grow();
 
@@ -40,7 +44,11 @@ private:
     lpc_gc_t *gc;
     luint32_t fill;
     bucket_t *members;
+    luint32_t used;
     luint32_t size;
+    bucket_t *begin = nullptr;
+    bucket_t *cur = nullptr;
+
 };
 
 lpc_array_t * mapping_values(lpc_mapping_t *, lpc_gc_t *);

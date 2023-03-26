@@ -5,22 +5,13 @@
 #include "lpc.h"
 #include "type/lpc_string.h"
 
-enum class variasble_type
-{
-    none_,
-    lint32_t_,
-    float_,
-    string_,
-    mapping_,
-    array_,
-    object_,
-};
 
 class function_proto_t
 {
 public:
     const char *name;
     bool is_static;
+    lint8_t retType;
     lint32_t nargs = 0;
     lint32_t nlocal = 0;
     lint32_t nupvalue = 0;
@@ -33,7 +24,6 @@ class variable_proto_t
 {
 public:
     const char *name = nullptr;
-    variasble_type type = variasble_type::none_;
     lint32_t offset;
 };
 

@@ -36,21 +36,6 @@ lpc_value_t * lpc_array_t::copy()
     return nullptr;
 }
 
-void lpc_array_iterator_t::set_array(lpc_array_t *_arr)
-{
-    this->arr = _arr;
-}
-
-bool lpc_array_iterator_t::has_next()
-{
-    return idx < arr->size;
-}
-
-lpc_value_t * lpc_array_iterator_t::next()
-{
-    return arr->get(idx++);
-}
-
 // array op
 lpc_array_t * array_add(lpc_array_t *l, lpc_array_t *r, lpc_gc_t *gc)
 {

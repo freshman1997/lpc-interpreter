@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 
+#include "ast.h"
 #include "parser.h"
 #include "codegen.h"
 #include "opcode.h"
@@ -8,13 +9,15 @@
 using namespace std;
 
 static vector<EfunDecl> efuns = {
-    {"call_other", {DeclType::object_, DeclType::varargs_}, true},
-    {"debug_message", {DeclType::string_, DeclType::varargs_}, true},
-    {"intp", {DeclType::object_}, false},
-    {"floatp", {DeclType::object_}, false},
-    {"stringp", {DeclType::object_}, false},
-    {"arrayp", {DeclType::object_}, false},
-    {"mapp", {DeclType::object_}, false},
+    {"call_other", {DeclType::object_, DeclType::varargs_}, true, DeclType::void_},
+    {"debug_message", {DeclType::string_, DeclType::varargs_}, true, DeclType::void_},
+    {"puts", {DeclType::mixed_, }, false, DeclType::void_},
+    {"sleep", {DeclType::mixed_}, false, DeclType::void_},
+    {"intp", {DeclType::mixed_}, false, DeclType::bool_},
+    {"floatp", {DeclType::mixed_}, false, DeclType::bool_},
+    {"stringp", {DeclType::mixed_}, false, DeclType::bool_},
+    {"arrayp", {DeclType::mixed_}, false, DeclType::bool_},
+    {"mapp", {DeclType::mixed_}, false, DeclType::bool_},
 };
 
 static vector<Func> *sfuns = nullptr;
@@ -148,22 +151,22 @@ static lint16_t find_fun_idx(const string &name, int type)
     }
 
 #define GENERATE_OP(exp, check) \
-        if (exp->get_type() == ExpressionType::index_) { \
-            generate_index(exp, false); \
-        } else if (exp->get_type() == ExpressionType::uop_) { \
-            generate_unop(exp); \
-        } else if (exp->get_type() == ExpressionType::oper_) { \
-            generate_binary(exp); \
-        } else if (exp->get_type() == ExpressionType::triple_) { \
-            generate_triple(exp); \
-        } else if (exp->get_type() == ExpressionType::call_) { \
-            generate_call(exp, check); \
-        } else if (exp->get_type() == ExpressionType::value_) { \
-            vector<Local> &scopeLocals = locals[cur_scope]; \
-            GENERATE_VALUE(exp, check) \
-        } else { \
-            error_at(__LINE__);\
-        }
+    if (exp->get_type() == ExpressionType::index_) { \
+        generate_index(exp, false); \
+    } else if (exp->get_type() == ExpressionType::uop_) { \
+        generate_unop(exp); \
+    } else if (exp->get_type() == ExpressionType::oper_) { \
+        generate_binary(exp); \
+    } else if (exp->get_type() == ExpressionType::triple_) { \
+        generate_triple(exp); \
+    } else if (exp->get_type() == ExpressionType::call_) { \
+        generate_call(exp, check); \
+    } else if (exp->get_type() == ExpressionType::value_) { \
+        vector<Local> &scopeLocals = locals[cur_scope]; \
+        GENERATE_VALUE(exp, check) \
+    } else { \
+        error_at(__LINE__);\
+    }
 
 
 #define GENERATE_BODY(body, cons) \
@@ -307,6 +310,7 @@ void CodeGenerator::generate(AbstractExpression *exp)
             }
             case ExpressionType::import_: {
                 // 这个引入符号的，应当有个地方存储起来
+                on_var_decl = true;
                 generate_import(it);
                 break;
             }
@@ -342,9 +346,7 @@ void CodeGenerator::generate_import(AbstractExpression *exp)
 
     delete imp;
 
-    on_var_decl = true;
     generate_binary(bin);
-    on_var_decl = false;
 }
 
 
@@ -443,7 +445,7 @@ void CodeGenerator::generate_decl(AbstractExpression *exp)
             error(var->name);
         }
 
-        idx = (lint16_t)scopeLocals.size();
+        idx = (luint16_t)scopeLocals.size();
         scopeLocals.push_back({var->is_static, var->dtype, var->name, false, idx, var->is_arr,var->user_define_type});
     }
 }
@@ -585,25 +587,6 @@ static std::set<TokenKind> assignSet = {
     TokenKind::k_oper_mod_assign,
 };
 
-#define CTOR(exp, con) \
-    ConstructExpression *ctor = dynamic_cast<ConstructExpression *>(exp); \
-    lint32_t count = 0; \
-    for (auto &it : ctor->body) { \
-        GENERATE_OP(it, DeclType::none_) \
-        ++count; \
-    } \
-    \
-    const char * idx2char = (const char *)&count; \
-    if (ctor->type) { \
-        if (count % 2 != 0) { \
-            error_at(__LINE__); \
-        } \
-        con.push_back((luint8_t)(OpCode::op_new_mapping)); \
-    } else { \
-        con.push_back((luint8_t)(OpCode::op_new_array)); \
-    } \
-    \
-    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), count)
 
 #define LHS(op) \
     if (bin->l->get_type() == ExpressionType::index_) { \
@@ -635,19 +618,55 @@ static std::set<TokenKind> assignSet = {
         LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx) \
     }
 
+void CodeGenerator::generate_ctor(AbstractExpression *exp)
+{
+    ConstructExpression *ctor = dynamic_cast<ConstructExpression *>(exp);
+    lint32_t count = 0;
+    for (auto &it : ctor->body) {
+        if (it->get_type() == ExpressionType::construct_) {
+            generate_ctor(it);
+        } else {
+            GENERATE_OP(it, DeclType::none_)
+        }
+        ++count;
+    } 
+    
+    const char * idx2char = (const char *)&count;
+    if (ctor->type) {
+        if (count % 2 != 0) { 
+            error_at(__LINE__); 
+        } 
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_new_mapping)); 
+    } else { 
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_new_array)); 
+    } 
+    
+    LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), count)
+}
+
 // 怎么做常量折叠　？
-void CodeGenerator::generate_binary(AbstractExpression *exp)
+void CodeGenerator::generate_binary(AbstractExpression *exp, bool fromAssign)
 {
     BinaryExpression *bin = dynamic_cast<BinaryExpression *>(exp);
     if (on_var_decl && bin->oper != TokenKind::k_oper_assign) {
         error_at(__LINE__);
     }
 
+    vector<Local> *t = nullptr;
+    if (on_var_decl) {
+        t = &locals[object_name];
+    } else {
+        t = &locals[cur_scope];
+    }
+
+    vector<Local> &scopeLocals = *t;
+
     // 条件、赋值
     if (constFold.count(bin->oper)) {
         AbstractExpression *res = calc_const(bin);
         if (res != bin) {
-            bin->r = res;
+            GENERATE_VALUE(res, DeclType::none_)
+            return;
         }
     } else if (assignSet.count(bin->oper) && bin->r->get_type() == ExpressionType::oper_) {
         AbstractExpression *res = calc_const(dynamic_cast<BinaryExpression *>(bin->r));
@@ -703,7 +722,7 @@ try_parse_field:
         }
 
         if (left->get_type() == ExpressionType::construct_) {
-            CTOR(left, (on_var_decl ? var_init_codes : opcodes))
+            generate_ctor(left);
         } else {
             if (left->get_type() == ExpressionType::oper_ && assignSet.count(bin->oper)) {
                 BinaryExpression *tmp = dynamic_cast<BinaryExpression *>(left);
@@ -718,14 +737,6 @@ try_parse_field:
         }
     }
 
-    vector<Local> *t = nullptr;
-    if (on_var_decl) {
-        t = &locals[object_name];
-    } else {
-        t = &locals[cur_scope];
-    }
-
-    vector<Local> &scopeLocals = *t;
     if (bin->oper == TokenKind::k_oper_pointer) {
         if (left->get_type() == ExpressionType::value_) {
             // h->id, user->GetId(), ""->xx, ""->hello()
@@ -776,7 +787,11 @@ try_parse_field:
                         error_at(__LINE__);
                     }
 
-                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_set_class_field));
+                    if (fromAssign) {
+                        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_set_class_field));
+                    } else {
+                        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_class_field));
+                    }
                     LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
                 } else {
                     error_at(__LINE__);
@@ -812,7 +827,7 @@ try_parse_field:
     }
 
     if (right->get_type() == ExpressionType::construct_) {
-        CTOR(right, (on_var_decl ? var_init_codes : opcodes))
+        generate_ctor(right);
     } else if (right->get_type() == ExpressionType::new_) {
         if (bin->oper != TokenKind::k_oper_assign) {
             error_at(__LINE__);
@@ -829,9 +844,18 @@ try_parse_field:
         (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_new_class));
         LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
     } else {
+        if (right->get_type() == ExpressionType::oper_) {
+            BinaryExpression *rbin = dynamic_cast<BinaryExpression *>(right);
+            if (rbin->oper == TokenKind::k_oper_pointer) {
+                generate_binary(right, true);
+                goto next;
+            }
+        }
+
         GENERATE_OP(right, DeclType::none_)
     }
 
+next:
     if (left->get_type() == ExpressionType::oper_ && assignSet.count(bin->oper)) {
         BinaryExpression *tmp = dynamic_cast<BinaryExpression *>(left);
         if (tmp->oper == TokenKind::k_oper_pointer) {
@@ -919,6 +943,8 @@ void CodeGenerator::generate_if_else(AbstractExpression *exp, lint32_t forContin
         error_at(__LINE__);
     }
     
+    vector<Local> &scopeLocals = locals[cur_scope];
+    lint16_t nlocal = scopeLocals.size();
     lint32_t type0 = 0, type1 = 2, type2 = 0;
     lint32_t goto1 = 0, goto2 = 0;
     const char *idx2char = nullptr;
@@ -994,6 +1020,13 @@ void CodeGenerator::generate_if_else(AbstractExpression *exp, lint32_t forContin
             opcodes[it + i] = idx2char[i];
         }
     }
+
+    int sz = scopeLocals.size();
+    for (int i = nlocal; i < sz; ++i) {
+        scopeLocals.pop_back();
+    }
+
+    funcs.back().nlocals = sz - nlocal;
 }
 
 void CodeGenerator::generate_triple(AbstractExpression *exp)
@@ -1029,6 +1062,10 @@ void CodeGenerator::generate_triple(AbstractExpression *exp)
 void CodeGenerator::generate_for(AbstractExpression *exp)
 {
     ForNormalExpression *forExp = dynamic_cast<ForNormalExpression *>(exp);
+
+    vector<Local> &scopeLocals = locals[cur_scope];
+    lint16_t nlocal = scopeLocals.size();
+
     for (auto &it : forExp->inits) {
         if (it->get_type() == ExpressionType::var_decl_) {
             generate_decl(it);
@@ -1081,15 +1118,25 @@ void CodeGenerator::generate_for(AbstractExpression *exp)
     for (int i = 0; i < 4; ++i) {
         opcodes[gotoEnd + i] = idx2char[i];
     } 
+
+    int size = scopeLocals.size();
+    for (int i = nlocal; i < size; ++i) {
+        scopeLocals.pop_back();
+    }
+
+    funcs.back().nlocals = size - nlocal;
 }
 
 void CodeGenerator::generate_foreach(AbstractExpression *exp)
 {
     ForeachExpression *fe = dynamic_cast<ForeachExpression *>(exp);
 
-    if (fe->decls.size() > 2) {
+    if (fe->decls.empty() || fe->decls.size() > 2) {
         error_at(__LINE__);
     }
+
+    vector<Local> &scopeLocals = locals[cur_scope];
+    lint16_t nlocal = scopeLocals.size();
 
     // TODO 后面考虑是否要作用域，目前全都是局部变量
     for (auto &it : fe->decls) {
@@ -1099,8 +1146,6 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
 
         generate_decl(it);
     }
-
-    vector<Local> &scopeLocals = locals[cur_scope];
 
     GENERATE_OP(fe->container, DeclType::none_)
 
@@ -1119,13 +1164,13 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
     const char *idx2char = nullptr;
     LOAD_IDX_4(opcodes, end)
 
+    luint16_t idx = scopeLocals.size() - 2;
     for (auto &it : fe->decls) {
         // 这里需要容器还在栈中
         VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(it);
-        lint16_t idx = find_local_idx(var->name->strval, scopeLocals);
-        // 到这里，idx 不应该不存在
         opcodes.push_back((luint8_t)(OpCode::op_store_local));
         LOAD_IDX_2(opcodes, idx)
+        ++idx;
     }
 
     vector<lint32_t> forBreaks;
@@ -1149,11 +1194,22 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
     for (int i = 0; i < 4; ++i) {
         opcodes[end + i] = idxCode[i];
     } 
+
+    int size = scopeLocals.size();
+    for (int i = nlocal; i < size; ++i) {
+        scopeLocals.pop_back();
+    }
+
+    funcs.back().nlocals = size - nlocal;
 }
 
 void CodeGenerator::generate_while(AbstractExpression *exp)
 {
     whileExpression *w = dynamic_cast<whileExpression *>(exp);
+
+    vector<Local> &scopeLocals = locals[cur_scope];
+    lint16_t nlocal = scopeLocals.size();
+
     lint32_t forContinue = opcodes.size();
     vector<lint32_t> forBreaks;
     GENERATE_OP(w->cond, DeclType::none_)
@@ -1182,11 +1238,22 @@ void CodeGenerator::generate_while(AbstractExpression *exp)
     for (int i = 0; i < 4; ++i) {
         opcodes[gotoEnd + i] = idxCode[i];
     } 
+
+    int sz = scopeLocals.size();
+    for (int i = nlocal; i < sz; ++i) {
+        scopeLocals.pop_back();
+    }
+
+    funcs.back().nlocals = sz - nlocal;
 }
 
 void CodeGenerator::generate_do_while(AbstractExpression *exp)
 {
     DoWhileExpression *dw = dynamic_cast<DoWhileExpression *>(exp);
+
+    vector<Local> &scopeLocals = locals[cur_scope];
+    lint16_t nlocal = scopeLocals.size();
+
     lint32_t forContinue = opcodes.size();
     vector<lint32_t> forBreaks;
     vector<lint32_t> forContinues;
@@ -1216,6 +1283,13 @@ void CodeGenerator::generate_do_while(AbstractExpression *exp)
     opcodes.push_back((luint8_t)(OpCode::op_test));
     const char *idx2char = nullptr;
     LOAD_IDX_4(opcodes, gotoBegin)
+
+    int sz = scopeLocals.size();
+    for (int i = nlocal; i < sz; ++i) {
+        scopeLocals.pop_back();
+    }
+
+    funcs.back().nlocals = sz - nlocal;
 }
 
 void CodeGenerator::generate_switch_case(AbstractExpression *exp, lint32_t forContinue)
@@ -1225,7 +1299,10 @@ void CodeGenerator::generate_switch_case(AbstractExpression *exp, lint32_t forCo
         return;
     }
     
-    lint32_t t = lookup_switch.size();
+    vector<Local> &scopeLocals = locals[cur_scope];
+    lint16_t nlocal = scopeLocals.size();
+
+    luint16_t t = lookup_switch.size();
     if (t >= MAX_LOCAL) {
         error_at(__LINE__);
     }
@@ -1234,6 +1311,8 @@ void CodeGenerator::generate_switch_case(AbstractExpression *exp, lint32_t forCo
     GENERATE_OP(sce->selector, DeclType::none_)
     opcodes.push_back((luint8_t)(OpCode::op_switch));
     LOAD_IDX_2(opcodes, t)
+    luint32_t gotoEnd = opcodes.size();
+    LOAD_IDX_4(opcodes, gotoEnd)
 
     vector<pair<lint32_t, lint32_t>> &talbe = lookup_switch.back();
 
@@ -1265,21 +1344,32 @@ void CodeGenerator::generate_switch_case(AbstractExpression *exp, lint32_t forCo
         }
     }
 
-    t = opcodes.size();
-    const char *idxCode = (const char *)&t;
+    luint32_t t1 = opcodes.size();
+    const char *idxCode = (const char *)&t1;
     // Note. 修正跳转的位置信息
     for (auto &it : forBreaks) {
         for (int i = 0; i < 4; ++i) {
             opcodes[it + i] = idxCode[i];
         }    
     }
+
+    for (int i = 0; i < 4; ++i) {
+        opcodes[gotoEnd + i] = idxCode[i];
+    }
+
+    int sz = scopeLocals.size();
+    for (int i = nlocal; i < sz; ++i) {
+        scopeLocals.pop_back();
+    }
+
+    funcs.back().nlocals = sz - nlocal;
 }
 
 void CodeGenerator::generate_class(AbstractExpression *exp)
 {
     ClassExpression *cle = dynamic_cast<ClassExpression *>(exp);
 
-    ClassDecl decl = {cle->is_static, cle->className, (lint16_t)cle->fields.size()};
+    ClassDecl decl = {cle->is_static, cle->className, (luint16_t)cle->fields.size()};
     for (auto &it : cle->fields) {
         if (it->get_type() != ExpressionType::var_decl_) {
             error_at(__LINE__);
@@ -1370,9 +1460,9 @@ void CodeGenerator::generate_index(AbstractExpression *exp, bool lhs)
     }
 }
 
-static lint16_t find_func_idx(const string &name, vector<Func> &con)
+static luint16_t find_func_idx(const string &name, vector<Func> &con)
 {
-    lint16_t idx = 0;
+    luint16_t idx = 0;
     for (auto &it : con) {
         if (it.name->strval == name) return idx;
         ++idx;
@@ -1386,92 +1476,51 @@ static lint16_t find_func_idx(const string &name, vector<Func> &con)
 void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
 {
     CallExpression *call = dynamic_cast<CallExpression *>(exp);
-    ValueExpression *id = dynamic_cast<ValueExpression *>(call->callee);
-    if (id->valType != 4) {
-        error_at(__LINE__);
-    }
-
-    bool is_sfun = false;
-    lint16_t funIdx = -1;
-
-    // 函数没有声明, sfun、efun 
-    if (type == DeclType::none_ && !locals.count(id->val.sval->strval)) {
-        // TODO find if is simulate function or external function
-        funIdx = find_fun_idx(id->val.sval->strval, 1);
-        if (funIdx < 0) {
-            funIdx = find_fun_idx(id->val.sval->strval, 0);
-            is_sfun = funIdx >= 0;
-        }
-
-        if (funIdx < 0) {
-            cout << "undefined function: " << id->val.sval->strval << endl;
-            exit(-1);
-        }
-    } else if (type == DeclType::none_) {
-        funIdx = find_func_idx(id->val.sval->strval, funcs);
-        if (funIdx < 0) {
+    // TODO 这里还需要处理其他类型的函数调用 
+    if (call->callee->get_type() == ExpressionType::value_) {
+        ValueExpression *id = dynamic_cast<ValueExpression *>(call->callee);
+        if (id->valType != 4) {
             error_at(__LINE__);
         }
-        
-        const Func &f = funcs[funIdx];
-        // 参数类型检查，查找当前上下文
-        // 1、变量类型，2、函数调用返回值类型，4、op操作类型最后的类型
-        // 参数数量是否一致
-        if (call->params.size() > f.nparams) {
-            error_at(__LINE__);
-        }
-    } 
 
-    // 特殊处理，函数名和对象名最后才压入栈
-    bool skip = id->val.sval->strval == "call_other";
+        bool is_sfun = false;
+        lint16_t funIdx = -1;
 
-    int i = 0;
-    for (auto &it : call->params) {
-        if (skip && i < 2) continue;
-
-        if (it->get_type() == ExpressionType::value_) {
-            vector<Local> &scopeLocals = locals[cur_scope];
-            if (locals.count(id->val.sval->strval)) {
-                vector<Local> &callScope = locals[id->val.sval->strval];
-                GENERATE_VALUE(it, callScope[i].type)
-            } else {
-                GENERATE_VALUE(it, DeclType::none_)
+        // 函数没有声明, sfun、efun 
+        if (type == DeclType::none_ && !locals.count(id->val.sval->strval)) {
+            // TODO find if is simulate function or external function
+            funIdx = find_fun_idx(id->val.sval->strval, 1);
+            if (funIdx < 0) {
+                funIdx = find_fun_idx(id->val.sval->strval, 0);
+                is_sfun = funIdx >= 0;
             }
-        } else {
-            GENERATE_OP(it, DeclType::none_);
-        }
 
-        ++i;
-    }
-
-    lint8_t extArgs = 0;
-    if (type == DeclType::user_define_) {
-        /* TODO optimize */
-        lint16_t idx = find_const<string>(id->val.sval->strval, stringConsts);
-        if (idx < 0) {
-            idx = stringConsts.size();
-            stringConsts.push_back(id->val.sval->strval);
+            if (funIdx < 0) {
+                cout << "undefined function: " << id->val.sval->strval << endl;
+                exit(-1);
+            }
+        } else if (type == DeclType::none_) {
+            funIdx = find_func_idx(id->val.sval->strval, funcs);
+            if (funIdx < 0) {
+                error_at(__LINE__);
+            }
+            
+            const Func &f = funcs[funIdx];
+            // 参数类型检查，查找当前上下文
+            // 1、变量类型，2、函数调用返回值类型，4、op操作类型最后的类型
+            // 参数数量是否一致
+            if (call->params.size() > f.nparams) {
+                error_at(__LINE__);
+            }
         } 
-        
-        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_sconst));
-        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
 
-        string call_other = "call_other";
-        funIdx = find_fun_idx(call_other, 1);
-        if (funIdx < 0) {
-            error_at(__LINE__);
-        }
+        // 特殊处理，函数名和对象名最后才压入栈
+        bool skip = id->val.sval->strval == "call_other";
 
-        extArgs = 2;
-    }
+        int i = 0;
+        for (auto &it : call->params) {
+            if (skip && i < 2) continue;
 
-    if (skip) {
-        if (call->params.size() < 2) {
-            error_at(__LINE__);
-        }
-
-        for (i = 1; i >= 0; --i) {
-            auto &it = call->params[i];
             if (it->get_type() == ExpressionType::value_) {
                 vector<Local> &scopeLocals = locals[cur_scope];
                 if (locals.count(id->val.sval->strval)) {
@@ -1483,33 +1532,81 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
             } else {
                 GENERATE_OP(it, DeclType::none_);
             }
-        }
-    }
 
-    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call));
-    if (type == DeclType::none_ && locals.count(id->val.sval->strval)) {
-        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(3));
-        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funcs[funIdx].idx)
-    } else if (is_sfun) {
-        Func &f = (*sfuns)[funIdx];
-        if (call->params.size() > f.nparams) {
-            error_at(__LINE__);
+            ++i;
         }
 
-        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(2));
-        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funIdx)
+        lint8_t extArgs = 0;
+        if (type == DeclType::user_define_) {
+            /* TODO optimize */
+            lint16_t idx = find_const<string>(id->val.sval->strval, stringConsts);
+            if (idx < 0) {
+                idx = stringConsts.size();
+                stringConsts.push_back(id->val.sval->strval);
+            } 
+            
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_sconst));
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
+
+            string call_other = "call_other";
+            funIdx = find_fun_idx(call_other, 1);
+            if (funIdx < 0) {
+                error_at(__LINE__);
+            }
+
+            extArgs = 2;
+        }
+
+        if (skip) {
+            if (call->params.size() < 2) {
+                error_at(__LINE__);
+            }
+
+            for (i = 1; i >= 0; --i) {
+                auto &it = call->params[i];
+                if (it->get_type() == ExpressionType::value_) {
+                    vector<Local> &scopeLocals = locals[cur_scope];
+                    if (locals.count(id->val.sval->strval)) {
+                        vector<Local> &callScope = locals[id->val.sval->strval];
+                        GENERATE_VALUE(it, callScope[i].type)
+                    } else {
+                        GENERATE_VALUE(it, DeclType::none_)
+                    }
+                } else {
+                    GENERATE_OP(it, DeclType::none_);
+                }
+            }
+        }
+
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call));
+        if (type == DeclType::none_ && locals.count(id->val.sval->strval)) {
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(3));
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funcs[funIdx].idx)
+        } else if (is_sfun) {
+            Func &f = (*sfuns)[funIdx];
+            if (call->params.size() > f.nparams) {
+                error_at(__LINE__);
+            }
+
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(2));
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funIdx)
+        } else {
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(1));
+            // 调用的 efun 位置
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funIdx)
+
+            EfunDecl &f = efuns[funIdx];
+            luint16_t nparam  = f.varargs ? f.paramTypes.size() - 1 : f.paramTypes.size();
+            if (!f.varargs && call->params.size() > nparam) {
+                error_at(__LINE__);
+            }
+
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(call->params.size() + extArgs));
+        }
     } else {
-        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(1));
-        // 调用的 efun 位置
-        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funIdx)
-
-        EfunDecl &f = efuns[funIdx];
-        lint16_t nparam  = f.varargs ? f.paramTypes.size() - 1 : f.paramTypes.size();
-        if (!f.varargs && call->params.size() > nparam) {
-            error_at(__LINE__);
-        }
-
-        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(call->params.size() + extArgs));
+        GENERATE_OP(call->callee, DeclType::none_)
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call));
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(0));
     }
 }
 
@@ -1517,7 +1614,7 @@ void CodeGenerator::generate_return(AbstractExpression *exp)
 {
     ReturnExpression *ret = dynamic_cast<ReturnExpression *>(exp);
     if (ret->ret) {
-        lint16_t idx = find_func_idx(cur_scope, funcs);
+        luint16_t idx = find_func_idx(cur_scope, funcs);
         if (idx < 0) {
             error_at(__LINE__);
         }
@@ -1555,21 +1652,21 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
     vector<Local> scopeLocals;
     vector<Local> *scope = &scopeLocals;
     bool preDef = false;
-    lint16_t idx = -1;
+    luint16_t idx = -1;
     if (pre_decl_funcs.count(funDecl->name->strval)) {
         scope = &locals[funDecl->name->strval];
         preDef = true;
     } else {
         locals[funDecl->name->strval] = scopeLocals;
         scope = &locals[funDecl->name->strval];
-        idx = (lint16_t)funcs.size();
+        idx = (luint16_t)funcs.size();
         funcs.push_back({
             funDecl->is_static, 
             funDecl->is_varargs, 
             funDecl->name, 
             funDecl->returnType, 
             funDecl->user_define_type, 
-            (luint16_t)funDecl->params.size(), 
+            (lint16_t)funDecl->params.size(), 
             0,
             0,
             0,
@@ -1589,6 +1686,22 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
     }
 
     if (!funDecl->body.empty()) {
+        if (funDecl->body.back()->get_type() == ExpressionType::return_) {
+            ReturnExpression *ret = dynamic_cast<ReturnExpression *>(funDecl->body.back());
+            if (ret->ret->get_type() == ExpressionType::call_) {
+                CallExpression *call = dynamic_cast<CallExpression *>(ret->ret);
+                if (call->callee->get_type() == ExpressionType::value_) {
+                    ValueExpression *fName = dynamic_cast<ValueExpression *>(call->callee);
+                    if (fName->valType == 4) {
+                        if (fName->val.sval->strval == f.name->strval) {
+                            // TODO 尾递归处理
+
+                        }
+                    }
+                }
+            }
+        }
+
         for (auto &it : funDecl->body) {
             switch (it->get_type()) {
                 case ExpressionType::var_decl_: {
@@ -1639,6 +1752,8 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
                 }
                 case ExpressionType::call_: {
                     generate_call(it);
+                    //CallExpression *call = dynamic_cast<CallExpression *>(it);
+                    //opcodes.push_back((luint8_t)(OpCode::op_pop));
                     break;
                 }
                 default: {
@@ -1653,7 +1768,7 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
 
     f.nlocals = scope->size();
     opcodes.push_back((luint8_t)(OpCode::op_return));
-    f.toPc = opcodes.size() - 1;
+    f.toPc = opcodes.size();
 
     if (f.name) {
         if (f.name->strval == "create") {
@@ -1702,16 +1817,15 @@ void CodeGenerator::dump()
         }
     }
 
-    bool is_static = false;
     sz = this->funcs.size();
     out.write((char *)&sz, 4);
     for (auto &it : funcs) {
         sz = it.name->strval.size();
         out.write((char *)&sz, 4);
         out.write(it.name->strval.c_str(), sz);
-        is_static = it.is_static;
 
-        out.write((char *)&is_static, 1);
+        out.write((char *)&it.retType, 1);
+        out.write((char *)&it.is_static, 1);
         out.write((char *)&it.nparams, 2);
         out.write((char *)&it.nlocals, 2);
         out.write((char *)&it.fromPc, 4);
@@ -1722,8 +1836,7 @@ void CodeGenerator::dump()
     sz = this->locals[object_name].size();
     out.write((char *)&sz, 4);
     for (auto &it : locals[object_name]) {
-        is_static = it.is_static;
-        out.write((char *)&is_static, 1);
+        out.write((char *)&it.is_static, 1);
     }
 
     sz = this->intConsts.size();

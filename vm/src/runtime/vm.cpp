@@ -68,8 +68,8 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
         in.read(fname, sz1);
         fname[sz1] = '\0';
         func_proto[i].name = fname;
+        in.read((char *)&func_proto[i].retType, 1);
         in.read((char *)&func_proto[i].is_static, 1);
-
         in.read((char *)&func_proto[i].nargs, 2);
         in.read((char *)&func_proto[i].nlocal, 2);
         in.read((char *)&func_proto[i].fromPC, 4);
@@ -304,7 +304,7 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
     nci->funcIdx = idx;
     nci->cur_obj = obj;
     nci->pre = cur_ci;
-    nci->base = stack->top() - f->nargs;
+    nci->base = stack->top() - (f->nargs > 0 ? f->nargs - 1 : 0);
     if (cur_ci) {
         cur_ci->next = nci;
         cur_ci = nci;
@@ -325,7 +325,7 @@ void lpc_vm_t::pop_frame()
 {
     call_info_t *pre = cur_ci;
     if (pre->call_init) {
-        cur_ci = nullptr;
+        cur_ci = pre->pre;
         delete pre;
         return;
     }
@@ -344,7 +344,14 @@ void lpc_vm_t::pop_frame()
     cur_ci->next = nullptr;
     object_proto_t *proto = pre->cur_obj->get_proto();
     const function_proto_t &f = proto->func_table[pre->funcIdx];
-    stack->pop_n(f.nlocal);
+
+    if (f.retType > 1) {
+        lpc_value_t *ret = stack->pop();
+        stack->pop_n(f.nlocal);
+        stack->push(ret);
+    } else {
+        stack->pop_n(f.nlocal);
+    }
     delete pre;
 }
 
