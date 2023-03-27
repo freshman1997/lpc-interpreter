@@ -28,7 +28,6 @@
     } else if (v1->type == value_type::float_ && v2->type == value_type::float_){ \
         v2->pval.real = v2->pval.real op v1->pval.real; \
     } \
-    std::cout << "val: " << v2->pval.number << std::endl;\
     sk->push(v2);
 
 #define SOME_CMP(op) \
@@ -148,7 +147,21 @@ new_frame:
             sk->push(&const0);
             break;
         }
+        case OpCode::op_load_func: {
+            EXTRACT_2_PARAMS
+            const0.type = value_type::function_;
+            object_proto_t *proto = ci->cur_obj->get_proto();
+            if (proto->nfunction <= idx) {
+                std::cout << "error found: function index over range!!!\n";
+                exit(-1);
+            }
 
+            function_proto_t *f = &proto->func_table[idx];
+            lpc_function_t *func = lvm->get_alloc()->allocate_function(f, ci->cur_obj, idx);
+            const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(func);
+            sk->push(&const0);
+            break;
+        }
         case OpCode::op_load_0: {
             const0.type = value_type::int_;
             const0.pval.number = 0;
@@ -439,7 +452,7 @@ new_frame:
             break;
         }
         case OpCode::op_sub_arr: {
-
+            
             break;
         }
         case OpCode::op_new_mapping: {
@@ -504,7 +517,8 @@ new_frame:
                 if (f->idx < 0) {
                     // error
                 }
-
+                
+                ci->savepc = pc;
                 lvm->new_frame(ci->cur_obj, f->idx);
                 goto new_frame;
             }

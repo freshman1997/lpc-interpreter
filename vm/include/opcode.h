@@ -8,6 +8,8 @@ enum class OpCode
     op_store_global,
     op_store_local,
 
+    op_load_func,
+
     op_load_iconst,
     op_load_fconst,
     op_load_sconst,

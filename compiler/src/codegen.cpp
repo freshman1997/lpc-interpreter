@@ -55,11 +55,22 @@ static lint16_t find_fun_idx(const string &name, int type)
             ++idx;
         }
     } else {
-        for (int i = 0; i < efuns.size(); ++i) {
+        for (lint16_t i = 0; i < lint16_t(efuns.size()); ++i) {
             if (efuns[i].name == name) {
                 return i;
             }
         }
+    }
+
+    return -1;
+}
+
+static luint16_t find_func_idx(const string &name, vector<Func> &con)
+{
+    luint16_t idx = 0;
+    for (auto &it : con) {
+        if (it.name->strval == name) return idx;
+        ++idx;
     }
 
     return -1;
@@ -113,7 +124,6 @@ static lint16_t find_fun_idx(const string &name, int type)
         } \
     } else if (val->valType == 4) { \
         if (vType == DeclType::user_define_) { \
-            /* ""->xxx */ \
             /* TODO optimize */ \
             lint16_t idx = find_const<string>(val->val.sval->strval, stringConsts); \
             if (idx < 0) { \
@@ -126,13 +136,22 @@ static lint16_t find_fun_idx(const string &name, int type)
         } else { \
             lint16_t idx = find_local_idx(val->val.sval->strval, scopeLocals); \
             Local *loc = nullptr; \
+            bool isFun = false; \
             if (idx < 0) { \
                 idx = find_local_idx(val->val.sval->strval, locals[object_name]); \
                 if (idx < 0) { \
+                    idx = find_func_idx(val->val.sval->strval, funcs); \
+                    if (idx < 0) { \
                     /* TODO undefine identifier */ error_at(__LINE__); \
+                    } \
+                    isFun = true; \
                 } \
-                loc = &locals[object_name][idx]; \
-                (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_global)); \
+                if (!isFun) { \
+                    loc = &locals[object_name][idx]; \
+                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_global)); \
+                } else {\
+                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_func)); \
+                } \
             } else {\
                 loc = &scopeLocals[idx]; \
                 if (object_name != cur_scope) { \
@@ -142,7 +161,7 @@ static lint16_t find_fun_idx(const string &name, int type)
                 } \
             } \
             \
-            if (vType != DeclType::none_ && loc->type != vType) { \
+            if (!isFun && vType != DeclType::none_ && loc->type != vType) { \
                 /* TODO 类型不匹配 */ error_at(__LINE__);\
             } \
             \
@@ -1460,17 +1479,6 @@ void CodeGenerator::generate_index(AbstractExpression *exp, bool lhs)
     }
 }
 
-static luint16_t find_func_idx(const string &name, vector<Func> &con)
-{
-    luint16_t idx = 0;
-    for (auto &it : con) {
-        if (it.name->strval == name) return idx;
-        ++idx;
-    }
-
-    return -1;
-}
-
 /// @brief h->hello(), ""->hello(), hello()
 /// @param exp 
 void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
@@ -1604,6 +1612,10 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
             (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(call->params.size() + extArgs));
         }
     } else {
+        for (auto &it : call->params) {
+            GENERATE_OP(it, DeclType::none_);
+        }
+
         GENERATE_OP(call->callee, DeclType::none_)
         (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call));
         (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(0));
@@ -1686,7 +1698,7 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
     }
 
     if (!funDecl->body.empty()) {
-        if (funDecl->body.back()->get_type() == ExpressionType::return_) {
+        /*if (funDecl->body.back()->get_type() == ExpressionType::return_) {
             ReturnExpression *ret = dynamic_cast<ReturnExpression *>(funDecl->body.back());
             if (ret->ret->get_type() == ExpressionType::call_) {
                 CallExpression *call = dynamic_cast<CallExpression *>(ret->ret);
@@ -1700,7 +1712,7 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
                     }
                 }
             }
-        }
+        }*/
 
         for (auto &it : funDecl->body) {
             switch (it->get_type()) {

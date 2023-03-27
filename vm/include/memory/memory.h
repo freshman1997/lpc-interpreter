@@ -10,6 +10,8 @@ class lpc_mapping_t;
 class lpc_object_t;
 class lpc_string_t;
 class object_proto_t;
+class lpc_function_t;
+struct function_proto_t;
 
 class lpc_allocator_t
 {
@@ -23,7 +25,7 @@ public:
     lpc_value_t * allocate_closure();
     lpc_string_t * allocate_string(const char *);
     lpc_value_t * allocate_buffer(luint32_t size);
-    lpc_value_t * allocate_function();
+    lpc_function_t * allocate_function(function_proto_t *, lpc_object_t *, lint16_t);
 
     lpc_allocator_t(lpc_vm_t * v) : vm(v) {}
     

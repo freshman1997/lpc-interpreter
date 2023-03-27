@@ -316,7 +316,7 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
         base_ci = nci;
     }
 
-    stack->set_local_size(f->nlocal);
+    stack->set_local_size(f->nlocal - f->nargs);
 
     return nci;
 }

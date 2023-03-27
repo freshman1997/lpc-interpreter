@@ -58,9 +58,14 @@ lpc_value_t * lpc_allocator_t::allocate_buffer(luint32_t size)
     return nullptr;
 }
 
-lpc_value_t * lpc_allocator_t::allocate_function()
+lpc_function_t * lpc_allocator_t::allocate_function(function_proto_t *funcProto, lpc_object_t *owner, lint16_t idx)
 {
-    return nullptr;
+    lpc_function_t *f = (lpc_function_t *)vm->get_gc()->allocate(sizeof(lpc_function_t));
+    new(f)lpc_function_t();
+    f->idx = idx;
+    f->proto = funcProto;
+    f->owner = owner;
+    return f;
 }
 
 void * lpc_allocator_t::pick_chunk(luint32_t size)

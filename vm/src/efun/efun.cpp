@@ -194,7 +194,7 @@ static void sleep(lpc_vm_t *vm, lint32_t nparam)
 
 void init_efuns(lpc_vm_t *vm)
 {
-    efun_t *efuns = new efun_t[3];
+    efun_t *efuns = new efun_t[4];
     efuns[0] = call_other;
     efuns[1] = print;
     efuns[2] = puts;
