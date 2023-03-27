@@ -1910,9 +1910,7 @@ clazz:
                 is_varargs = true;
                 t->next = tok;
                 tok = tok->next;
-                if (tok->kind == TokenKind::k_identity) {
-                    goto start;
-                }
+                goto start;
             case TokenKind::k_key_word_static:
             case TokenKind::k_key_word_private: {
                 is_static = true;
@@ -2023,12 +2021,19 @@ clazz:
             ValueExpression *id = new ValueExpression;
             id->valType = 4;
             id->val.sval = tok;
-            if (n && n->kind == TokenKind::k_symbol_var_arg) {
-                id->is_var_arg = true;
-                tok = n;
+            exp = id;
+
+            if (n) {
+                if (n->kind == TokenKind::k_symbol_var_arg) {
+                    id->is_var_arg = true;
+                    tok = n;
+                } else if (n->kind == TokenKind::k_symbol_qs1) {
+                    exp = parse_follow(id, n, t);
+                    tok = t;
+                }
             }
             
-            exp = parse_follow(id, tok->next, t);
+            exp = parse_follow(exp, tok->next, t);
 
             if (exp != id) tok = nullptr;
         } else {
@@ -2121,7 +2126,7 @@ static AbstractExpression * parse_unary(Token *tok, Token *t, bool fromOp)
 
     TokenKind k = tok->kind;
     if (unary_oper.count(k)) {
-        AbstractExpression *exp = parse_primary(tok->next, t, fromOp);
+        AbstractExpression *exp = parse_binay(tok->next, -1, t);
         UnaryExpression *uExp = new UnaryExpression;
         uExp->op = k;
         uExp->exp = exp;
@@ -2553,3 +2558,4 @@ vector<AbstractExpression *> * Parser::parse(const char *filename)
     
     return &parsed;
 }
+ 
