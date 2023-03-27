@@ -91,6 +91,7 @@ int main(int argc, char **argv)
 
 	vector<AbstractExpression *> *docs = parser.parse(cwd.c_str());
 	for (auto &it : *docs) {
+		DocumentExpression *doc = dynamic_cast<DocumentExpression *>(it);
 		try {
 			// 内部可以使用，但是不能删除
 			CodeGenerator g;
@@ -98,10 +99,9 @@ int main(int argc, char **argv)
 			g.generate(it);
 			g.dump();
 
-			DocumentExpression *doc = dynamic_cast<DocumentExpression *>(it);
 			cout << "[success] " << doc->file_name << "\n";
 		} catch (...) {
-			std::cout << "error occured!\n";
+			std::cout << "error occured in file: " << doc->file_name << " !!!\n";
 			continue;
 		}
 	}

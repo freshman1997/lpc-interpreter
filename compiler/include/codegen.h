@@ -77,6 +77,8 @@ public:
     void generate_return(AbstractExpression *);
     void generate_func(AbstractExpression *);
 
+    void oper_type_check(BinaryExpression *);
+
     template<typename T>
     lint16_t find_const(T &t, const std::vector<T> &con)
     {

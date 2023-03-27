@@ -34,12 +34,17 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     }
 
     object_proto_t *proto = alloc->allocate_object_proto();
+    luint32_t sz = 0;
+    in.read((char *)&sz, 4);
+    char *objName = new char[sz + 1];
+    in.read(objName, sz);
+    objName[sz] = '\0';
+    proto->name = objName;
 
     in.read((char *)&proto->create_idx, 2);
     in.read((char *)&proto->on_load_in_idx, 2);
     in.read((char *)&proto->on_destruct_idx, 2);
-
-    luint32_t sz = 0;
+    
     in.read((char *)&sz, 4);
     proto->nswitch = sz;
     lint32_t caser = 0, gotoW = 0;
@@ -324,6 +329,7 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
 void lpc_vm_t::pop_frame()
 {
     call_info_t *pre = cur_ci;
+    lpc_value_t *base = pre->base;
     if (pre->call_init) {
         cur_ci = pre->pre;
         delete pre;
@@ -347,10 +353,10 @@ void lpc_vm_t::pop_frame()
 
     if (f.retType > 1) {
         lpc_value_t *ret = stack->pop();
-        stack->pop_n(f.nlocal);
+        stack->pop_n(stack->top() - base);
         stack->push(ret);
     } else {
-        stack->pop_n(f.nlocal);
+        stack->pop_n(stack->top() - base);
     }
     delete pre;
 }

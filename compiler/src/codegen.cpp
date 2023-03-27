@@ -13,11 +13,13 @@ static vector<EfunDecl> efuns = {
     {"debug_message", {DeclType::string_, DeclType::varargs_}, true, DeclType::void_},
     {"puts", {DeclType::mixed_, }, false, DeclType::void_},
     {"sleep", {DeclType::mixed_}, false, DeclType::void_},
+    {"sizeof", {DeclType::mixed_}, false, DeclType::int_},
     {"intp", {DeclType::mixed_}, false, DeclType::bool_},
     {"floatp", {DeclType::mixed_}, false, DeclType::bool_},
     {"stringp", {DeclType::mixed_}, false, DeclType::bool_},
     {"arrayp", {DeclType::mixed_}, false, DeclType::bool_},
     {"mapp", {DeclType::mixed_}, false, DeclType::bool_},
+    {"undefinedp", {DeclType::mixed_}, false, DeclType::bool_},
 };
 
 static vector<Func> *sfuns = nullptr;
@@ -274,7 +276,7 @@ extern void error(Token *tok);
 static void error_at(int line)
 {
     cout << "error found in line " << line << endl;
-    exit(-1);
+    throw "xxx";
 }
 
 static lint16_t find_local_idx(const string &name, const std::vector<Local> &vec)
@@ -663,10 +665,141 @@ void CodeGenerator::generate_ctor(AbstractExpression *exp)
     LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), count)
 }
 
+#define PRIMARY_CHECK \
+    if (right->get_type() == ExpressionType::value_) { \
+        ValueExpression *val = dynamic_cast<ValueExpression *>(right); \
+        if (val->valType == 4) { \
+            if (!on_var_decl) { \
+                lint16_t idx = find_local_idx(val->val.sval->strval, locals[cur_scope]); \
+                if (idx < 0) { \
+                    idx = find_local_idx(val->val.sval->strval, locals[object_name]); \
+                    if (idx < 0) { \
+                        error_at(__LINE__); \
+                    } \
+                    \
+                    Local &l = locals[object_name][idx]; \
+                    if (l.type != DeclType::int_ && l.type != DeclType::float_) { \
+                        error_at(__LINE__); \
+                    } \
+                } else { \
+                    Local &l = locals[cur_scope][idx]; \
+                    if (l.type != DeclType::int_ && l.type != DeclType::float_) { \
+                        error_at(__LINE__); \
+                    } \
+                } \
+            } else { \
+                lint16_t idx = find_local_idx(val->val.sval->strval, locals[object_name]); \
+                if (idx < 0) { \
+                    error_at(__LINE__); \
+                } \
+                Local &l = locals[object_name][idx]; \
+                if (l.type != DeclType::int_ && l.type != DeclType::float_) { \
+                    error_at(__LINE__); \
+                } \
+            }\
+        } else if (val->valType != 0 && val->valType != 1) { \
+            error_at(__LINE__); \
+        } \
+    }
+
+void CodeGenerator::oper_type_check(BinaryExpression *bin)
+{
+    AbstractExpression *left = bin->l;
+    AbstractExpression *right = bin->r;
+    if (bin->oper == TokenKind::k_oper_assign) {
+        if (left->get_type() == ExpressionType::var_decl_) {
+            VarDeclExpression *decl = dynamic_cast<VarDeclExpression *>(left);
+            DeclType dtype = decl->dtype;
+            if (dtype == DeclType::int_) {
+                PRIMARY_CHECK
+            } else if (dtype == DeclType::float_) {
+                PRIMARY_CHECK
+            } else if (dtype == DeclType::string_) {
+                if (right->get_type() == ExpressionType::value_) { 
+                    ValueExpression *val = dynamic_cast<ValueExpression *>(right);
+                    if (val->valType == 4) {
+                        if (on_var_decl) {
+                            lint16_t idx = find_local_idx(val->val.sval->strval, locals[object_name]); 
+                            if (idx < 0) { 
+                                error_at(__LINE__); 
+                            } 
+
+                            Local &l = locals[object_name][idx]; 
+                            if (l.type != DeclType::string_) { 
+                                error_at(__LINE__); 
+                            } 
+                        } else {
+                            lint16_t idx = find_local_idx(val->val.sval->strval, locals[cur_scope]);
+                            if (idx < 0) {
+                                idx = find_local_idx(val->val.sval->strval, locals[object_name]);
+                                if (idx < 0) {
+                                    error_at(__LINE__);
+                                } 
+                                
+                                Local &l = locals[object_name][idx];
+                                if (l.type != DeclType::string_) {
+                                    error_at(__LINE__);
+                                } 
+                            } else {
+                                Local &l = locals[cur_scope][idx];
+                                if (l.type != DeclType::string_) {
+                                    error_at(__LINE__);
+                                }
+                            }
+                        }
+                    } else if (val->valType != 2 && val->valType != 0) {
+                        error_at(__LINE__);
+                    }
+                } 
+            } else if (dtype == DeclType::bool_) {
+                if (right->get_type() == ExpressionType::value_) { 
+                    ValueExpression *val = dynamic_cast<ValueExpression *>(right);
+                    if (val->valType == 4) {
+                        if (on_var_decl) {
+                            lint16_t idx = find_local_idx(val->val.sval->strval, locals[object_name]); 
+                            if (idx < 0) { 
+                                error_at(__LINE__); 
+                            } 
+
+                            Local &l = locals[object_name][idx]; 
+                            if (l.type != DeclType::bool_ && l.type != DeclType::int_) { 
+                                error_at(__LINE__); 
+                            } 
+                        } else {
+                            lint16_t idx = find_local_idx(val->val.sval->strval, locals[cur_scope]);
+                            if (idx < 0) {
+                                idx = find_local_idx(val->val.sval->strval, locals[object_name]);
+                                if (idx < 0) {
+                                    error_at(__LINE__);
+                                } 
+                                
+                                Local &l = locals[object_name][idx];
+                                if (l.type != DeclType::bool_ && l.type != DeclType::int_) {
+                                    error_at(__LINE__);
+                                } 
+                            } else {
+                                Local &l = locals[cur_scope][idx];
+                                if (l.type != DeclType::bool_ && l.type != DeclType::int_) {
+                                    error_at(__LINE__);
+                                }
+                            }
+                        }
+                    } else if (val->valType != 3 && val->valType != 0) {
+                        error_at(__LINE__);
+                    }
+                } 
+            }
+        }
+    }
+}
+
 // 怎么做常量折叠　？
 void CodeGenerator::generate_binary(AbstractExpression *exp, bool fromAssign)
 {
     BinaryExpression *bin = dynamic_cast<BinaryExpression *>(exp);
+
+    oper_type_check(bin);
+
     if (on_var_decl && bin->oper != TokenKind::k_oper_assign) {
         error_at(__LINE__);
     }
@@ -1698,22 +1831,6 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
     }
 
     if (!funDecl->body.empty()) {
-        /*if (funDecl->body.back()->get_type() == ExpressionType::return_) {
-            ReturnExpression *ret = dynamic_cast<ReturnExpression *>(funDecl->body.back());
-            if (ret->ret->get_type() == ExpressionType::call_) {
-                CallExpression *call = dynamic_cast<CallExpression *>(ret->ret);
-                if (call->callee->get_type() == ExpressionType::value_) {
-                    ValueExpression *fName = dynamic_cast<ValueExpression *>(call->callee);
-                    if (fName->valType == 4) {
-                        if (fName->val.sval->strval == f.name->strval) {
-                            // TODO 尾递归处理
-
-                        }
-                    }
-                }
-            }
-        }*/
-
         for (auto &it : funDecl->body) {
             switch (it->get_type()) {
                 case ExpressionType::var_decl_: {
@@ -1793,6 +1910,17 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
     }
 }
 
+static string get_pure_name(const string &src)
+{
+    const string &cwd = get_cwd();
+    int i = 0;
+    for (; i < cwd.size(); ++i) {
+        if (src[i] != cwd[i]) break;
+    }
+
+    return src.substr(i + 1);
+}
+
 void CodeGenerator::dump()
 {
     size_t idx = object_name.find_last_of(".");
@@ -1809,16 +1937,16 @@ void CodeGenerator::dump()
         return;
     }
 
-    /*string name = object_name.substr(0, idx);
+    string name = std::move(get_pure_name(object_name));
     luint32_t sz = name.size();
     out.write((char *)&sz, 4);
-    out.write(name.c_str(), sz);*/
+    out.write(name.c_str(), sz);
 
     out.write((char *)&create_idx, 2);
     out.write((char *)&onload_in_idx, 2);
     out.write((char *)&on_destruct_idx, 2);
 
-    luint32_t sz = this->lookup_switch.size();
+    sz = this->lookup_switch.size();
     out.write((char *)&sz, 4);
     for (auto &it : lookup_switch) {
         sz = it.size();

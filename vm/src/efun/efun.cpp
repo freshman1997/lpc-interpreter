@@ -7,13 +7,14 @@
 #include "runtime/vm.h"
 #include "lpc_value.h"
 #include "runtime/stack.h"
+#include "type/lpc_array.h"
 #include "type/lpc_string.h"
 
 using namespace std;
 
 extern void debug_message(const char *fmt, ...);
 
-static void print(lpc_vm_t *vm, lint32_t nparam)
+static void f_print(lpc_vm_t *vm, lint32_t nparam)
 {
     lpc_stack_t *sk = vm->get_stack();
     lpc_value_t *val = sk->pop();
@@ -120,7 +121,7 @@ static void build_basic(string &buf, lpc_value_t *val, int deep)
     }
 }
 
-static void puts(lpc_vm_t *vm, lint32_t nparam)
+static void f_puts(lpc_vm_t *vm, lint32_t nparam)
 {
     lpc_stack_t *sk = vm->get_stack();
     lpc_value_t *val = sk->pop();
@@ -129,7 +130,7 @@ static void puts(lpc_vm_t *vm, lint32_t nparam)
     debug_message("%s\n", buf.c_str());
 }
 
-static void call_other(lpc_vm_t *vm, lint32_t nparam)
+static void f_call_other(lpc_vm_t *vm, lint32_t nparam)
 {
     lpc_stack_t *sk = vm->get_stack();
 
@@ -180,7 +181,7 @@ static void call_other(lpc_vm_t *vm, lint32_t nparam)
     vm->run();
 }
 
-static void sleep(lpc_vm_t *vm, lint32_t nparam)
+static void f_sleep(lpc_vm_t *vm, lint32_t nparam)
 {
     lpc_stack_t *sk = vm->get_stack();
     lpc_value_t *val = sk->pop();
@@ -192,13 +193,34 @@ static void sleep(lpc_vm_t *vm, lint32_t nparam)
     this_thread::sleep_for(chrono::milliseconds(val->pval.number));
 }
 
+static void f_sizeof(lpc_vm_t *vm, lint32_t nparam)
+{
+    lpc_stack_t *sk = vm->get_stack();
+    lpc_value_t *val = sk->top();
+    val->pval.number = 0;
+    
+    if (val->type == value_type::string_){
+        lpc_string_t *str = reinterpret_cast<lpc_string_t *>(val->gcobj);
+        val->pval.number = str->get_size();
+    } else if (val->type == value_type::array_) {
+        lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(val->gcobj);
+        val->pval.number = arr->get_size();
+    } else if (val->type == value_type::mappig_) {
+        lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(val->gcobj);
+        val->pval.number = arr->get_size();
+    }
+    
+    val->type = value_type::int_;
+}
+
 void init_efuns(lpc_vm_t *vm)
 {
-    efun_t *efuns = new efun_t[4];
-    efuns[0] = call_other;
-    efuns[1] = print;
-    efuns[2] = puts;
-    efuns[3] = sleep;
+    efun_t *efuns = new efun_t[5];
+    efuns[0] = f_call_other;
+    efuns[1] = f_print;
+    efuns[2] = f_puts;
+    efuns[3] = f_sleep;
+    efuns[4] = f_sizeof;
     vm->register_efun(efuns);
 }
 
