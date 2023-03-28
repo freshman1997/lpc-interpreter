@@ -90,6 +90,9 @@ void * mark_sweep_gc::allocate(luint32_t sz)
     }
 
     blocks += sz;
+    if (blocks / gc_threshold > 0.8) {
+        collect();
+    }
 
     return p;
 }

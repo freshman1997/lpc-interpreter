@@ -43,8 +43,6 @@ public:
     Token * parse_file(const char *filename);
 
     pair<bool, Macro *> find_macro(const string &);
-    void enter_dir();
-    void exit_dir();
     void set_compile_file(const char *filename);
     void add_built_in_macro();
 

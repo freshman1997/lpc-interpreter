@@ -55,17 +55,6 @@ void Parser::init_base_include(const vector<string> &includes)
     }
 }
 
-
-void Parser::enter_dir()
-{
-    
-}
-
-void Parser::exit_dir()
-{
-
-}
-
 void Parser::set_compile_file(const char *filename)
 {
     this->cur_file = filename;
@@ -2469,7 +2458,7 @@ static void find_all_file(vector<string> &all, string dirName)
 				}
 			} else {
                 const char *pFile = strrchr(fileinfo.name, '.');
-                if (pFile != NULL && strcmp(pFile, ".txt") == 0) {
+                if (pFile != NULL && strcmp(pFile, ".txt") == 0 && strcmp(pFile, "simulate_efun.txt") != 0) {
                     all.push_back(string().assign(dirName).append("\\").append(fileinfo.name));
                 }
 			}
@@ -2510,7 +2499,7 @@ static void find_all_file(vector<string> &all, string dirName)
                 continue;
             } else if(pDir->d_type == 8) { // 文件
                 const char *pFile = strrchr(pDir->d_name, '.');
-                if (pFile != NULL && strcmp(pFile, ".txt") == 0) {
+                if (pFile != NULL && strcmp(pFile, ".txt") == 0 && strcmp(pFile, "simulate_efun.txt") != 0) {
                     all.push_back(dirName + "/" + pDir->d_name);
                 }
             } else if(pDir->d_type == 10){

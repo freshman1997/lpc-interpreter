@@ -258,6 +258,11 @@ lpc_vm_t * lpc_vm_t::create_vm()
 
 void lpc_vm_t::bootstrap()
 {
+    sfun_object_name = "rc/simulate_efun";
+    lpc_object_t *eobj = load_object(sfun_object_name);
+    on_loaded_object(eobj, sfun_object_name);
+    this->sfun_obj = eobj;
+    
     lpc_object_t *obj = load_object(entry);
     on_loaded_object(obj, entry);
 }

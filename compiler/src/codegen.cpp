@@ -23,7 +23,7 @@ static vector<EfunDecl> efuns = {
     {"undefinedp", {DeclType::mixed_}, false, DeclType::bool_},
 };
 
-static vector<Func> *sfuns = nullptr;
+static vector<Func> sfuns;
 
 void init_sfun(const char *sfunFile, Parser &parser)
 {
@@ -31,14 +31,15 @@ void init_sfun(const char *sfunFile, Parser &parser)
         AbstractExpression *exp = parser.parse_one(sfunFile);
         DocumentExpression *doc = dynamic_cast<DocumentExpression *>(exp);
         if (doc->contents.empty()) {
-            cout << "init simulate object: " << sfunFile << "fail !!!\n";
+            cout << "init simulate object: " << sfunFile << " fail !!!\n";
             exit(-1);
         }
 
         CodeGenerator g;
         g.generate(exp);
         g.dump();
-        sfuns = &g.get_funcs();
+        sfuns.assign(g.get_funcs().size(), {});
+        std::copy(g.get_funcs().begin(), g.get_funcs().end(), sfuns.begin());
     } catch (...) {
         cout << "init simulate object: " << sfunFile << "fail !!!\n";
         exit(-1);
@@ -49,9 +50,9 @@ static lint16_t find_fun_idx(const string &name, int type)
 {
     lint16_t idx = 0;
     if (type == 0) {
-        if (!sfuns) return -1;
+        if (sfuns.empty()) return -1;
 
-        for (auto &it : *sfuns) {
+        for (auto &it : sfuns) {
             if (it.name->strval == name) {
                 return idx;
             }
@@ -1329,13 +1330,11 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
     const char *idx2char = nullptr;
     LOAD_IDX_4(opcodes, end)
 
-    luint16_t idx = scopeLocals.size() - 2;
-    for (auto &it : fe->decls) {
+    lint16_t idx = scopeLocals.size() - fe->decls.size();
+    for (; idx < scopeLocals.size(); ++idx) {
         // 这里需要容器还在栈中
-        VarDeclExpression *var = dynamic_cast<VarDeclExpression *>(it);
         opcodes.push_back((luint8_t)(OpCode::op_store_local));
         LOAD_IDX_2(opcodes, idx)
-        ++idx;
     }
 
     vector<lint32_t> forBreaks;
@@ -1737,7 +1736,7 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
             (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(3));
             LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), funcs[funIdx].idx)
         } else if (is_sfun) {
-            Func &f = (*sfuns)[funIdx];
+            Func &f = sfuns[funIdx];
             if (call->params.size() > f.nparams) {
                 error_at(__LINE__);
             }

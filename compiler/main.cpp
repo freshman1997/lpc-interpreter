@@ -87,7 +87,7 @@ int main(int argc, char **argv)
 
 	cout << parent << endl;
 	Parser parser;
-	//init_sfun("/rc/simulate.c", parser);
+	init_sfun((cwd + string("/rc/simulate_efun.txt")).c_str(), parser);
 
 	vector<AbstractExpression *> *docs = parser.parse(cwd.c_str());
 	for (auto &it : *docs) {
