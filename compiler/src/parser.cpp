@@ -2023,14 +2023,9 @@ clazz:
             id->val.sval = tok;
             exp = id;
 
-            if (n) {
-                if (n->kind == TokenKind::k_symbol_var_arg) {
-                    id->is_var_arg = true;
-                    tok = n;
-                } else if (n->kind == TokenKind::k_symbol_qs1) {
-                    exp = parse_follow(id, n, t);
-                    tok = t;
-                }
+            if (n && n->kind == TokenKind::k_symbol_var_arg) {
+                id->is_var_arg = true;
+                tok = n;
             }
             
             exp = parse_follow(exp, tok->next, t);
@@ -2206,11 +2201,11 @@ static AbstractExpression* parse_follow(AbstractExpression *exp, Token *tok, Tok
             }
 
             TripleExpression *tp = dynamic_cast<TripleExpression *>(triple);
-            if (!tp || !exp) {
+            if (!tp || !last) {
                 error(tok);
             }
             
-            tp->cond = exp;
+            tp->cond = last;
             last = tp;
         } else {
             break;

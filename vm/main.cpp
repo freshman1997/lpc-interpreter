@@ -55,6 +55,7 @@ int main(int argc, char **argv)
 	cwd = buf;
 #endif
     lint64_t seed = time(NULL);
+	srand(seed);
 	//debug_message("xxxxxxxxxxxxxxxxxxxxx %d:%d,%d,%d\n", 100, _abs(-1), hash_("hello"), luaS_hash("hello", 5, (unsigned int)(seed)));
 	os::init_seed(seed);
 	cout << "random value: " << os::random() << endl;

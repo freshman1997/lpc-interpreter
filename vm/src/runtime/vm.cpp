@@ -351,12 +351,21 @@ void lpc_vm_t::pop_frame()
     object_proto_t *proto = pre->cur_obj->get_proto();
     const function_proto_t &f = proto->func_table[pre->funcIdx];
 
+    int n = f.nlocal - f.nargs;
+    int n1 = stack->top() - base;
+    n = n1 > n ? n1 : n;
+    
     if (f.retType > 1) {
         lpc_value_t *ret = stack->pop();
-        stack->pop_n(stack->top() - base);
-        stack->push(ret);
+        ret->subtype = value_type::return_;
+        stack->pop_n(n);
+        if (stack->top()->subtype != value_type::return_) {
+            stack->push(ret);
+        } else {
+            *stack->top() = *ret;
+        }
     } else {
-        stack->pop_n(stack->top() - base);
+        stack->pop_n(n);
     }
     delete pre;
 }

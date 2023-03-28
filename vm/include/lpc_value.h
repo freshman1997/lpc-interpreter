@@ -26,6 +26,7 @@ enum class value_type
     closure_,
     class_,
     proto_,
+    return_,
 };
 
 class lpc_string_t;

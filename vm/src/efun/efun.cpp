@@ -2,6 +2,7 @@
 #include <cstring>
 #include <string>
 #include <thread>
+#include <ctime>
 
 #include "lpc.h"
 #include "runtime/vm.h"
@@ -213,14 +214,37 @@ static void f_sizeof(lpc_vm_t *vm, lint32_t nparam)
     val->type = value_type::int_;
 }
 
+static void f_random(lpc_vm_t *vm, lint32_t nparam)
+{
+    lpc_stack_t *sk = vm->get_stack();
+    lpc_value_t *val = sk->top();
+    if (val->type != value_type::int_) {
+        val->pval.number = 0;
+        return;
+    }
+
+    // TODO 
+    unsigned char rs[4];
+    rs[0] = rand() % 256;
+    rs[1] = rand() % 256;
+    rs[2] = rand() % 256;
+    rs[3] = rand() % 256;
+
+    int r = *(int*)rs;
+    if (r < 0) r = -r;
+
+    val->pval.number = r % val->pval.number;
+}
+
 void init_efuns(lpc_vm_t *vm)
 {
-    efun_t *efuns = new efun_t[5];
+    efun_t *efuns = new efun_t[6];
     efuns[0] = f_call_other;
     efuns[1] = f_print;
     efuns[2] = f_puts;
     efuns[3] = f_sleep;
     efuns[4] = f_sizeof;
+    efuns[5] = f_random;
     vm->register_efun(efuns);
 }
 

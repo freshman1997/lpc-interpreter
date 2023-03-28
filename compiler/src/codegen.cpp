@@ -408,24 +408,36 @@ void CodeGenerator::generate_unop(AbstractExpression *exp)
     // 有个保存的过程
     if (uop->exp->get_type() == ExpressionType::value_) {
         ValueExpression *val = dynamic_cast<ValueExpression *>(uop->exp);
-        if (val->valType == 4) {
-            lint16_t idx = find_local_idx(val->val.sval->strval, locals[cur_scope]);
-            if (idx < 0) {
-                idx = find_local_idx(val->val.sval->strval, locals[object_name]);
+        if (uop->op != TokenKind::k_cmp_not && uop->op != TokenKind::k_oper_minus) {
+            if (val->valType == 4) {
+                lint16_t idx = find_local_idx(val->val.sval->strval, locals[cur_scope]);
                 if (idx < 0) {
-                    error_at(__LINE__);
+                    idx = find_local_idx(val->val.sval->strval, locals[object_name]);
+                    if (idx < 0) {
+                        error_at(__LINE__);
+                    }
+                    opcodes.push_back((luint8_t)(OpCode::op_store_global));
+                } else {
+                    opcodes.push_back((luint8_t)(OpCode::op_store_local));
                 }
-                opcodes.push_back((luint8_t)(OpCode::op_store_global));
+                LOAD_IDX_2(opcodes, idx)
             } else {
-                opcodes.push_back((luint8_t)(OpCode::op_store_local));
+                error_at(__LINE__);
             }
-            LOAD_IDX_2(opcodes, idx)
         }
     } else if (uop->exp->get_type() == ExpressionType::index_) {
         luint8_t op = opcodes.back();
         opcodes.pop_back();
         opcodes.push_back((luint8_t)OpCode::op_upset);
         opcodes.push_back(op);
+    } else if (uop->exp->get_type() == ExpressionType::uop_) {
+        generate_unop(uop->exp);
+    } else if (uop->exp->get_type() == ExpressionType::oper_) {
+        generate_binary(uop->exp);
+    } else if (uop->exp->get_type() == ExpressionType::call_) { 
+        generate_call(uop->exp);
+    } else if (uop->exp->get_type() == ExpressionType::call_) {
+        generate_triple(uop->exp);
     } else {
         error_at(__LINE__);
     }
@@ -1572,7 +1584,7 @@ void CodeGenerator::generate_index(AbstractExpression *exp, bool lhs)
             (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_local));
         }
 
-        if (loc->type != DeclType::mapping_ && !loc->is_arr) {
+        if (loc->type != DeclType::mapping_ && !loc->is_arr && loc->type != DeclType::mixed_) {
             error_at(__LINE__);
         }
 
@@ -1766,8 +1778,6 @@ void CodeGenerator::generate_return(AbstractExpression *exp)
         }
 
         Func &fun = funcs[idx];
-        GENERATE_OP(ret->ret, fun.retType)
-
         if (ret->ret->get_type() == ExpressionType::new_) {
             NewExpression *n = dynamic_cast<NewExpression *>(ret->ret);
             ValueExpression *id = dynamic_cast<ValueExpression *>(n->id);
@@ -1779,6 +1789,10 @@ void CodeGenerator::generate_return(AbstractExpression *exp)
 
             (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_new_class));
             LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
+        } else if (ret->ret->get_type() != ExpressionType::construct_) {
+            GENERATE_OP(ret->ret, fun.retType)
+        } else {
+            generate_ctor(ret->ret);
         }
     }
 
