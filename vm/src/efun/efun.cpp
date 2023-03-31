@@ -102,7 +102,26 @@ static void build_basic(string &buf, lpc_value_t *val, int deep)
     }
     case value_type::array_:{
         lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(val->gcobj);
-        build_array(buf, arr, deep);
+        if (val->subtype != value_type::class_) {
+            build_array(buf, arr, deep);
+        } else {
+            buf.append("class(");
+            int sz = arr->get_size();
+            for (int i = 0; i < sz; ++i) {
+                for (int t = 0; t < deep; ++t) {
+                    buf.push_back('\t');
+                }
+                build_basic(buf, arr->get(i), deep + 1);
+                if (i < sz - 1) {
+                    buf.append(",\n");
+                }
+            }
+            buf.push_back('\n');
+            for (int t = 0; t < deep - 1; ++t) {
+                buf.push_back('\t');
+            }
+            buf.push_back(')');
+        }
         break;
     }
     case value_type::mappig_: {
@@ -110,12 +129,22 @@ static void build_basic(string &buf, lpc_value_t *val, int deep)
         build_mapping(buf, m, deep);
         break;
     }
-    case value_type::object_:
-        
+    case value_type::object_:{
+        lpc_object_t *obj = reinterpret_cast<lpc_object_t *>(val->gcobj);
+        char tmp[50] = {0};
+        auto ptr = reinterpret_cast<std::uintptr_t>(obj);
+        sprintf(tmp, "object@0x%x", ptr);
+        buf.append(tmp);   
         break;
-    case value_type::function_:
-        
+    }
+    case value_type::function_: {
+        lpc_function_t *f = reinterpret_cast<lpc_function_t *>(val->gcobj);
+        char tmp[50] = {0};
+        auto ptr = reinterpret_cast<std::uintptr_t>(f);
+        sprintf(tmp, "function@0x%x", ptr);
+        buf.append(tmp);
         break;
+    }
     
     default:
         break;
