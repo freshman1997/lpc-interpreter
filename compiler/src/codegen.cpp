@@ -482,6 +482,7 @@ void CodeGenerator::generate_decl(AbstractExpression *exp)
 
         idx = (luint16_t)scopeLocals.size();
         scopeLocals.push_back({var->is_static, var->dtype, var->name, false, idx, var->is_arr,var->user_define_type});
+        ++funcs.back().nlocals;
     }
 }
 
@@ -1174,7 +1175,7 @@ void CodeGenerator::generate_if_else(AbstractExpression *exp, lint32_t forContin
             ++type2;
             GENERATE_BODY(it.body, p)
         } else {
-            // error
+            error_at(__LINE__);
         }
     }
 
@@ -1191,8 +1192,6 @@ void CodeGenerator::generate_if_else(AbstractExpression *exp, lint32_t forContin
     for (int i = nlocal; i < sz; ++i) {
         scopeLocals.pop_back();
     }
-
-    funcs.back().nlocals = sz - nlocal;
 }
 
 void CodeGenerator::generate_triple(AbstractExpression *exp)
@@ -1200,7 +1199,7 @@ void CodeGenerator::generate_triple(AbstractExpression *exp)
     TripleExpression *tri = dynamic_cast<TripleExpression *>(exp);
     GENERATE_OP(tri->cond, DeclType::none_)
     (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_test));
-    lint32_t second = (on_var_decl ? var_init_codes : opcodes).size() + 4, end = 0;
+    lint32_t second = (on_var_decl ? var_init_codes : opcodes).size(), end = 0;
     const char *idx2char = nullptr;
     LOAD_IDX_4((on_var_decl ? var_init_codes : opcodes), second)
 
@@ -1289,8 +1288,6 @@ void CodeGenerator::generate_for(AbstractExpression *exp)
     for (int i = nlocal; i < size; ++i) {
         scopeLocals.pop_back();
     }
-
-    funcs.back().nlocals = size - nlocal;
 }
 
 void CodeGenerator::generate_foreach(AbstractExpression *exp)
@@ -1330,8 +1327,8 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
     const char *idx2char = nullptr;
     LOAD_IDX_4(opcodes, end)
 
-    lint16_t idx = scopeLocals.size() - fe->decls.size();
-    for (; idx < scopeLocals.size(); ++idx) {
+    luint16_t idx = scopeLocals.size() - sz;
+    for (auto &it : fe->decls) {
         // 这里需要容器还在栈中
         opcodes.push_back((luint8_t)(OpCode::op_store_local));
         LOAD_IDX_2(opcodes, idx)
@@ -1359,12 +1356,9 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
         opcodes[end + i] = idxCode[i];
     } 
 
-    int size = scopeLocals.size();
-    for (int i = nlocal; i < size; ++i) {
+    while (sz--) {
         scopeLocals.pop_back();
     }
-
-    funcs.back().nlocals = size - nlocal;
 }
 
 void CodeGenerator::generate_while(AbstractExpression *exp)
@@ -1407,8 +1401,6 @@ void CodeGenerator::generate_while(AbstractExpression *exp)
     for (int i = nlocal; i < sz; ++i) {
         scopeLocals.pop_back();
     }
-
-    funcs.back().nlocals = sz - nlocal;
 }
 
 void CodeGenerator::generate_do_while(AbstractExpression *exp)
@@ -1452,8 +1444,6 @@ void CodeGenerator::generate_do_while(AbstractExpression *exp)
     for (int i = nlocal; i < sz; ++i) {
         scopeLocals.pop_back();
     }
-
-    funcs.back().nlocals = sz - nlocal;
 }
 
 void CodeGenerator::generate_switch_case(AbstractExpression *exp, lint32_t forContinue)
@@ -1525,8 +1515,6 @@ void CodeGenerator::generate_switch_case(AbstractExpression *exp, lint32_t forCo
     for (int i = nlocal; i < sz; ++i) {
         scopeLocals.pop_back();
     }
-
-    funcs.back().nlocals = sz - nlocal;
 }
 
 void CodeGenerator::generate_class(AbstractExpression *exp)
@@ -1909,7 +1897,6 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
         pre_decl_funcs.insert(funDecl->name->strval);
     }
 
-    f.nlocals = scope->size();
     opcodes.push_back((luint8_t)(OpCode::op_return));
     f.toPc = opcodes.size();
 

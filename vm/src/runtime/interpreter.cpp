@@ -620,7 +620,6 @@ new_frame:
             lpc_value_t *val = sk->top();
             // setup iterator
             if (val->type != value_type::array_ && val->type != value_type::mappig_) {
-                // TODO report error
                 std::cout << "cant traverse type: " << (lint32_t)val->type << std::endl;
                 exit(-1);
             }
@@ -635,16 +634,19 @@ new_frame:
             lint8_t sz = *(pc++);
             EXTRACT_4_PARAMS
 
-            if (val->type != value_type::array_ || val->type != value_type::mappig_) {
-                // TODO report error
+            if (val->type != value_type::array_ && val->type != value_type::mappig_) {
+                std::cout << "only array or mapping container can be traversed!!\n";
+                exit(-1);
             }
             
-            if (val->type != value_type::array_ && sz != 1) {
-                // TODO report error
+            if (val->type == value_type::array_ && sz != 1) {
+                std::cout << "not array container to traverse!!\n";
+                exit(-1);
             }
 
-            if (val->type != value_type::mappig_ && sz != 2) {
-                // TODO report error
+            if (val->type == value_type::mappig_ && sz != 2) {
+                std::cout << "not mapping container to traverse!!\n";
+                exit(-1);
             }
 
             lint32_t index = iter->pval.number;
