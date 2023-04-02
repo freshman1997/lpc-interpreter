@@ -333,8 +333,14 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
         nci->call_init = true;
         nci->savepc = proto->init_codes;
     } else {
-        f = &proto->func_table[idx];
-        nci->savepc = proto->instructions + f->fromPC;
+        if (cur_ci && cur_ci->father) {
+            f = &cur_ci->father->func_table[idx];
+            nci->savepc = cur_ci->father->instructions + f->fromPC;
+            nci->father = cur_ci->father;
+        } else {
+            f = &proto->func_table[idx];
+            nci->savepc = proto->instructions + f->fromPC;
+        }
     }
     
     nci->funcIdx = idx;

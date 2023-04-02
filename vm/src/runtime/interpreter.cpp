@@ -577,7 +577,7 @@ new_frame:
             call_info_t *call = lvm->new_frame(father, idx1);
             call->cur_obj = ci->cur_obj;
             call->father = father->get_proto();
-            call->inherit_offset = proto->inherit_offsets[idx1];
+            call->inherit_offset = proto->inherit_offsets[idx];
             goto new_frame;
             break;
         }

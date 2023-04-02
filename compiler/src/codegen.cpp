@@ -1115,7 +1115,7 @@ next:
                     if (idx < 0) {
                         error_at(__LINE__);
                     }
-                    
+
                     (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_global);
                 } else {
                     (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_local);
@@ -1974,12 +1974,7 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
 static string get_pure_name(const string &src)
 {
     const string &cwd = get_cwd();
-    int i = 0;
-    for (; i < cwd.size(); ++i) {
-        if (src[i] != cwd[i]) break;
-    }
-
-    return src.substr(i + 1);
+    return src.substr(cwd.size() + 1);
 }
 
 void CodeGenerator::dump()
