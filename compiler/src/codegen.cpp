@@ -84,6 +84,10 @@ static luint16_t find_func_idx(const string &name, vector<Func> &con)
     con.push_back(idx2char[0]); \
     con.push_back(idx2char[1]);
 
+#define LOAD_IDX_2_1(con, idx) const char *idx2char1 = (const char *)&idx; \
+    con.push_back(idx2char1[0]); \
+    con.push_back(idx2char1[1]);    
+
 #define LOAD_IDX_4(con, idx) idx2char = (const char *)&idx; \
     con.push_back(idx2char[0]); \
     con.push_back(idx2char[1]); \
@@ -303,11 +307,57 @@ static lint16_t find_class_idx(std::vector<ClassDecl> &con, const string &name)
     return -1;
 }
 
+static void find_all_inherits(vector<AbstractExpression *> &container, vector<DocumentExpression *> &inherits, DocumentExpression *doc)
+{
+    const string &cwd = get_cwd();
+    const string &realName = cwd + "\\" + doc->inherit;
+    for (auto &it : container) {
+        if (it == doc) continue;
+
+        DocumentExpression *d = dynamic_cast<DocumentExpression *>(it);
+        if (d->file_name == realName) {
+            inherits.push_back(d);
+            
+            if (!d->inherit.empty()) {
+                if (d->inherit == doc->inherit) {
+                    error_at(__LINE__);
+                }
+                
+                find_all_inherits(container, inherits, d);
+            }
+        }
+    }
+}
+
+extern void generate_one(DocumentExpression *doc, vector<AbstractExpression *> *docs);
+
 void CodeGenerator::generate(AbstractExpression *exp)
 {
     DocumentExpression *doc = dynamic_cast<DocumentExpression *>(exp);
     locals[doc->file_name] = {};
     object_name = doc->file_name;
+    if (doc->inherit.size() > 0) {
+        // copy field
+        find_all_inherits(*this->parsed_files, inherits, doc);
+        if (inherits.empty()) {
+            error_at(__LINE__);
+        }
+
+        auto &locs = this->locals[object_name];
+        for (int i = inherits.size() - 1; i >= 0; --i) {
+            if (!inherits[i]->gen) {
+                generate_one(inherits[i], parsed_files);
+            }
+
+            CodeGenerator *g = reinterpret_cast<CodeGenerator *>(inherits[i]->gen);
+            std::vector<Local> *objGlobal = g->get_scope_locals(inherits[i]->file_name);
+            if (objGlobal) {
+                int sz = locs.size();
+                locs.assign(objGlobal->size(), {});
+                copy(objGlobal->begin(), objGlobal->end(), locs.begin() + sz);
+            }
+        }
+    }
 
     for (auto &it : doc->contents) {
         cur_scope = doc->file_name;
@@ -1065,9 +1115,11 @@ next:
                     if (idx < 0) {
                         error_at(__LINE__);
                     }
-                } 
-
-                (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_local);
+                    
+                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_global);
+                } else {
+                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_store_local);
+                }
             }
             LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
         }
@@ -1328,7 +1380,7 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
     LOAD_IDX_4(opcodes, end)
 
     luint16_t idx = scopeLocals.size() - sz;
-    for (auto &it : fe->decls) {
+    for (; idx < scopeLocals.size(); ++idx) {
         // 这里需要容器还在栈中
         opcodes.push_back((luint8_t)(OpCode::op_store_local));
         LOAD_IDX_2(opcodes, idx)
@@ -1635,12 +1687,7 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
                 funIdx = find_fun_idx(id->val.sval->strval, 0);
                 is_sfun = funIdx >= 0;
             }
-
-            if (funIdx < 0) {
-                cout << "undefined function: " << id->val.sval->strval << endl;
-                exit(-1);
-            }
-        } else if (type == DeclType::none_) {
+        } else if (type == DeclType::none_ && !call->callInherit) {
             funIdx = find_func_idx(id->val.sval->strval, funcs);
             if (funIdx < 0) {
                 error_at(__LINE__);
@@ -1717,6 +1764,19 @@ void CodeGenerator::generate_call(AbstractExpression *exp, DeclType type)
                     GENERATE_OP(it, DeclType::none_);
                 }
             }
+        }
+
+        if (call->callInherit || funIdx < 0) {
+            const pair<lint16_t, lint16_t> &p = find_inherit_func(id->val.sval->strval);
+            if (p.first < 0) {
+                cout << "undefined function: " << id->val.sval->strval << endl;
+                exit(-1);
+            }
+            
+            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call_virtual));
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), p.first)
+            LOAD_IDX_2_1((on_var_decl ? var_init_codes : opcodes), p.second)
+            return;
         }
 
         (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_call));
@@ -1942,6 +2002,23 @@ void CodeGenerator::dump()
     luint32_t sz = name.size();
     out.write((char *)&sz, 4);
     out.write(name.c_str(), sz);
+
+    sz = inherits.size();
+    out.write((char *)&sz, 4);
+    lint16_t nvar = 0;
+    if (sz > 0) {
+        for (auto &it : inherits) {
+            CodeGenerator *g = reinterpret_cast<CodeGenerator *>(it->gen);
+            vector<Local> *locs = g->get_scope_locals(it->file_name);
+            nvar += lint16_t(locs->size());
+            out.write((char *)&nvar, 2);
+
+            string iname = std::move(get_pure_name(it->file_name));
+            sz = iname.size();
+            out.write((char *)&sz, 4);
+            out.write(iname.c_str(), sz);
+        }
+    }
 
     out.write((char *)&create_idx, 2);
     out.write((char *)&onload_in_idx, 2);

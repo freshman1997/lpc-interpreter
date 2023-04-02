@@ -171,6 +171,7 @@ public:
     virtual void pre_print(int deep);
     virtual ExpressionType get_type();
 
+    bool callInherit = false;
     AbstractExpression *callee = nullptr;
     vector<AbstractExpression *> params;
 };
@@ -379,7 +380,8 @@ public:
     string file_name;
     // funcs, fields
     vector<AbstractExpression *> contents;
-    vector<string> inherits;
+    string inherit;
+    void * gen = nullptr;
 };
 
 #endif

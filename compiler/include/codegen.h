@@ -111,6 +111,32 @@ public:
         return this->funcs;
     }
 
+    std::vector<Local> * get_scope_locals(const string &name) 
+    {
+        if (locals.count(name)) {
+            return &locals[name];
+        }
+
+        return nullptr;
+    }
+
+    std::pair<lint16_t, lint16_t> find_inherit_func(const string &name)
+    {
+        lint16_t idx = 0;
+        for (auto &it : inherits) {
+            CodeGenerator *g = reinterpret_cast<CodeGenerator *>(it->gen);
+            std::vector<Func> &fs = g->get_funcs();
+            for (auto &it1 : fs) {
+                if (it1.name->strval == name) {
+                    return {inherits.size() - idx - 1, it1.idx};
+                }
+            }
+            ++idx;
+        }
+
+        return {-1, -1};
+    }
+
     void set_parsed_files(vector<AbstractExpression *> *parsed_files)
     {
         this->parsed_files = parsed_files;
@@ -143,6 +169,8 @@ private:
     std::vector<std::vector<std::pair<lint32_t, lint32_t>>> lookup_switch;
 
     vector<AbstractExpression *> *parsed_files;      // 前面语法分析的所有文件结果集，继承的时候从这里面查找、获取未继承函数、未覆盖的全局变量
+
+    vector<DocumentExpression *> inherits;
 };
 
 #endif

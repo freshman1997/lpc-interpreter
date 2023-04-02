@@ -31,6 +31,22 @@ string get_father()
 	return parent;
 }
 
+void generate_one(DocumentExpression *doc, vector<AbstractExpression *> *docs)
+{
+	try {
+		// 内部可以使用，但是不能删除
+		CodeGenerator *g = new CodeGenerator;
+		g->set_parsed_files(docs);
+		g->generate(doc);
+		g->dump();
+		doc->gen = g;
+
+		cout << "[success] " << doc->file_name << "\n";
+	} catch (...) {
+		std::cout << "error occured in file: " << doc->file_name << " !!!\n";
+	}
+}
+
 static void recurve_mkdir(const string destPrefix)
 {
     string cwd = get_cwd();
@@ -92,18 +108,9 @@ int main(int argc, char **argv)
 	vector<AbstractExpression *> *docs = parser.parse(cwd.c_str());
 	for (auto &it : *docs) {
 		DocumentExpression *doc = dynamic_cast<DocumentExpression *>(it);
-		try {
-			// 内部可以使用，但是不能删除
-			CodeGenerator g;
-			g.set_parsed_files(docs);
-			g.generate(it);
-			g.dump();
+		if (doc->gen) continue;
 
-			cout << "[success] " << doc->file_name << "\n";
-		} catch (...) {
-			std::cout << "error occured in file: " << doc->file_name << " !!!\n";
-			continue;
-		}
+		generate_one(doc, docs);
 	}
 
 	return 0;

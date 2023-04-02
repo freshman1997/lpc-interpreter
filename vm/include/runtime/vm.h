@@ -16,10 +16,12 @@ struct call_info_t
     const char *savepc;         // 当前执行到的指令
     lpc_value_t *top;           // 栈顶位置
     lpc_value_t *base;          // 开始执行栈底位置
+    object_proto_t *father = nullptr;
     lpc_object_t *cur_obj;      // 当前执行的对象
     int funcIdx;                // 当前对象执行的函数的位置
     bool call_other = false;
     bool call_init = false;
+    lint16_t inherit_offset = 0;
 };
 
 typedef void (*exit_hook_t)(void);

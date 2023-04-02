@@ -59,6 +59,7 @@ enum class OpCode
     op_upset,                   // 参数：1、不存在则插入，2、获取并入栈
 
     op_call,                    // 参数：1、efun，2、sfun，3、local
+    op_call_virtual,            // 调用父类的函数
 
     op_return,
 

@@ -13,6 +13,7 @@
 #include "runtime/vm.h"
 
 #define EXTRACT_2_PARAMS luint16_t idx = luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc)); pc += 2;
+#define EXTRACT_2_PARAMS_1 luint16_t idx1 = luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc)); pc += 2;
 #define EXTRACT_4_PARAMS luint32_t idx = luint8_t(*(pc + 3)) << 24 | luint8_t(*(pc + 2)) << 16 | luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc)); pc += 4;
 
 #define OPER(op) \
@@ -57,12 +58,17 @@ new_frame:
     lpc_stack_t *sk = lvm->get_stack();
     function_proto_t *fun;
     const char *pc = ci->savepc, *start;
-    if (ci->funcIdx >= 0) {
-        start = ci->cur_obj->get_proto()->instructions;
-        fun = &ci->cur_obj->get_proto()->func_table[ci->funcIdx];
+    if (!ci->father) {
+        if (ci->funcIdx >= 0) {
+            start = ci->cur_obj->get_proto()->instructions;
+            fun = &ci->cur_obj->get_proto()->func_table[ci->funcIdx];
+        } else {
+            start = ci->cur_obj->get_proto()->init_codes;
+            fun = ci->cur_obj->get_proto()->init_fun;
+        }
     } else {
-        start = ci->cur_obj->get_proto()->init_codes;
-        fun = ci->cur_obj->get_proto()->init_fun;
+        start = ci->father->instructions;
+        fun = &ci->father->func_table[ci->funcIdx];
     }
 
     for(;;) {
@@ -75,7 +81,7 @@ new_frame:
                 std::cout << "invalid number to indexing glable varibal: " << idx << "\n";
                 exit(-1);
             }
-            lpc_value_t *val = &ci->cur_obj->get_locals()[idx];
+            lpc_value_t *val = &ci->cur_obj->get_locals()[idx + ci->inherit_offset];
             sk->push(val);
             break;
         }
@@ -85,7 +91,7 @@ new_frame:
                 std::cout << "invalid number to indexing glable varibal: " << idx << "\n";
                 exit(-1);
             }
-            lpc_value_t *val = &ci->cur_obj->get_locals()[idx];
+            lpc_value_t *val = &ci->cur_obj->get_locals()[idx + ci->inherit_offset];
             lpc_value_t *val1 = sk->pop();
             *val = *val1;
             break;
@@ -113,37 +119,68 @@ new_frame:
         case OpCode::op_load_iconst: {
             EXTRACT_2_PARAMS
             const0.type = value_type::int_;
-            if (ci->cur_obj->get_proto()->niconst <= idx) {
-                std::cout << "error found: int const index over range!!!\n";
-                exit(-1);
+            if (ci->father) {
+                if ((ci->father->niconst <= idx)) {
+                    std::cout << "error found: int const index over range!!!\n";
+                    exit(-1);
+                }
+
+                const0.pval.number = ci->father->iconst[idx].item.number;
+            } else {
+                if ((ci->cur_obj->get_proto()->niconst <= idx)) {
+                    std::cout << "error found: int const index over range!!!\n";
+                    exit(-1);
+                }
+
+                const0.pval.number = ci->cur_obj->get_proto()->iconst[idx].item.number;
             }
 
-            const0.pval.number = ci->cur_obj->get_proto()->iconst[idx].item.number;
             sk->push(&const0);
             break;
         }
         case OpCode::op_load_fconst: {
             EXTRACT_2_PARAMS
             const0.type = value_type::float_;
-            if (ci->cur_obj->get_proto()->nfconst <= idx) {
-                std::cout << "error found: float const index over range!!!\n";
-                exit(-1);
+            if (ci->father) {
+                if ((ci->father->nfconst <= idx)) {
+                    std::cout << "error found: float const index over range!!!\n";
+                    exit(-1);
+                }
+
+                const0.pval.number = ci->father->iconst[idx].item.real;
+            } else {
+                if ((ci->cur_obj->get_proto()->nfconst <= idx)) {
+                    std::cout << "error found: float const index over range!!!\n";
+                    exit(-1);
+                }
+
+                const0.pval.real = ci->cur_obj->get_proto()->fconst[idx].item.real;
             }
 
-            const0.pval.real = ci->cur_obj->get_proto()->fconst[idx].item.real;
             sk->push(&const0);
             break;
         }
         case OpCode::op_load_sconst: {
             EXTRACT_2_PARAMS
             const0.type = value_type::string_;
-            if (ci->cur_obj->get_proto()->nsconst <= idx) {
-                std::cout << "error found: string const index over range!!!\n";
-                exit(-1);
+            if (ci->father) {
+                if ((ci->father->nsconst <= idx)) {
+                    std::cout << "error found: string const index over range!!!\n";
+                    exit(-1);
+                }
+
+                lpc_string_t *s = ci->father->sconst[idx].item.str;
+                const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(s);
+            } else {
+                if ((ci->cur_obj->get_proto()->nsconst <= idx)) {
+                    std::cout << "error found: string const index over range!!!\n";
+                    exit(-1);
+                }
+
+                lpc_string_t *s = ci->cur_obj->get_proto()->sconst[idx].item.str;
+                const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(s);
             }
 
-            lpc_string_t *s = ci->cur_obj->get_proto()->sconst[idx].item.str;
-            const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(s);
             sk->push(&const0);
             break;
         }
@@ -522,6 +559,26 @@ new_frame:
                 lvm->new_frame(ci->cur_obj, f->idx);
                 goto new_frame;
             }
+            break;
+        }
+        case OpCode::op_call_virtual: {
+            EXTRACT_2_PARAMS
+            EXTRACT_2_PARAMS_1
+            object_proto_t *proto = ci->cur_obj->get_proto();
+            if (proto->ninherit <= idx) {
+                std::cout << "cant index inherit table!!!\n";
+                exit(-1);
+            }
+
+            ci->savepc = pc;
+            const0.type = value_type::string_;
+            const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(proto->inherits[idx]);
+            lpc_object_t *father = lvm->find_oject(&const0);
+            call_info_t *call = lvm->new_frame(father, idx1);
+            call->cur_obj = ci->cur_obj;
+            call->father = father->get_proto();
+            call->inherit_offset = proto->inherit_offsets[idx1];
+            goto new_frame;
             break;
         }
         case OpCode::op_return: {

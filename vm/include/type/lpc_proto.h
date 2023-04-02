@@ -69,6 +69,10 @@ public:
     const char *instructions;
     lint32_t instruction_size;
 
+    void **inherits;
+    lint16_t *inherit_offsets;
+    lint32_t ninherit;
+
     lint16_t create_idx;
     lint16_t on_load_in_idx;
     lint16_t on_destruct_idx;

@@ -1690,9 +1690,20 @@ static AbstractExpression * parse_primary(Token *tok, Token *t, bool fromOp)
     bool is_static = false;
     bool is_varargs = false;
     TokenKind initType = TokenKind::k_none;
+    bool callInherit = false;
 
 start:
     TokenKind k = tok->kind;
+    if (k == TokenKind::k_symbol_show && tok->next->kind == TokenKind::k_symbol_show) {
+        callInherit = true;
+        tok = tok->next->next;
+        if (tok->kind != TokenKind::k_identity) {
+            error(tok);
+        }
+
+        k = tok->kind;
+    }
+
     if (k >= TokenKind::k_key_word_int && k <= TokenKind::k_key_word_fun) {
         switch (k) {
             case TokenKind::k_key_word_true: {
@@ -2018,6 +2029,15 @@ clazz:
             }
             
             exp = parse_follow(exp, tok->next, t);
+            
+            if (callInherit) {
+                if (exp->get_type() != ExpressionType::call_) {
+                    error(tok);
+                }
+
+                CallExpression *call = dynamic_cast<CallExpression *>(exp);
+                call->callInherit = true;
+            }
 
             if (exp != id) tok = nullptr;
         } else {
@@ -2351,11 +2371,11 @@ static AbstractExpression * do_parse(Token *tok)
     Token t{};
     while (cur) {
         if (cur->kind == TokenKind::k_key_word_inherit) {
-            if (cur->next->kind != TokenKind::k_string) {
+            if (cur->next->kind != TokenKind::k_string || doc->inherit.size()) {
                 error(cur);
             }
 
-            doc->inherits.push_back(cur->next->strval);
+            doc->inherit = cur->next->strval;
             require_expect(cur->next->next, &t, ";");
             cur = t.next;
             continue;

@@ -1,6 +1,7 @@
 ﻿#include <string>
 #include <fstream>
 #include <iostream>
+#include <cstring>
 
 #include "lpc_value.h"
 #include "runtime/vm.h"
@@ -9,6 +10,7 @@
 #include "type/lpc_object.h"
 #include "memory/memory.h"
 #include "gc/gc.h"
+#include "type/lpc_string.h"
 
 using namespace std;
 extern string get_cwd();
@@ -40,6 +42,34 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     in.read(objName, sz);
     objName[sz] = '\0';
     proto->name = objName;
+
+    in.read((char *)&sz, 4);
+    proto->inherits = nullptr;
+    proto->inherit_offsets = nullptr;
+    proto->ninherit = sz;
+    if (sz > 0) {
+        proto->inherits = new void *[sz];
+        proto->inherit_offsets = new lint16_t[sz];
+        int size = sz;
+        lint16_t off;
+        for (int i = 0; i < size; ++i) {
+            in.read((char *)&off, 2);
+            proto->inherit_offsets[size - i - 1] = off - 1;
+
+            in.read((char *)&sz, 4);
+            char *inherit = new char[sz + 1];
+            in.read(inherit, sz);
+            inherit[sz] = '\0';
+
+            const char *pName = strrchr(inherit, '.');
+            if (pName != NULL && strcmp(pName, ".txt") == 0) {
+                inherit[sz - 4] = '\0';
+            }
+
+            lpc_string_t *str = alloc->allocate_string(inherit);
+            proto->inherits[size - i - 1] = str;
+        }
+    }
 
     in.read((char *)&proto->create_idx, 2);
     in.read((char *)&proto->on_load_in_idx, 2);
@@ -244,10 +274,7 @@ lpc_vm_t::lpc_vm_t()
     base_ci = nullptr;
     cur_ci = nullptr;
     entry = "1";
-
-    // TODO
-    //sfun_object_name = "rc/simulate/main.c";
-    //this->sfun_obj = load_object(sfun_object_name);
+    sfun_object_name = "rc/simulate_efun";
 }
 
 lpc_vm_t * lpc_vm_t::create_vm()
@@ -258,7 +285,6 @@ lpc_vm_t * lpc_vm_t::create_vm()
 
 void lpc_vm_t::bootstrap()
 {
-    sfun_object_name = "rc/simulate_efun";
     lpc_object_t *eobj = load_object(sfun_object_name);
     on_loaded_object(eobj, sfun_object_name);
     this->sfun_obj = eobj;
@@ -353,7 +379,7 @@ void lpc_vm_t::pop_frame()
     }
 
     cur_ci->next = nullptr;
-    object_proto_t *proto = pre->cur_obj->get_proto();
+    object_proto_t *proto = pre->father ? pre->father : pre->cur_obj->get_proto();
     const function_proto_t &f = proto->func_table[pre->funcIdx];
 
     int n = f.nlocal - f.nargs;
