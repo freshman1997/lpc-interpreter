@@ -1,5 +1,6 @@
 ﻿#ifndef __VM_H__
 #define __VM_H__
+#include "lpc.h"
 #include "type/lpc_proto.h"
 #include "type/lpc_mapping.h"
 #include "type/lpc_object.h"
@@ -45,6 +46,11 @@ public:
     }
 
     call_info_t * get_call_info();
+    call_info_t * get_base_call()
+    {
+        return this->base_ci;
+    }
+
     lpc_stack_t * get_stack();
 
     call_info_t * new_frame(lpc_object_t *, lint16_t idx, bool init = false);
@@ -76,27 +82,40 @@ public:
         return sfun_obj;
     }
 
+    lpc_object_t * get_entry_object()
+    {
+        return entry_obj;
+    }
+
+    lpc_mapping_t * get_object_cache()
+    {
+        return loaded_protos;
+    }
+
     void eval_init_codes(lpc_object_t *obj);
     void on_create_object(lpc_object_t *obj);
     void on_load_in_object(lpc_object_t *obj);
     void on_destruct_object(lpc_object_t *obj);
 
+    void traceback();
+    void panic();
+    void stack_overflow();
+
 private:
     lpc_vm_t();
     const char *entry;
+    lpc_object_t *entry_obj;
     exit_hook_t hook;
     lpc_mapping_t *loaded_protos;
     call_info_t *cur_ci;
     call_info_t *base_ci;
-
-    call_info_t *single_ci = nullptr;
     
     lpc_stack_t *stack;
-    int init_stack_size;
-    int ncall;
+    lint32_t init_stack_size;
+    lint32_t ncall = 0;
 
     efun_t *efuns;               // efun table
-    int size_efun;
+    lint32_t size_efun;
 
     const char *sfun_object_name;
     lpc_object_t *sfun_obj;     // sfun obj，调用是根据偏移找到

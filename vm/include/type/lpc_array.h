@@ -4,12 +4,10 @@
 #include "opcode.h"
 
 struct lpc_value_t;
-class lpc_array_iterator_t;
 class lpc_gc_t;
 
 class lpc_array_t
 {
-    friend lpc_array_iterator_t;
 public:
     gc_header header;
 

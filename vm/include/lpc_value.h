@@ -24,8 +24,8 @@ enum class value_type
     object_,
     function_,
     closure_,
-    class_,
     proto_,
+    class_,
     return_,
 };
 

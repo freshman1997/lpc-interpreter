@@ -16,10 +16,12 @@ typedef const char *            lstring_t;
 
 #define lpc_assert
 
+union lpc_gc_object_t;
 struct gc_header{
-    void * next;
+    lpc_gc_object_t * next;
     lint8_t marked;
     lint8_t type;
+    lpc_gc_object_t *gclist;
 };
 
 class lpc_vm_t;

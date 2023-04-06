@@ -12,6 +12,7 @@ lpc_array_t * lpc_allocator_t::allocate_array(luint32_t size)
     lpc_array_t *arr = (lpc_array_t *)vm->get_gc()->allocate(sizeof(lpc_array_t));
     lpc_value_t *m = (lpc_value_t *)vm->get_gc()->allocate(sizeof(lpc_value_t) * size);
     new(arr)lpc_array_t(size, m); // call ctor
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(arr), value_type::array_);
     return arr;
 }
 
@@ -65,22 +66,7 @@ lpc_function_t * lpc_allocator_t::allocate_function(function_proto_t *funcProto,
     f->idx = idx;
     f->proto = funcProto;
     f->owner = owner;
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(f), value_type::function_);
     return f;
-}
-
-void * lpc_allocator_t::pick_chunk(luint32_t size)
-{
-    return nullptr;
-}
-
-void * lpc_allocator_t::allocate(luint32_t size)
-{
-    void *chunk = pick_chunk(size);
-    if (chunk) {
-        return chunk;
-    } else {
-        // TODO allocate fail
-    }
-    return nullptr;
 }
 

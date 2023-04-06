@@ -30,8 +30,6 @@ public:
     lpc_allocator_t(lpc_vm_t * v) : vm(v) {}
     
 private:
-    void * allocate(luint32_t size);
-    void * pick_chunk(luint32_t size);
     lpc_vm_t *vm;
 };
 

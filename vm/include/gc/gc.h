@@ -12,12 +12,18 @@ public:
     void gc();
     void * allocate(luint32_t sz) 
     {
-        return msg->allocate(sz);
+        return msg->allocate(NULL, sz);
     }
 
-    lpc_gc_t() 
+    void * allocate(void *p, luint32_t sz) 
+    {
+        return msg->allocate(p, sz);
+    }
+
+    lpc_gc_t(lpc_vm_t *vm) 
     {
         msg = new mark_sweep_gc();
+        msg->set_vm(vm);
     }
 
     void link(lpc_gc_object_t *gcobj, value_type type) 

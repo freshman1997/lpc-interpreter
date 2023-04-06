@@ -3,7 +3,7 @@
 
 void lpc_gc_t::gc()
 {
-    msg->collect();
+    msg->check_threshold();
 }
 
 

@@ -1,6 +1,7 @@
 ﻿#include <string>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <cstring>
 
 #include "lpc_value.h"
@@ -164,6 +165,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
             in.read(buf, len);
             buf[len] = '\0';
             sconsts[i].item.str = alloc->allocate_string(buf);
+            sconsts[i].item.str->header.marked = 1;
         }
         proto->sconst = sconsts;
     }
@@ -223,6 +225,8 @@ lpc_object_t * lpc_vm_t::load_object(const char *name)
     }
 
     obj->set_proto(proto);
+    on_loaded_object(obj, name);
+
     return obj;
 }
 
@@ -232,9 +236,9 @@ void lpc_vm_t::on_loaded_object(lpc_object_t *obj, const char *name)
         this->eval_init_codes(obj);
     }
 
-    this->on_create_object(obj);
+    
+    
     lpc_string_t *k = alloc->allocate_string(name);
-
     lpc_value_t key;
     key.type = value_type::string_;
     key.gcobj = reinterpret_cast<lpc_gc_object_t *>(k);
@@ -242,8 +246,10 @@ void lpc_vm_t::on_loaded_object(lpc_object_t *obj, const char *name)
     lpc_value_t val;
     val.type = value_type::object_;
     val.gcobj = reinterpret_cast<lpc_gc_object_t *>(obj);
-    this->on_load_in_object(obj);
     loaded_protos->set(&key, &val);
+
+    this->on_create_object(obj);
+    this->on_load_in_object(obj);
 }
 
 lpc_object_t * lpc_vm_t::find_oject(lpc_value_t *name)
@@ -268,9 +274,10 @@ lpc_vm_t::lpc_vm_t()
     init_efuns(this);
     this->stack = new lpc_stack_t(20000);
     this->alloc = new lpc_allocator_t(this);
-    this->gc = new lpc_gc_t;
+    this->gc = new lpc_gc_t(this);
 
     loaded_protos = alloc->allocate_mapping();
+    loaded_protos->header.marked = 1;
     base_ci = nullptr;
     cur_ci = nullptr;
     entry = "1";
@@ -290,7 +297,8 @@ void lpc_vm_t::bootstrap()
     this->sfun_obj = eobj;
     
     lpc_object_t *obj = load_object(entry);
-    on_loaded_object(obj, entry);
+    this->entry_obj = obj;
+    
 }
 
 void lpc_vm_t::set_entry(const char *entry)
@@ -347,6 +355,8 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
     nci->cur_obj = obj;
     nci->pre = cur_ci;
     nci->base = stack->top() - (f->nargs > 0 ? f->nargs - 1 : 0);
+    nci->top = f->retType > 1 ? stack->top() + f->nlocal + 1 : stack->top() + f->nlocal;
+
     if (cur_ci) {
         cur_ci->next = nci;
         cur_ci = nci;
@@ -359,6 +369,8 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
     }
 
     stack->set_local_size(f->nlocal - f->nargs);
+
+    ++ncall;
 
     return nci;
 }
@@ -405,6 +417,9 @@ void lpc_vm_t::pop_frame()
         stack->pop_n(n);
     }
     delete pre;
+
+    --ncall;
+    gc->gc();
 }
 
 lpc_gc_t * lpc_vm_t::get_gc()
@@ -457,4 +472,31 @@ void lpc_vm_t::on_destruct_object(lpc_object_t *obj)
 
     new_frame(obj, -proto->on_destruct_idx);
     vm::eval(this);
+}
+
+void lpc_vm_t::traceback()
+{
+    call_info_t *tmp = base_ci;
+    stringstream buf;
+    while (tmp) {
+        if (tmp->father) {
+
+        } else {
+            buf << "in file: " << tmp->cur_obj->get_proto()->name << " func: " << tmp->cur_obj->get_proto()->func_table[tmp->funcIdx].name << "\n";
+        }
+    }
+
+    cout << buf.str();
+}
+
+void lpc_vm_t::panic()
+{
+    // 退出
+    traceback();
+    exit(-1);
+}
+
+void lpc_vm_t::stack_overflow()
+{
+    // 跳回去    
 }

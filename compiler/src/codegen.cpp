@@ -1874,7 +1874,7 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
             funDecl->returnType, 
             funDecl->user_define_type, 
             (lint16_t)funDecl->params.size(), 
-            0,
+            (lint16_t)funDecl->params.size(),
             0,
             0,
             (lint16_t)funcs.size()
