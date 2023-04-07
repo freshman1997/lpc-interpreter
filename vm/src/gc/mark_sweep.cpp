@@ -28,18 +28,20 @@ void mark_sweep_gc::mark(lpc_gc_object_t *obj)
     case value_type::mappig_: {
         obj->head.marked = 1;
         lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(obj);
-        for (bucket_t *it = map->get_begin(); it; it = it->next) {
-            lpc_value_t *k = &it->pair[0];
-            lpc_value_t *v = &it->pair[1];
+        for (int i = 0; i < map->get_size(); ++i) {
+            bucket_t *buck = map->iterate(i);
+            lpc_value_t *k = &buck->pair[0];
+            lpc_value_t *v = &buck->pair[1];
 
             if (k->type >= value_type::buffer_) {
-                mark(it->pair[0].gcobj);
+                mark(k->gcobj);
             }
 
             if (v->type >= value_type::buffer_) {
-                mark(it->pair[1].gcobj);
+                mark(v->gcobj);
             }
         }
+        map->reset_iterator();
         break;
     }
     case value_type::object_: {
@@ -96,13 +98,14 @@ lpc_gc_object_t * mark_sweep_gc::mark_root()
     map->header.gclist = st;
     st = reinterpret_cast<lpc_gc_object_t *>(map);
 
-    for (bucket_t *it = map->get_begin(); it; it = it->next) {
-        lpc_value_t *k = &it->pair[0];
+    for (int i = 0; i < map->get_size(); ++i) {
+        bucket_t *buck = map->iterate(i);
+        lpc_value_t *k = &buck->pair[0];
         if (k->type >= value_type::buffer_ && !k->gcobj->head.marked) {
             k->gcobj->head.marked = 1;
         }
 
-        lpc_value_t *val = &it->pair[1];
+        lpc_value_t *val = &buck->pair[1];
         if (val->type >= value_type::buffer_ && !val->gcobj->head.marked) {
             val->gcobj->head.marked = 1;
             val->gcobj->head.gclist = st;
@@ -110,6 +113,7 @@ lpc_gc_object_t * mark_sweep_gc::mark_root()
         }
     }
 
+    map->reset_iterator();
     return st;
 }
 
@@ -138,24 +142,96 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
 {
     switch ((value_type)obj->head.type)
     {
-    case value_type::function_:
+    case value_type::function_: {
+        free(obj);
+        break;
+    }
     case value_type::string_: {
-
+        lpc_string_t *str = reinterpret_cast<lpc_string_t *>(obj);
+        delete [] str->get_str();
+        free(str);
         break;
     }
     case value_type::array_: {
+        lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(obj);
+        if (arr->get_size() > 0) {
+            for (int i = 0; i < arr->get_size(); ++i) {
+                lpc_value_t *val = arr->get(i);
+                if (val->type >= value_type::buffer_) {
+                    free_object(val->gcobj);
+                }
+            }
 
+            free(arr->get_members());
+        }
+
+        free(arr);
         break;
     }
     case value_type::mappig_: {
-
+        lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(obj);
+        map->dtor();
+        free(map);
         break;
     }
     case value_type::object_: {
+        lpc_object_t *o = reinterpret_cast<lpc_object_t *>(obj);
+        if (o->get_name() != o->get_proto()->name) {
+            delete [] o->get_name();
+        }
 
+        if (o->get_proto()->nvariable > 0) {
+            delete [] o->get_locals();
+        }
+        free(o);
+        break;
     }
     case value_type::proto_: {
+        object_proto_t *proto = reinterpret_cast<object_proto_t *>(obj);
+        delete [] proto->name;
+        delete [] proto->instructions;
+        delete [] proto->inherits;
+        delete [] proto->inherit_offsets;
+        if (proto->init_codes) {
+            delete [] proto->init_codes;
+        }
 
+        if (proto->init_fun) {
+            delete proto->init_fun;
+        }
+
+        if (proto->variable_table) {
+            delete[] proto->variable_table;
+        }
+
+        if (proto->iconst) {
+            delete [] proto->iconst;
+        }
+
+        if (proto->fconst) {
+            delete [] proto->fconst;
+        }
+
+        if (proto->sconst) {
+            for (int i = 0; i < proto->nsconst; ++i) {
+                free_object(reinterpret_cast<lpc_gc_object_t *>(proto->sconst[i].item.str));
+            }
+        }
+
+        if (proto->class_table) {
+            delete [] proto->class_table;
+        }
+
+        if (proto->func_table) {
+            delete [] proto->func_table;
+        }
+
+        if (proto->loc_tags) {
+            delete [] proto->loc_tags;
+        }
+        
+        free(proto);
+        break;
     }
 
     default: break;
@@ -207,6 +283,7 @@ void * mark_sweep_gc::allocate(void *p, luint32_t sz)
     
     blocks += sz;
 
+    check_threshold();
     return ptr;
 }
 

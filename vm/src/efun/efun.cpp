@@ -49,17 +49,16 @@ static void build_array(string &buf, lpc_array_t *arr, int deep)
 
 static void build_mapping(string &buf, lpc_mapping_t *map, int deep)
 {
-    buf.append("{ \n");
-    
     int sz = map->get_size();
-    if (sz > 0 && !map->get_begin()) {
-        cout << "internal error!!!\n";
-        exit(-1);
+    if (sz == 0) {
+        buf.append("{}");
+        return;
     }
-    
-    bucket_t *cur = map->get_begin();
-    int i = 0;
-    while (cur) {
+
+    buf.append("{ \n");
+    for (int i = 0; i < map->get_size(); ++i) {
+        bucket_t *cur = map->iterate(i);
+
         for (int t = 0; t < deep; ++t) {
             buf.push_back('\t');
         }
@@ -71,15 +70,13 @@ static void build_mapping(string &buf, lpc_mapping_t *map, int deep)
         if (i < sz - 1) {
             buf.append(", \n");
         }
-
-        ++i;
-        cur = cur->next;
     }
 
     buf.push_back('\n');
     for (int t = 0; t < deep - 1; ++t) {
         buf.push_back('\t');
     }
+
     buf.push_back('}');
 }
 
@@ -265,15 +262,51 @@ static void f_random(lpc_vm_t *vm, lint32_t nparam)
     val->pval.number = r % val->pval.number;
 }
 
+static void mapping_kvs(lpc_vm_t *vm, lint32_t nparam, bool key)
+{
+    lpc_stack_t *sk = vm->get_stack();
+    lpc_value_t *val = sk->pop();
+    if (val->type != value_type::mappig_) {
+        // TODO
+        return;
+    }
+
+    lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(val->gcobj);
+    lpc_array_t *arr = nullptr;
+    if (key) {
+       arr = mapping_keys(map, vm->get_alloc());
+    } else {
+        arr = mapping_values(map, vm->get_alloc());
+    }
+
+    lpc_value_t tmp;
+    tmp.type = value_type::array_;
+    tmp.gcobj = reinterpret_cast<lpc_gc_object_t *>(arr);
+    sk->push(&tmp);
+}
+
+static void f_keys(lpc_vm_t *vm, lint32_t nparam)
+{
+    mapping_kvs(vm, nparam, true);
+}
+
+static void f_values(lpc_vm_t *vm, lint32_t nparam)
+{
+    mapping_kvs(vm, nparam, false);
+}
+
 void init_efuns(lpc_vm_t *vm)
 {
-    efun_t *efuns = new efun_t[6];
+    efun_t *efuns = new efun_t[8];
     efuns[0] = f_call_other;
     efuns[1] = f_print;
     efuns[2] = f_puts;
     efuns[3] = f_sleep;
     efuns[4] = f_sizeof;
     efuns[5] = f_random;
+    efuns[6] = f_keys;
+    efuns[7] = f_values;
+
     vm->register_efun(efuns);
 }
 

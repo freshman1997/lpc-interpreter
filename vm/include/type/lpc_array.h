@@ -17,6 +17,10 @@ public:
     void set(lpc_value_t *val, lint32_t i, OpCode op);
     lpc_value_t * copy();
     luint32_t get_size() const;
+    lpc_value_t * get_members()
+    {
+        return members;
+    }
     
 private:
     luint32_t size = 0;

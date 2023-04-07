@@ -19,7 +19,7 @@ lpc_array_t * lpc_allocator_t::allocate_array(luint32_t size)
 lpc_mapping_t * lpc_allocator_t::allocate_mapping()
 {
     lpc_mapping_t *map = (lpc_mapping_t *)vm->get_gc()->allocate(sizeof(lpc_mapping_t));
-    new(map)lpc_mapping_t(vm->get_gc());
+    new(map)lpc_mapping_t(this);
     vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(map), value_type::mappig_);
     return map;
 }

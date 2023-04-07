@@ -22,6 +22,27 @@ public:
     {
         return this->locals;
     }
+
+    const char * get_name()
+    {
+        return name;
+    }
+
+    void set_name(const char *name)
+    {
+        this->name = name;
+    }
+
+    int get_hash()
+    {
+        return hash;
+    }
+
+    void set_hash(int hash, int no)
+    {
+        this->hash = hash;
+        this->no = no;
+    }
     
 private:
     const char *name = nullptr;

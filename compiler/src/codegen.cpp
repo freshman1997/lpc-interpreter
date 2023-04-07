@@ -15,6 +15,9 @@ static vector<EfunDecl> efuns = {
     {"sleep", {DeclType::mixed_}, false, DeclType::void_},
     {"sizeof", {DeclType::mixed_}, false, DeclType::int_},
     {"random", {DeclType::int_}, false, DeclType::int_},
+    {"keys", {DeclType::mapping_}, false, DeclType::mixed_},
+    {"values", {DeclType::mapping_}, false, DeclType::mixed_},
+
     {"intp", {DeclType::mixed_}, false, DeclType::bool_},
     {"floatp", {DeclType::mixed_}, false, DeclType::bool_},
     {"stringp", {DeclType::mixed_}, false, DeclType::bool_},

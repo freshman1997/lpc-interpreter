@@ -622,6 +622,8 @@ new_frame:
             lpc_array_t &arr = clazz->gcobj->arr;
             if (arr.get_size() <= idx) {
                 // TODO
+                std::cout << "error found!\n";
+                exit(-1);
             }
             arr.set(val, idx, OpCode::op_load_global);
             break;
@@ -638,6 +640,8 @@ new_frame:
             lpc_array_t &arr = clazz->gcobj->arr;
             if (arr.get_size() <= idx) {
                 // TODO
+                std::cout << "error found!\n";
+                exit(-1);
             }
             const0 = *arr.get(idx);
             sk->push(&const0);
@@ -658,6 +662,8 @@ new_frame:
                 const0.pval.number = val->pval.number;
             } else {
                 // TODO report error
+                std::cout << "error found!\n";
+                exit(-1);
             }
             
             // 查找跳转表
@@ -715,10 +721,11 @@ new_frame:
                 if (index >= map->get_size()) {
                     sk->pop();
                     pc = start + idx;
+                    map->reset_iterator();
                     break;
                 }
 
-                bucket_t *b = map->get_bucket(index);
+                bucket_t *b = map->iterate(index);
                 sk->push(&b->pair[1]);
                 sk->push(&b->pair[0]);
             } else {
