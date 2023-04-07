@@ -2,6 +2,7 @@
 #include "runtime/vm.h"
 #include "gc/gc.h"
 #include "type/lpc_array.h"
+#include "type/lpc_buffer.h"
 #include "type/lpc_mapping.h"
 #include "type/lpc_proto.h"
 #include "type/lpc_object.h"
@@ -10,7 +11,11 @@
 lpc_array_t * lpc_allocator_t::allocate_array(luint32_t size)
 {
     lpc_array_t *arr = (lpc_array_t *)vm->get_gc()->allocate(sizeof(lpc_array_t));
-    lpc_value_t *m = (lpc_value_t *)vm->get_gc()->allocate(sizeof(lpc_value_t) * size);
+    lpc_value_t *m = nullptr;
+    if (size > 0) {
+        m = (lpc_value_t *)vm->get_gc()->allocate(sizeof(lpc_value_t) * size);
+    }
+    
     new(arr)lpc_array_t(size, m); // call ctor
     vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(arr), value_type::array_);
     return arr;
@@ -32,17 +37,23 @@ lpc_object_t * lpc_allocator_t::allocate_object()
     return obj;
 }
 
-object_proto_t * lpc_allocator_t::allocate_object_proto()
+lpc_proto_t * lpc_allocator_t::allocate_object_proto()
 {
     object_proto_t *proto = (object_proto_t *)vm->get_gc()->allocate(sizeof(object_proto_t));
     new(proto)object_proto_t();
-    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(proto), value_type::proto_);
-    return proto;
+    lpc_proto_t *p = (lpc_proto_t *)vm->get_gc()->allocate(sizeof(lpc_proto_t));
+    p->proto = proto;
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(p), value_type::proto_);
+    return p;
 }
 
-lpc_value_t * lpc_allocator_t::allocate_closure()
+lpc_closure_t * lpc_allocator_t::allocate_closure(function_proto_t *funcProto, lpc_object_t *owner)
 {
-    return nullptr;
+    lpc_closure_t *clo = (lpc_closure_t *)vm->get_gc()->allocate(sizeof(lpc_closure_t));
+    clo->proto = funcProto;
+    clo->owner = owner;
+    clo->init();
+    return clo;
 }
 
 lpc_string_t * lpc_allocator_t::allocate_string(const char *init)
@@ -53,10 +64,12 @@ lpc_string_t * lpc_allocator_t::allocate_string(const char *init)
     return str;
 }
 
-lpc_value_t * lpc_allocator_t::allocate_buffer(luint32_t size)
+lpc_buffer_t * lpc_allocator_t::allocate_buffer(luint32_t size)
 {
-
-    return nullptr;
+    lpc_buffer_t *buf = (lpc_buffer_t *)vm->get_gc()->allocate(sizeof(lpc_buffer_t));
+    buf->buff = (const char *)vm->get_gc()->allocate(sizeof(char) * size);
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(buf), value_type::buffer_);
+    return buf;
 }
 
 lpc_function_t * lpc_allocator_t::allocate_function(function_proto_t *funcProto, lpc_object_t *owner, lint16_t idx)
@@ -70,3 +83,12 @@ lpc_function_t * lpc_allocator_t::allocate_function(function_proto_t *funcProto,
     return f;
 }
 
+void * lpc_allocator_t::allocate(luint32_t sz)
+{
+    return vm->get_gc()->allocate(sz);
+}
+
+void * lpc_allocator_t::allocate(void *p, luint32_t newSz)
+{
+    return vm->get_gc()->allocate(p, newSz);
+}

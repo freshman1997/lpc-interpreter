@@ -6,6 +6,9 @@ class lpc_buffer_t
 {
 public:
     gc_header header;
+public:
+    const char *buff;
+    lint32_t size;
 };
 
 #endif

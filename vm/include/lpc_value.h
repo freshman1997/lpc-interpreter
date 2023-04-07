@@ -10,7 +10,7 @@
 #include "type/lpc_buffer.h"
 #include "type/lpc_proto.h"
 
-enum class value_type
+enum class value_type : lint8_t
 {
     null_,
     byte_,
@@ -29,15 +29,6 @@ enum class value_type
     return_,
 };
 
-class lpc_string_t;
-class lpc_array_t;
-class lpc_mapping_t;
-class lpc_function_t;
-class lpc_closure_t;
-class lpc_object_t;
-class lpc_buffer_t;
-class object_proto_t;
-
 union lpc_gc_object_t 
 {
     gc_header head;    // 每个 gc obj 都有这个头部
@@ -49,7 +40,7 @@ union lpc_gc_object_t
     lpc_closure_t  clo;
     lpc_object_t   obj;
     lpc_buffer_t   buf;
-    object_proto_t pro;
+    lpc_proto_t    pro;
 };
 
 struct lpc_value_t

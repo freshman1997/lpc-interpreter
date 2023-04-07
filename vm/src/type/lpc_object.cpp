@@ -6,25 +6,20 @@ lpc_value_t * lpc_object_t::copy()
     return nullptr;
 }
 
-object_proto_t * lpc_object_t::get_proto()
+lpc_proto_t * lpc_object_t::get_proto()
 {
     return this->proto;
 }
 
-void lpc_object_t::set_proto(object_proto_t *proto)
+void lpc_object_t::set_proto(lpc_proto_t *proto)
 {
     this->proto = proto;
-    if (proto->nvariable > 0) {
-        this->locals = new lpc_value_t[proto->nvariable];
+    if (proto->proto->nvariable > 0) {
+        this->locals = new lpc_value_t[proto->proto->nvariable];
     }
 }
 
 const char * lpc_object_t::get_pc()
 {
-    return this->proto->instructions;
-}
-
-lpc_object_t::~lpc_object_t()
-{
-    if (this->locals) delete[] this->locals;
+    return this->proto->proto->instructions;
 }

@@ -102,9 +102,15 @@ public:
 
     lint32_t nswitch = 0;
     // 第几个：case：goto
-    std::vector<std::unordered_map<lint32_t, lint32_t>> lookup_table;
+    std::vector<std::unordered_map<lint32_t, lint32_t>> *lookup_table;
     // 第几个：goto
-    std::unordered_map<lint32_t, lint32_t> defaults;
+    std::unordered_map<lint32_t, lint32_t> *defaults;
+};
+
+struct lpc_proto_t
+{
+    gc_header header;
+    object_proto_t *proto;
 };
 
 #endif

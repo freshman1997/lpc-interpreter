@@ -48,15 +48,15 @@ void mark_sweep_gc::mark(lpc_gc_object_t *obj)
         obj->head.marked = 1;
         lpc_object_t *o = reinterpret_cast<lpc_object_t *>(obj);
         lpc_value_t *locs = o->get_locals();
-        for (int i = 0; i < o->get_proto()->nvariable; ++i) {
+        object_proto_t *proto = o->get_proto()->proto;
+        for (int i = 0; i < proto->nvariable; ++i) {
             lpc_value_t *val = &locs[i];
             if (val->type >= value_type::buffer_) {
                 mark(locs[i].gcobj);
             }
         }
 
-        object_proto_t *proto = o->get_proto();
-        proto->header.marked = 1;
+        o->get_proto()->header.marked = 1;
         for (int i = 0; i < proto->nsconst; ++i) {
             proto->sconst[i].item.str->header.marked = 1;
         }
@@ -174,13 +174,28 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
         free(map);
         break;
     }
+    case value_type::closure_: {
+        lpc_closure_t *clo = reinterpret_cast<lpc_closure_t *>(obj);
+        clo->dtor();
+        free(clo);
+        break;
+    }
+    case value_type::buffer_: {
+        lpc_buffer_t *buff = reinterpret_cast<lpc_buffer_t *>(obj);
+        if (buff->buff) {
+            delete [] buff->buff;
+        }
+        free(buff);
+        break;
+    }
     case value_type::object_: {
         lpc_object_t *o = reinterpret_cast<lpc_object_t *>(obj);
-        if (o->get_name() != o->get_proto()->name) {
+        object_proto_t *proto = o->get_proto()->proto;
+        if (o->get_name() != proto->name) {
             delete [] o->get_name();
         }
 
-        if (o->get_proto()->nvariable > 0) {
+        if (proto->nvariable > 0) {
             delete [] o->get_locals();
         }
         free(o);
@@ -228,6 +243,11 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
 
         if (proto->loc_tags) {
             delete [] proto->loc_tags;
+        }
+
+        if (proto->lookup_table) {
+            delete proto->lookup_table;
+            delete proto->defaults;
         }
         
         free(proto);

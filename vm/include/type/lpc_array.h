@@ -14,7 +14,7 @@ public:
 public:
     lpc_array_t(luint32_t sz, lpc_value_t *);
     lpc_value_t * get(int i);
-    void set(lpc_value_t *val, lint32_t i, OpCode op);
+    void set(lpc_value_t *val, lint32_t i);
     lpc_value_t * copy();
     luint32_t get_size() const;
     lpc_value_t * get_members()

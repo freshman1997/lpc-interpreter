@@ -9,20 +9,8 @@ lpc_value_t * lpc_array_t::get(int i)
     return &this->members[i];
 }
 
-void lpc_array_t::set(lpc_value_t *val, lint32_t i, OpCode op)
+void lpc_array_t::set(lpc_value_t *val, lint32_t i)
 {
-    if (op == OpCode::op_add) {
-
-    } else if (op == OpCode::op_minus) {
-
-    } else if (op == OpCode::op_mul) {
-
-    } else if (op == OpCode::op_div) {
-
-    } else if (op == OpCode::op_mod) {
-
-    } // ...
-    
     this->members[i] = *val;
 }
 

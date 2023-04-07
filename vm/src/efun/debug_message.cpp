@@ -5,8 +5,6 @@
 #include <cstdarg>
 
 
-#include "efun/efun.h"
-
 #ifndef WIN32
 #include <unistd.h>
 #include <sys/types.h>

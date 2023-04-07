@@ -10,13 +10,10 @@ public:
     gc_header header;
 
 public:
-    ~lpc_object_t();
     lpc_value_t * copy();
-    object_proto_t * get_proto();
-    void set_proto(object_proto_t *);
-
+    lpc_proto_t * get_proto();
+    void set_proto(lpc_proto_t *);
     const char * get_pc();
-    lpc_string_t * get_next_object_name();
 
     lpc_value_t * get_locals()
     {
@@ -50,7 +47,7 @@ private:
     int no = 0;
 
     lpc_value_t *locals;
-    object_proto_t *proto = nullptr;
+    lpc_proto_t *proto = nullptr;
 };
 
 #endif

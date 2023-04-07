@@ -60,11 +60,11 @@ new_frame:
     const char *pc = ci->savepc, *start;
     if (!ci->father) {
         if (ci->funcIdx >= 0) {
-            start = ci->cur_obj->get_proto()->instructions;
-            fun = &ci->cur_obj->get_proto()->func_table[ci->funcIdx];
+            start = ci->cur_obj->get_proto()->proto->instructions;
+            fun = &ci->cur_obj->get_proto()->proto->func_table[ci->funcIdx];
         } else {
-            start = ci->cur_obj->get_proto()->init_codes;
-            fun = ci->cur_obj->get_proto()->init_fun;
+            start = ci->cur_obj->get_proto()->proto->init_codes;
+            fun = ci->cur_obj->get_proto()->proto->init_fun;
         }
     } else {
         start = ci->father->instructions;
@@ -77,7 +77,7 @@ new_frame:
         {
         case OpCode::op_load_global: {
             EXTRACT_2_PARAMS
-            if (idx >= ci->cur_obj->get_proto()->nvariable) {
+            if (idx >= ci->cur_obj->get_proto()->proto->nvariable) {
                 std::cout << "invalid number to indexing glable varibal: " << idx << "\n";
                 exit(-1);
             }
@@ -87,7 +87,7 @@ new_frame:
         }
         case OpCode::op_store_global: {
             EXTRACT_2_PARAMS
-            if (idx >= ci->cur_obj->get_proto()->nvariable) {
+            if (idx >= ci->cur_obj->get_proto()->proto->nvariable) {
                 std::cout << "invalid number to indexing glable varibal: " << idx << "\n";
                 exit(-1);
             }
@@ -127,12 +127,12 @@ new_frame:
 
                 const0.pval.number = ci->father->iconst[idx].item.number;
             } else {
-                if ((ci->cur_obj->get_proto()->niconst <= idx)) {
+                if ((ci->cur_obj->get_proto()->proto->niconst <= idx)) {
                     std::cout << "error found: int const index over range!!!\n";
                     exit(-1);
                 }
 
-                const0.pval.number = ci->cur_obj->get_proto()->iconst[idx].item.number;
+                const0.pval.number = ci->cur_obj->get_proto()->proto->iconst[idx].item.number;
             }
 
             sk->push(&const0);
@@ -149,12 +149,12 @@ new_frame:
 
                 const0.pval.number = ci->father->iconst[idx].item.real;
             } else {
-                if ((ci->cur_obj->get_proto()->nfconst <= idx)) {
+                if ((ci->cur_obj->get_proto()->proto->nfconst <= idx)) {
                     std::cout << "error found: float const index over range!!!\n";
                     exit(-1);
                 }
 
-                const0.pval.real = ci->cur_obj->get_proto()->fconst[idx].item.real;
+                const0.pval.real = ci->cur_obj->get_proto()->proto->fconst[idx].item.real;
             }
 
             sk->push(&const0);
@@ -172,12 +172,12 @@ new_frame:
                 lpc_string_t *s = ci->father->sconst[idx].item.str;
                 const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(s);
             } else {
-                if ((ci->cur_obj->get_proto()->nsconst <= idx)) {
+                if ((ci->cur_obj->get_proto()->proto->nsconst <= idx)) {
                     std::cout << "error found: string const index over range!!!\n";
                     exit(-1);
                 }
 
-                lpc_string_t *s = ci->cur_obj->get_proto()->sconst[idx].item.str;
+                lpc_string_t *s = ci->cur_obj->get_proto()->proto->sconst[idx].item.str;
                 const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(s);
             }
 
@@ -187,7 +187,7 @@ new_frame:
         case OpCode::op_load_func: {
             EXTRACT_2_PARAMS
             const0.type = value_type::function_;
-            object_proto_t *proto = ci->cur_obj->get_proto();
+            object_proto_t *proto = ci->cur_obj->get_proto()->proto;
             if (proto->nfunction <= idx) {
                 std::cout << "error found: function index over range!!!\n";
                 exit(-1);
@@ -482,14 +482,40 @@ new_frame:
             const0.type = value_type::array_;
             lpc_array_t *arr = lvm->get_alloc()->allocate_array(idx);
             for (int i = idx; i >= 1; --i) {
-                arr->set(sk->pop(), i - 1, OpCode::op_load_global);
+                arr->set(sk->pop(), i - 1);
             }
             const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(arr);
             sk->push(&const0);
             break;
         }
         case OpCode::op_sub_arr: {
-            
+            lpc_value_t *end = sk->pop();
+            lpc_value_t *con = sk->pop();
+            lpc_value_t *start = sk->pop();
+            if (con->type != value_type::array_) {
+                std::cout << "only array can be sub!!\n";
+                exit(-1);
+            }
+
+            lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(con->gcobj);
+            if (start->pval.number < 0 || start->pval.number > end->pval.number || start->pval.number >= arr->get_size() || end->pval.number >= arr->get_size()) {
+                std::cout << "negtive param to sub an array!!\n";
+                exit(-1);
+            }
+
+            const0.type = value_type::array_;
+            lpc_array_t *tmp;
+            if (start->pval.number != end->pval.number) {
+                tmp = lvm->get_alloc()->allocate_array(0);
+            } else {
+                tmp = lvm->get_alloc()->allocate_array(end->pval.number - start->pval.number);
+                for (int i = start->pval.number, j = 0; i <= end->pval.number; ++i, ++j) {
+                    tmp->set(arr->get(i), j);
+                }
+            }
+
+            const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(tmp);
+            sk->push(&const0);
             break;
         }
         case OpCode::op_new_mapping: {
@@ -516,7 +542,7 @@ new_frame:
                 }
 
                 lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(con->gcobj);
-                arr->set(v, k->pval.number, OpCode(op));
+                arr->set(v, k->pval.number);
             } else if (con->type == value_type::mappig_) {
                 lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(con->gcobj);
                 map->upset(k, v);
@@ -564,7 +590,7 @@ new_frame:
         case OpCode::op_call_virtual: {
             EXTRACT_2_PARAMS
             EXTRACT_2_PARAMS_1
-            object_proto_t *proto = ci->cur_obj->get_proto();
+            object_proto_t *proto = ci->cur_obj->get_proto()->proto;
             if (proto->ninherit <= idx) {
                 std::cout << "cant index inherit table!!!\n";
                 exit(-1);
@@ -576,7 +602,7 @@ new_frame:
             lpc_object_t *father = lvm->find_oject(&const0);
             call_info_t *call = lvm->new_frame(father, idx1);
             call->cur_obj = ci->cur_obj;
-            call->father = father->get_proto();
+            call->father = father->get_proto()->proto;
             call->inherit_offset = proto->inherit_offsets[idx];
             goto new_frame;
             break;
@@ -601,7 +627,7 @@ new_frame:
         }
         case OpCode::op_new_class: {
             EXTRACT_2_PARAMS
-            class_proto_t &cl = ci->cur_obj->get_proto()->class_table[idx];
+            class_proto_t &cl = ci->cur_obj->get_proto()->proto->class_table[idx];
             lpc_array_t *clazz = lvm->get_alloc()->allocate_array(cl.nfield);
             const0.type = value_type::array_;
             const0.subtype = value_type::class_;
@@ -625,7 +651,7 @@ new_frame:
                 std::cout << "error found!\n";
                 exit(-1);
             }
-            arr.set(val, idx, OpCode::op_load_global);
+            arr.set(val, idx);
             break;
         }
         case OpCode::op_load_class_field: {
@@ -667,12 +693,12 @@ new_frame:
             }
             
             // 查找跳转表
-            object_proto_t *proto = ci->cur_obj->get_proto();
-            std::unordered_map<lint32_t, lint32_t> &map = proto->lookup_table[idx];
+            object_proto_t *proto = ci->cur_obj->get_proto()->proto;
+            std::unordered_map<lint32_t, lint32_t> &map = (*proto->lookup_table)[idx];
             if (map.count(const0.pval.number)) {
                 pc = start + map[const0.pval.number];
-            } else if (proto->defaults.count(idx)) {
-                pc = start + proto->defaults[idx];
+            } else if (proto->defaults->count(idx)) {
+                pc = start + (*proto->defaults)[idx];
             } else {
                 luint32_t idx1 = luint8_t(*(pc + 3)) << 24 | luint8_t(*(pc + 2)) << 16 | luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc));
                 pc = start + idx1;

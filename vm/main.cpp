@@ -7,7 +7,6 @@
 #endif
 
 #include "os/os.h"
-#include "efun/efun.h"
 #include "runtime/vm.h"
 #include "runtime/interpreter.h"
 #include "type/lpc_mapping.h"

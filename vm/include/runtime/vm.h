@@ -57,7 +57,7 @@ public:
     void pop_frame();
     lpc_gc_t * get_gc();
 
-    object_proto_t * load_object_proto(const char *name);
+    lpc_proto_t * load_object_proto(const char *name);
     lpc_object_t * load_object(const char *name);
     void on_loaded_object(lpc_object_t *, const char *);
     lpc_object_t * find_oject(lpc_value_t *);
