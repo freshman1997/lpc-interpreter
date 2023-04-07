@@ -107,10 +107,4 @@ public:
     std::unordered_map<lint32_t, lint32_t> *defaults;
 };
 
-struct lpc_proto_t
-{
-    gc_header header;
-    object_proto_t *proto;
-};
-
 #endif

@@ -2458,11 +2458,17 @@ AbstractExpression * Parser::parse_one(const char *filename)
 static void find_all_file(vector<string> &all, string dirName)
 {
 #ifdef WIN32
-    if( (_access( "crt_ACCESS.C", 0 )) != -1 ) {
-        all.push_back(dirName);
+    if( (_access( dirName.c_str(), 0 )) == -1 ) {
         return;
     }
-    
+
+    struct _stat buf;
+	_stat(dirName.c_str(), &buf);
+	if (_S_IFREG & buf.st_mode) {
+		all.push_back(dirName);
+        return;
+	}
+
     // 这里用 long 来保存会出现错误，原因是 long 不同平台长度是不一样的，然后 x64 平台下出现负数，故出错了，intptr_t 做了处理，各平台一样
     intptr_t hFile = 0;
 	//文件信息    

@@ -48,7 +48,7 @@ void mark_sweep_gc::mark(lpc_gc_object_t *obj)
         obj->head.marked = 1;
         lpc_object_t *o = reinterpret_cast<lpc_object_t *>(obj);
         lpc_value_t *locs = o->get_locals();
-        object_proto_t *proto = o->get_proto()->proto;
+        object_proto_t *proto = o->get_proto();
         for (int i = 0; i < proto->nvariable; ++i) {
             lpc_value_t *val = &locs[i];
             if (val->type >= value_type::buffer_) {
@@ -190,7 +190,7 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
     }
     case value_type::object_: {
         lpc_object_t *o = reinterpret_cast<lpc_object_t *>(obj);
-        object_proto_t *proto = o->get_proto()->proto;
+        object_proto_t *proto = o->get_proto();
         if (o->get_name() != proto->name) {
             delete [] o->get_name();
         }

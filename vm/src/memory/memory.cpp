@@ -37,14 +37,12 @@ lpc_object_t * lpc_allocator_t::allocate_object()
     return obj;
 }
 
-lpc_proto_t * lpc_allocator_t::allocate_object_proto()
+object_proto_t * lpc_allocator_t::allocate_object_proto()
 {
     object_proto_t *proto = (object_proto_t *)vm->get_gc()->allocate(sizeof(object_proto_t));
     new(proto)object_proto_t();
-    lpc_proto_t *p = (lpc_proto_t *)vm->get_gc()->allocate(sizeof(lpc_proto_t));
-    p->proto = proto;
-    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(p), value_type::proto_);
-    return p;
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(proto), value_type::proto_);
+    return proto;
 }
 
 lpc_closure_t * lpc_allocator_t::allocate_closure(function_proto_t *funcProto, lpc_object_t *owner)

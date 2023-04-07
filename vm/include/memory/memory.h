@@ -9,7 +9,7 @@ class lpc_array_t;
 class lpc_mapping_t;
 class lpc_object_t;
 class lpc_string_t;
-struct lpc_proto_t;
+struct object_proto_t;
 class lpc_function_t;
 struct function_proto_t;
 class lpc_buffer_t;
@@ -22,7 +22,7 @@ public:
     lpc_array_t * allocate_array(luint32_t size);
     lpc_mapping_t * allocate_mapping();
     lpc_object_t * allocate_object();
-    lpc_proto_t * allocate_object_proto();
+    object_proto_t * allocate_object_proto();
 
     lpc_closure_t * allocate_closure(function_proto_t *funcProto, lpc_object_t *owner);
     lpc_string_t * allocate_string(const char *);

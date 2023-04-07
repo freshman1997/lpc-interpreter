@@ -40,7 +40,7 @@ union lpc_gc_object_t
     lpc_closure_t  clo;
     lpc_object_t   obj;
     lpc_buffer_t   buf;
-    lpc_proto_t    pro;
+    object_proto_t    pro;
 };
 
 struct lpc_value_t

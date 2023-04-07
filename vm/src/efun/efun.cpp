@@ -183,7 +183,7 @@ static void f_call_other(lpc_vm_t *vm, lint32_t nparam)
         exit(-1);
     }
 
-    object_proto_t *proto = obj->get_proto()->proto;
+    object_proto_t *proto = obj->get_proto();
 
     int funIdx = -1;
     for (int i = 0; i < proto->nfunction; ++i) {

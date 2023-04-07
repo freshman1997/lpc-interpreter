@@ -11,8 +11,8 @@ public:
 
 public:
     lpc_value_t * copy();
-    lpc_proto_t * get_proto();
-    void set_proto(lpc_proto_t *);
+    object_proto_t * get_proto();
+    void set_proto(object_proto_t *);
     const char * get_pc();
 
     lpc_value_t * get_locals()
@@ -47,7 +47,7 @@ private:
     int no = 0;
 
     lpc_value_t *locals;
-    lpc_proto_t *proto = nullptr;
+    object_proto_t *proto = nullptr;
 };
 
 #endif

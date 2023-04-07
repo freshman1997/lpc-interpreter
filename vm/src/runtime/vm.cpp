@@ -18,7 +18,7 @@ extern string get_cwd();
 extern void init_efuns(lpc_vm_t *);
 
 
-lpc_proto_t * lpc_vm_t::load_object_proto(const char *name)
+object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 {
     if (!name) return nullptr;
     const string &cwd = get_cwd();
@@ -36,8 +36,7 @@ lpc_proto_t * lpc_vm_t::load_object_proto(const char *name)
         return nullptr;
     }
 
-    lpc_proto_t *p = alloc->allocate_object_proto();
-    object_proto_t *proto = p->proto;
+    object_proto_t *proto = alloc->allocate_object_proto();
     luint32_t sz = 0;
     in.read((char *)&sz, 4);
     char *objName = new char[sz + 1];
@@ -113,7 +112,7 @@ lpc_proto_t * lpc_vm_t::load_object_proto(const char *name)
             in.read(fname, sz1);
             fname[sz1] = '\0';
         }
-        
+
         func_proto[i].name = fname;
         in.read((char *)&func_proto[i].retType, 1);
         in.read((char *)&func_proto[i].is_static, 1);
@@ -223,13 +222,13 @@ lpc_proto_t * lpc_vm_t::load_object_proto(const char *name)
 
     in.close();
 
-    return p;
+    return proto;
 }
 
 lpc_object_t * lpc_vm_t::load_object(const char *name)
 {
     lpc_object_t *obj = alloc->allocate_object();
-    lpc_proto_t *proto = load_object_proto(name);
+    object_proto_t *proto = load_object_proto(name);
     if (!proto) {
         cout << "can not load object: " << name << endl;
         exit(-1);
@@ -243,7 +242,7 @@ lpc_object_t * lpc_vm_t::load_object(const char *name)
 
 void lpc_vm_t::on_loaded_object(lpc_object_t *obj, const char *name)
 {
-    if (obj->get_proto()->proto->init_codes) {
+    if (obj->get_proto()->init_codes) {
         this->eval_init_codes(obj);
     }
 
@@ -345,7 +344,7 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
         nci->call_other = true;
     }
     
-    object_proto_t *proto = obj->get_proto()->proto;
+    object_proto_t *proto = obj->get_proto();
     const function_proto_t *f = nullptr;
     if (init) {
         f = proto->init_fun;
@@ -408,7 +407,7 @@ void lpc_vm_t::pop_frame()
     }
 
     cur_ci->next = nullptr;
-    object_proto_t *proto = pre->father ? pre->father : pre->cur_obj->get_proto()->proto;
+    object_proto_t *proto = pre->father ? pre->father : pre->cur_obj->get_proto();
     const function_proto_t &f = proto->func_table[pre->funcIdx];
 
     int n = f.nlocal - f.nargs;
@@ -440,7 +439,7 @@ lpc_gc_t * lpc_vm_t::get_gc()
 
 void lpc_vm_t::eval_init_codes(lpc_object_t *obj)
 {
-    object_proto_t *proto = obj->get_proto()->proto;
+    object_proto_t *proto = obj->get_proto();
     if (!proto->init_codes) {
         return;
     }
@@ -451,7 +450,7 @@ void lpc_vm_t::eval_init_codes(lpc_object_t *obj)
 
 void lpc_vm_t::on_create_object(lpc_object_t *obj)
 {
-    object_proto_t *proto = obj->get_proto()->proto;
+    object_proto_t *proto = obj->get_proto();
     if (proto->create_idx < 0) {
         // TODO warning
         return;
@@ -463,7 +462,7 @@ void lpc_vm_t::on_create_object(lpc_object_t *obj)
 
 void lpc_vm_t::on_load_in_object(lpc_object_t *obj)
 {
-    object_proto_t *proto = obj->get_proto()->proto;
+    object_proto_t *proto = obj->get_proto();
     if (proto->on_load_in_idx < 0) {
         // TODO warning
         return;
@@ -475,7 +474,7 @@ void lpc_vm_t::on_load_in_object(lpc_object_t *obj)
 
 void lpc_vm_t::on_destruct_object(lpc_object_t *obj)
 {
-    object_proto_t *proto = obj->get_proto()->proto;
+    object_proto_t *proto = obj->get_proto();
     if (proto->on_destruct_idx < 0) {
         // TODO warning
         return;
@@ -493,7 +492,7 @@ void lpc_vm_t::traceback()
         if (tmp->father) {
 
         } else {
-            buf << "in file: " << tmp->cur_obj->get_proto()->proto->name << " func: " << tmp->cur_obj->get_proto()->proto->func_table[tmp->funcIdx].name << "\n";
+            buf << "in file: " << tmp->cur_obj->get_proto()->name << " func: " << tmp->cur_obj->get_proto()->func_table[tmp->funcIdx].name << "\n";
         }
     }
 
