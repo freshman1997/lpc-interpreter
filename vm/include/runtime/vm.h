@@ -40,6 +40,9 @@ public:
     void set_entry(const char *);
     void on_start();
     void on_exit();
+    
+    void load_config();
+
     void run() 
     {
         vm::eval(this);

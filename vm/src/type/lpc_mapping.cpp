@@ -261,7 +261,7 @@ bucket_t * lpc_mapping_t::iterate(int i)
     }
 
     for (; idx < size; ++idx) {
-        if (members[idx].pair) {
+        if (cur != &members[idx] && members[idx].pair) {
             cur = &members[idx];
             break;
         }
@@ -278,8 +278,8 @@ void lpc_mapping_t::dtor()
             bucket_t *t = buck->next;
             while (t) {
                 bucket_t *tmp = t;
-                delete tmp;
                 t = t->next;
+                delete tmp;
             }
         }
     }

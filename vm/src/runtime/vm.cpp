@@ -23,7 +23,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     if (!name) return nullptr;
     const string &cwd = get_cwd();
 #ifdef WIN32
-    string realName = "D:/code/src/vs/lpc-interpreter/build/compiler/Debug/" + string(name) + ".b";
+    string realName = "D:/test/test/lpc-interpreter/build/compiler/Debug/" + string(name) + ".b";
 #else
     string realName = "/home/yuan/codes/test/lpc/build/compiler/" + string(name) + ".b";
 #endif
@@ -326,6 +326,11 @@ void lpc_vm_t::on_exit()
 
 }
 
+void lpc_vm_t::load_config()
+{
+    
+}
+
 lpc_stack_t * lpc_vm_t::get_stack()
 {
     return this->stack;
@@ -489,11 +494,14 @@ void lpc_vm_t::traceback()
     call_info_t *tmp = base_ci;
     stringstream buf;
     while (tmp) {
+        buf << "in file: ";
         if (tmp->father) {
-
+            buf << tmp->father->name << ", func: " << tmp->father->func_table[tmp->funcIdx].name << "\n";
         } else {
-            buf << "in file: " << tmp->cur_obj->get_proto()->name << " func: " << tmp->cur_obj->get_proto()->func_table[tmp->funcIdx].name << "\n";
+            buf << tmp->cur_obj->get_proto()->name << ", func: " << tmp->cur_obj->get_proto()->func_table[tmp->funcIdx].name << "\n";
         }
+
+        tmp = tmp->next;
     }
 
     cout << buf.str();
