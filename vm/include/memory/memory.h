@@ -25,7 +25,7 @@ public:
     object_proto_t * allocate_object_proto();
 
     lpc_closure_t * allocate_closure(function_proto_t *funcProto, lpc_object_t *owner);
-    lpc_string_t * allocate_string(const char *);
+    lpc_string_t * allocate_string(const char *, bool newOne = false);
     lpc_buffer_t * allocate_buffer(luint32_t size);
     lpc_function_t * allocate_function(function_proto_t *, lpc_object_t *, lint16_t);
 

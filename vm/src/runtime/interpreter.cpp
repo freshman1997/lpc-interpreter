@@ -1,4 +1,5 @@
 ﻿#include <iostream>
+#include <string>
 
 #include "opcode.h"
 #include "lpc.h"
@@ -11,6 +12,8 @@
 #include "memory/memory.h"
 #include "type/lpc_string.h"
 #include "runtime/vm.h"
+
+#define ERROR(msg) std::cout << msg << std::endl; std::cout.flush(); lvm->traceback(); exit(-1);
 
 #define EXTRACT_2_PARAMS luint16_t idx = luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc)); pc += 2;
 #define EXTRACT_2_PARAMS_1 luint16_t idx1 = luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc)); pc += 2;
@@ -78,8 +81,8 @@ new_frame:
         case OpCode::op_load_global: {
             EXTRACT_2_PARAMS
             if (idx >= ci->cur_obj->get_proto()->nvariable) {
-                std::cout << "invalid number to indexing glable varibal: " << idx << "\n";
-                exit(-1);
+                std::string msg = "invalid number to indexing glable varibal: " + std::to_string(idx);
+                ERROR(msg);
             }
             lpc_value_t *val = &ci->cur_obj->get_locals()[idx + ci->inherit_offset];
             sk->push(val);
@@ -88,8 +91,8 @@ new_frame:
         case OpCode::op_store_global: {
             EXTRACT_2_PARAMS
             if (idx >= ci->cur_obj->get_proto()->nvariable) {
-                std::cout << "invalid number to indexing glable varibal: " << idx << "\n";
-                exit(-1);
+                std::string msg = "invalid number to indexing glable varibal: " + std::to_string(idx);
+                ERROR(msg);
             }
             lpc_value_t *val = &ci->cur_obj->get_locals()[idx + ci->inherit_offset];
             lpc_value_t *val1 = sk->pop();
@@ -99,8 +102,8 @@ new_frame:
         case OpCode::op_load_local: {
             EXTRACT_2_PARAMS
             if (idx >= fun->nlocal) {
-                std::cout << "invalid number to indexing local varibal: " << idx << "\n";
-                exit(-1);
+                std::string msg = "invalid number to indexing local varibal: " + std::to_string(idx);
+                ERROR(msg);
             }
             sk->push(ci->base + idx);
             break;
@@ -108,8 +111,8 @@ new_frame:
         case OpCode::op_store_local: {
             EXTRACT_2_PARAMS
             if (idx >= fun->nlocal) {
-                std::cout << "invalid number to indexing local varibal: " << idx << "\n";
-                exit(-1);
+                std::string msg = "invalid number to indexing local varibal: " + std::to_string(idx);
+                ERROR(msg);
             }
             lpc_value_t *val = ci->base + idx;
             lpc_value_t *val1 = sk->pop();
@@ -121,15 +124,13 @@ new_frame:
             const0.type = value_type::int_;
             if (ci->father) {
                 if ((ci->father->niconst <= idx)) {
-                    std::cout << "error found: int const index over range!!!\n";
-                    exit(-1);
+                    ERROR("error found: float const index over range!!!");
                 }
 
                 const0.pval.number = ci->father->iconst[idx].item.number;
             } else {
                 if ((ci->cur_obj->get_proto()->niconst <= idx)) {
-                    std::cout << "error found: int const index over range!!!\n";
-                    exit(-1);
+                    ERROR("error found: float const index over range!!!");
                 }
 
                 const0.pval.number = ci->cur_obj->get_proto()->iconst[idx].item.number;
@@ -143,15 +144,13 @@ new_frame:
             const0.type = value_type::float_;
             if (ci->father) {
                 if ((ci->father->nfconst <= idx)) {
-                    std::cout << "error found: float const index over range!!!\n";
-                    exit(-1);
+                    ERROR("error found: float const index over range!!!");
                 }
 
                 const0.pval.number = ci->father->iconst[idx].item.real;
             } else {
                 if ((ci->cur_obj->get_proto()->nfconst <= idx)) {
-                    std::cout << "error found: float const index over range!!!\n";
-                    exit(-1);
+                    ERROR("error found: float const index over range!!!");
                 }
 
                 const0.pval.real = ci->cur_obj->get_proto()->fconst[idx].item.real;
@@ -165,16 +164,14 @@ new_frame:
             const0.type = value_type::string_;
             if (ci->father) {
                 if ((ci->father->nsconst <= idx)) {
-                    std::cout << "error found: string const index over range!!!\n";
-                    exit(-1);
+                    ERROR("error found: string const index over range!!!");
                 }
 
                 lpc_string_t *s = ci->father->sconst[idx].item.str;
                 const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(s);
             } else {
                 if ((ci->cur_obj->get_proto()->nsconst <= idx)) {
-                    std::cout << "error found: string const index over range!!!\n";
-                    exit(-1);
+                    ERROR("error found: string const index over range!!!");
                 }
 
                 lpc_string_t *s = ci->cur_obj->get_proto()->sconst[idx].item.str;
@@ -189,8 +186,7 @@ new_frame:
             const0.type = value_type::function_;
             object_proto_t *proto = ci->cur_obj->get_proto();
             if (proto->nfunction <= idx) {
-                std::cout << "error found: function index over range!!!\n";
-                exit(-1);
+                ERROR("error found: function index over range!!!");
             }
 
             function_proto_t *f = &proto->func_table[idx];
@@ -233,7 +229,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v2->pval.number % v1->pval.number;
             } else {
-                // TODO report error
+                ERROR("error found!");
             }
             sk->push(v2);
             break;
@@ -244,7 +240,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v1->pval.number << v2->pval.number;
             } else {
-                // TODO report error
+                ERROR("error found!");
             }
             sk->push(v2);
             break;
@@ -255,7 +251,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v1->pval.number >> v2->pval.number;
             } else {
-                // TODO report error
+                ERROR("error found!");
             }
             sk->push(v2);
             break;
@@ -266,7 +262,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v1->pval.number & v2->pval.number;
             } else {
-                // TODO report error
+                ERROR("error found!");
             }
             sk->push(v2);
             break;
@@ -277,7 +273,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v1->pval.number | v2->pval.number;
             } else {
-                // TODO report error
+                ERROR("error found!");
             }
             sk->push(v2);
             break;
@@ -287,7 +283,7 @@ new_frame:
             if (v1->type ==  value_type::int_) {
                 v1->pval.number = ~v1->pval.number;
             } else {
-                // TODO report error
+                ERROR("error found!");
             }
             sk->push(v1);
             break;
@@ -298,7 +294,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v1->pval.number ^ v2->pval.number;
             } else {
-                // TODO report error
+                ERROR("error found!");
             }
             sk->push(v2);
             break;
@@ -459,21 +455,20 @@ new_frame:
                 }
             } else if (con->type == value_type::array_) {
                 if (key->type != value_type::int_) {
-                    std::cerr << "Only integer can index an array!!\n";
-                    exit(-1);
+                    ERROR("Only integer can index an array!!");
                 }
 
                 lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(con->gcobj);
                 if (arr->get_size() <= key->pval.number || key->pval.number < 0) {
-                    std::cerr << "Negative indexing key: " << key->pval.number << "\n";
-                    exit(-1);
+                    std::string msg = "Negative indexing key: " + std::to_string(key->pval.number);
+                    ERROR(msg);
                 }
 
                 lpc_value_t *val = arr->get(key->pval.number);
                 sk->push(val);
             } else {
-                std::cerr << "error type to index: " << (int)con->type << "\n";
-                exit(-1);
+                std::string msg = "error type to index: " + std::to_string((int)con->type);
+                ERROR(msg);
             }
             break;
         }
@@ -493,14 +488,12 @@ new_frame:
             lpc_value_t *con = sk->pop();
             lpc_value_t *start = sk->pop();
             if (con->type != value_type::array_) {
-                std::cout << "only array can be sub!!\n";
-                exit(-1);
+                ERROR("only array can be sub!!");
             }
 
             lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(con->gcobj);
             if (start->pval.number < 0 || start->pval.number > end->pval.number || start->pval.number >= arr->get_size() || end->pval.number >= arr->get_size()) {
-                std::cout << "negtive param to sub an array!!\n";
-                exit(-1);
+                ERROR("negtive param to sub an array!!");
             }
 
             const0.type = value_type::array_;
@@ -538,7 +531,7 @@ new_frame:
             lint8_t op = *(pc++);
             if (con->type == value_type::array_) {
                 if (k->type != value_type::int_) {
-                    // TODO error
+                    ERROR("error found!");
                 }
 
                 lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(con->gcobj);
@@ -547,8 +540,8 @@ new_frame:
                 lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(con->gcobj);
                 map->upset(k, v);
             } else {
-                std::cerr << "error type to index: " << (int)con->type << "\n";
-                exit(-1);
+                std::string msg = "error type to index: " + std::to_string((int)con->type);
+                ERROR(msg);
             }
             break;
         }
@@ -573,12 +566,12 @@ new_frame:
             } else {
                 lpc_value_t *val = sk->pop();
                 if (val->type != value_type::function_) {
-                    // error
+                    ERROR("error found!");
                 }
 
                 lpc_function_t *f = reinterpret_cast<lpc_function_t *>(val->gcobj);
                 if (f->idx < 0) {
-                    // error
+                    ERROR("error found!");
                 }
                 
                 ci->savepc = pc;
@@ -592,8 +585,7 @@ new_frame:
             EXTRACT_2_PARAMS_1
             object_proto_t *proto = ci->cur_obj->get_proto();
             if (proto->ninherit <= idx) {
-                std::cout << "cant index inherit table!!!\n";
-                exit(-1);
+                ERROR("cant index inherit table!!!");
             }
 
             ci->savepc = pc;
@@ -618,11 +610,11 @@ new_frame:
             break;
         }
         case OpCode::op_set_upvalue: {
-
+            ERROR("error found!");
             break;
         }
         case OpCode::op_get_upvalue: {
-
+            ERROR("error found!");
             break;
         }
         case OpCode::op_new_class: {
@@ -640,16 +632,12 @@ new_frame:
             lpc_value_t *clazz = sk->pop();
             lpc_value_t *val = sk->pop(); 
             if (clazz->type != value_type::array_ || clazz->subtype != value_type::class_) {
-                // TODO
-                std::cout << "error found!\n";
-                exit(-1);
+                ERROR("error found!");
             }
 
             lpc_array_t &arr = clazz->gcobj->arr;
             if (arr.get_size() <= idx) {
-                // TODO
-                std::cout << "error found!\n";
-                exit(-1);
+                ERROR("error found!");
             }
             arr.set(val, idx);
             break;
@@ -659,15 +647,11 @@ new_frame:
             lpc_value_t *clazz = sk->pop();
             lpc_value_t *val = sk->pop(); 
             if (clazz->type != value_type::array_ || clazz->subtype != value_type::class_) {
-                // TODO
-                std::cout << "error found!\n";
-                exit(-1);
+                ERROR("error found!");
             }
             lpc_array_t &arr = clazz->gcobj->arr;
             if (arr.get_size() <= idx) {
-                // TODO
-                std::cout << "error found!\n";
-                exit(-1);
+                ERROR("error found!");
             }
             const0 = *arr.get(idx);
             sk->push(&const0);
@@ -687,9 +671,7 @@ new_frame:
             } else if (val->type == value_type::int_) {
                 const0.pval.number = val->pval.number;
             } else {
-                // TODO report error
-                std::cout << "error found!\n";
-                exit(-1);
+                ERROR("error found!");
             }
             
             // 查找跳转表
@@ -709,8 +691,8 @@ new_frame:
             lpc_value_t *val = sk->top();
             // setup iterator
             if (val->type != value_type::array_ && val->type != value_type::mappig_) {
-                std::cout << "cant traverse type: " << (lint32_t)val->type << std::endl;
-                exit(-1);
+                std::string msg = "cant traverse type: " + std::to_string((lint32_t)val->type);
+                ERROR(msg)
             }
             const0.type = value_type::int_;
             const0.pval.number = 0;
@@ -724,18 +706,15 @@ new_frame:
             EXTRACT_4_PARAMS
 
             if (val->type != value_type::array_ && val->type != value_type::mappig_) {
-                std::cout << "only array or mapping container can be traversed!!\n";
-                exit(-1);
+                ERROR("only array or mapping container can be traversed!!");
             }
             
             if (val->type == value_type::array_ && sz != 1) {
-                std::cout << "not array container to traverse!!\n";
-                exit(-1);
+                ERROR("not array container to traverse!!");
             }
 
             if (val->type == value_type::mappig_ && sz != 2) {
-                std::cout << "not mapping container to traverse!!\n";
-                exit(-1);
+                ERROR("not mapping container to traverse!!");
             }
 
             lint32_t index = iter->pval.number;
@@ -769,8 +748,8 @@ new_frame:
             break;
         }
         default:
-            std::cout << "unexpected!!! \n";
-            exit(-1);
+            std::string msg = "unkown instrucion found: " + std::to_string((int)op);
+            ERROR(msg)
             break;
         }
     }

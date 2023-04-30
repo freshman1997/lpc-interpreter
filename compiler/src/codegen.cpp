@@ -1298,7 +1298,7 @@ void CodeGenerator::generate_for(AbstractExpression *exp)
         }
     }
 
-    lint32_t forContinue = opcodes.size(), gotoEnd = 0;
+    lint32_t forContinue = opcodes.size(), gotoEnd = -1;
     vector<lint32_t> forBreaks;
     if (forExp->conditions.size() > 1) {
         error_at(__LINE__);
@@ -1325,22 +1325,23 @@ void CodeGenerator::generate_for(AbstractExpression *exp)
     const char *idx2char = (const char *)(&forContinue);
     LOAD_IDX_4(opcodes, forContinue)
 
-    lint32_t forBreak = opcodes.size();
-    idx2char = (const char *)(&forBreak);
-
+    lint32_t t = opcodes.size();
+    const char *idxCode = (const char *)&t;
     // Note. 修正跳转的位置信息
     for (auto &it : forBreaks) {
         for (int i = 0; i < 4; ++i) {
-            opcodes[it + i] = idx2char[i];
+            opcodes[it + i] = idxCode[i];
         }    
     }
+    
+    if (gotoEnd != -1) {
+        for (int i = 0; i < 4; ++i) {
+            opcodes[gotoEnd + i] = idxCode[i];
+        } 
+    }
 
-    for (int i = 0; i < 4; ++i) {
-        opcodes[gotoEnd + i] = idx2char[i];
-    } 
-
-    int size = scopeLocals.size();
-    for (int i = nlocal; i < size; ++i) {
+    int sz = scopeLocals.size();
+    for (int i = nlocal; i < sz; ++i) {
         scopeLocals.pop_back();
     }
 }
@@ -1393,7 +1394,7 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
     vector<lint32_t> *p = nullptr;
     GENERATE_BODY(fe->body, p)
 
-    // 跳回赋值处
+    // 跳回条件处
     opcodes.push_back((luint8_t)(OpCode::op_goto));
     idx2char = (const char *)(&forContinue);
     LOAD_IDX_4(opcodes, forContinue)
@@ -1406,12 +1407,13 @@ void CodeGenerator::generate_foreach(AbstractExpression *exp)
             opcodes[it + i] = idxCode[i];
         }    
     }
-
+    
     for (int i = 0; i < 4; ++i) {
         opcodes[end + i] = idxCode[i];
     } 
 
-    while (sz--) {
+    sz = scopeLocals.size();
+    for (int i = nlocal; i < sz; ++i) {
         scopeLocals.pop_back();
     }
 }

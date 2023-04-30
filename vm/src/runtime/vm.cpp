@@ -23,7 +23,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     if (!name) return nullptr;
     const string &cwd = get_cwd();
 #ifdef WIN32
-    string realName = "D:/test/test/lpc-interpreter/build/compiler/Debug/" + string(name) + ".b";
+    string realName = "D:/code/src/vs/lpc-interpreter/build/compiler/Debug/" + string(name) + ".b";
 #else
     string realName = "/home/yuan/codes/test/lpc/build/compiler/" + string(name) + ".b";
 #endif
@@ -225,7 +225,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     return proto;
 }
 
-lpc_object_t * lpc_vm_t::load_object(const char *name)
+lpc_object_t * lpc_vm_t::load_object(const char *name, bool newOne)
 {
     lpc_object_t *obj = alloc->allocate_object();
     object_proto_t *proto = load_object_proto(name);
@@ -235,20 +235,18 @@ lpc_object_t * lpc_vm_t::load_object(const char *name)
     }
 
     obj->set_proto(proto);
-    on_loaded_object(obj, name);
+    on_loaded_object(obj, name, newOne);
 
     return obj;
 }
 
-void lpc_vm_t::on_loaded_object(lpc_object_t *obj, const char *name)
+void lpc_vm_t::on_loaded_object(lpc_object_t *obj, const char *name, bool newOne)
 {
     if (obj->get_proto()->init_codes) {
         this->eval_init_codes(obj);
     }
-
     
-    
-    lpc_string_t *k = alloc->allocate_string(name);
+    lpc_string_t *k = alloc->allocate_string(name, newOne);
     lpc_value_t key;
     key.type = value_type::string_;
     key.gcobj = reinterpret_cast<lpc_gc_object_t *>(k);
@@ -273,9 +271,7 @@ lpc_object_t * lpc_vm_t::find_oject(lpc_value_t *name)
         return reinterpret_cast<lpc_object_t *>(val->gcobj);
     } else {
         lpc_string_t *str = reinterpret_cast<lpc_string_t *>(name->gcobj);
-        lpc_object_t *obj = load_object(str->get_str());
-        on_loaded_object(obj, str->get_str());
-        return obj;
+        return load_object(str->get_str());;
     }
 }
 
@@ -302,8 +298,7 @@ lpc_vm_t * lpc_vm_t::create_vm()
 
 void lpc_vm_t::bootstrap()
 {
-    lpc_object_t *eobj = load_object(sfun_object_name);
-    on_loaded_object(eobj, sfun_object_name);
+    lpc_object_t *eobj = load_object(sfun_object_name, true);
     this->sfun_obj = eobj;
     
     lpc_object_t *obj = load_object(entry);

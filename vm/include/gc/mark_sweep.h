@@ -30,11 +30,11 @@ private:
     void mark_all(lpc_gc_object_t *);
 
     void sweep_phase();
-    void free_object(lpc_gc_object_t *);
+    void free_object(lpc_gc_object_t *, lint32_t &);
 
     luint32_t total_objects = 0;
     luint64_t blocks = 0;
-    luint64_t gc_threshold = 1024 * 1024;
+    luint64_t gc_threshold = 2048;
     lpc_vm_t *vm = nullptr;
     lpc_gc_object_t *root = nullptr;
 };

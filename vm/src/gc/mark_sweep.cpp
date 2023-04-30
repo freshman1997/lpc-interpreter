@@ -1,6 +1,9 @@
 #include <iostream>
 #include <memory>
 #include <cstdlib>
+#include <cstring>
+#include <cassert>
+
 #include "type/lpc_array.h"
 #include "gc/mark_sweep.h"
 #include "runtime/vm.h"
@@ -56,7 +59,7 @@ void mark_sweep_gc::mark(lpc_gc_object_t *obj)
             }
         }
 
-        o->get_proto()->header.marked = 1;
+        proto->header.marked = 1;
         for (int i = 0; i < proto->nsconst; ++i) {
             proto->sconst[i].item.str->header.marked = 1;
         }
@@ -138,18 +141,20 @@ void mark_sweep_gc::mark_phase()
     mark_all(root);
 }
 
-void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
+void mark_sweep_gc::free_object(lpc_gc_object_t *obj, lint32_t & freeBytes)
 {
     switch ((value_type)obj->head.type)
     {
     case value_type::function_: {
         free(obj);
+        freeBytes += sizeof(lpc_function_t);
         break;
     }
     case value_type::string_: {
         lpc_string_t *str = reinterpret_cast<lpc_string_t *>(obj);
         delete [] str->get_str();
         free(str);
+        freeBytes += sizeof(lpc_string_t);
         break;
     }
     case value_type::array_: {
@@ -158,7 +163,7 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
             for (int i = 0; i < arr->get_size(); ++i) {
                 lpc_value_t *val = arr->get(i);
                 if (val->type >= value_type::buffer_) {
-                    free_object(val->gcobj);
+                    free_object(val->gcobj, freeBytes);
                 }
             }
 
@@ -166,18 +171,21 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
         }
 
         free(arr);
+        freeBytes += sizeof(lpc_array_t);
         break;
     }
     case value_type::mappig_: {
         lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(obj);
         map->dtor();
         free(map);
+        freeBytes += sizeof(lpc_mapping_t);
         break;
     }
     case value_type::closure_: {
         lpc_closure_t *clo = reinterpret_cast<lpc_closure_t *>(obj);
         clo->dtor();
         free(clo);
+        freeBytes += sizeof(lpc_closure_t);
         break;
     }
     case value_type::buffer_: {
@@ -186,6 +194,7 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
             delete [] buff->buff;
         }
         free(buff);
+        freeBytes += sizeof(lpc_buffer_t);
         break;
     }
     case value_type::object_: {
@@ -199,20 +208,26 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
             delete [] o->get_locals();
         }
         free(o);
+        freeBytes += sizeof(lpc_object_t);
         break;
     }
     case value_type::proto_: {
         object_proto_t *proto = reinterpret_cast<object_proto_t *>(obj);
         delete [] proto->name;
+
+        if (proto->inherits) {
+            delete [] proto->inherits;
+        }
+
         delete [] proto->instructions;
-        delete [] proto->inherits;
         delete [] proto->inherit_offsets;
+
         if (proto->init_codes) {
             delete [] proto->init_codes;
         }
 
         if (proto->init_fun) {
-            delete proto->init_fun;
+            delete [] proto->init_codes;
         }
 
         if (proto->variable_table) {
@@ -229,11 +244,14 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
 
         if (proto->sconst) {
             for (int i = 0; i < proto->nsconst; ++i) {
-                free_object(reinterpret_cast<lpc_gc_object_t *>(proto->sconst[i].item.str));
+                free_object(reinterpret_cast<lpc_gc_object_t *>(proto->sconst[i].item.str), freeBytes);
             }
         }
 
         if (proto->class_table) {
+            if (proto->class_table->nfield > 0) {
+                delete [] proto->class_table->field_table;
+            }
             delete [] proto->class_table;
         }
 
@@ -251,6 +269,7 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj)
         }
         
         free(proto);
+        freeBytes += sizeof(object_proto_t);
         break;
     }
 
@@ -263,29 +282,36 @@ void mark_sweep_gc::sweep_phase()
     if (!root) return;
 
     lpc_gc_object_t *cur = root;
-    lpc_gc_object_t *pre = nullptr;
-    lint32_t count = 0;
+    lpc_gc_object_t *pre = nullptr, *start = nullptr;
+    lint32_t count = 0, freeBytes = 0;
     while (cur) {
         if (cur->head.marked) {
-            cur->head.marked = 0;
             if (!pre) {
                 pre = cur;
+                start = cur;
             } else {
                 pre->head.next = cur;
                 pre = cur;
             }
+
+            cur->head.marked = 0;
             cur = cur->head.next;
         } else {
             lpc_gc_object_t * t = cur;
             cur = cur->head.next;
-            free_object(t);
+            free_object(t, freeBytes);
             ++count;
         }
     }
 
-    root = pre;
+    root = start;
+    blocks -= freeBytes;
+    total_objects -= count;
 
-    std::cout << "free: " << count << "\n";
+    assert(total_objects > 0 && blocks > 0 && count > 0);
+
+    std::cout << "free object: " << count << ", total bytes: " << freeBytes << std::endl;
+    std::cout.flush();
 }
 
 void mark_sweep_gc::collect()
@@ -296,14 +322,15 @@ void mark_sweep_gc::collect()
 
 void * mark_sweep_gc::allocate(void *p, luint32_t sz)
 {
+
     void *ptr = realloc(p, sz);
     if (!ptr) {
         vm->panic();
     }
     
+    check_threshold();
     blocks += sz;
 
-    check_threshold();
     return ptr;
 }
 

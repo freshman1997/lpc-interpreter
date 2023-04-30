@@ -1,4 +1,6 @@
-﻿#include "memory/memory.h"
+﻿#include <cstring>
+
+#include "memory/memory.h"
 #include "runtime/vm.h"
 #include "gc/gc.h"
 #include "type/lpc_array.h"
@@ -54,10 +56,15 @@ lpc_closure_t * lpc_allocator_t::allocate_closure(function_proto_t *funcProto, l
     return clo;
 }
 
-lpc_string_t * lpc_allocator_t::allocate_string(const char *init)
+lpc_string_t * lpc_allocator_t::allocate_string(const char *init,  bool newOne)
 {
     lpc_string_t *str = (lpc_string_t *)vm->get_gc()->allocate(sizeof(lpc_string_t));
-    new(str)lpc_string_t(init);
+    const char *buf = init;
+    if (newOne) {
+        size_t len = strlen(init);
+        buf = (const char *)vm->get_gc()->allocate(len);
+    }
+    new(str)lpc_string_t(buf);
     vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(str), value_type::string_);
     return str;
 }
