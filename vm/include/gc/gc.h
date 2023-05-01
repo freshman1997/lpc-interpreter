@@ -10,14 +10,14 @@ class lpc_gc_t
 {
 public:
     void gc();
-    void * allocate(luint32_t sz) 
+    void * allocate(luint32_t sz, bool check = true) 
     {
-        return msg->allocate(NULL, sz);
+        return msg->allocate(NULL, sz, check);
     }
 
-    void * allocate(void *p, luint32_t sz) 
+    void * allocate(void *p, luint32_t sz, bool check) 
     {
-        return msg->allocate(p, sz);
+        return msg->allocate(p, sz, check);
     }
 
     lpc_gc_t(lpc_vm_t *vm) 
@@ -29,6 +29,11 @@ public:
     void link(lpc_gc_object_t *gcobj, value_type type) 
     {
         msg->link(gcobj, type);
+    }
+
+    void release(luint32_t sz) 
+    {
+        msg->release(sz);
     }
 
 private:

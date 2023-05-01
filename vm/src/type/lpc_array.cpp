@@ -1,15 +1,17 @@
-﻿#include "lpc_value.h"
+﻿#include <unordered_map>
+
+#include "lpc_value.h"
 #include "type/lpc_array.h"
 #include "memory/memory.h"
 
 lpc_array_t::lpc_array_t(luint32_t sz, lpc_value_t *m) : size(sz), members(m){}
 
-lpc_value_t * lpc_array_t::get(int i)
+lpc_value_t * lpc_array_t::get(luint32_t i)
 {
     return &this->members[i];
 }
 
-void lpc_array_t::set(lpc_value_t *val, lint32_t i)
+void lpc_array_t::set(lpc_value_t *val, luint32_t i)
 {
     this->members[i] = *val;
 }
@@ -19,18 +21,57 @@ luint32_t lpc_array_t::get_size() const
     return size;
 }
 
-lpc_value_t * lpc_array_t::copy()
+lpc_array_t * lpc_array_t::copy(lpc_allocator_t *alloc)
 {
-    return nullptr;
+    lpc_array_t *newArray = alloc->allocate_array(size);
+    for (luint32_t i = 0; i < size; ++i) {
+        newArray->members[i] = members[i];
+    }
+    return newArray;
 }
 
 // array op
-lpc_array_t * array_add(lpc_array_t *l, lpc_array_t *r, lpc_gc_t *gc)
+lpc_array_t * array_add(lpc_array_t *l, lpc_array_t *r, lpc_allocator_t *alloc)
 {
-    return nullptr;
+    luint32_t newSize = l->get_size() + r->get_size();
+    lpc_array_t *newArray = alloc->allocate_array(newSize);
+    // copy
+    luint32_t i = 0, j;
+    for (; i < l->get_size(); ++i) {
+        newArray->set(l->get(i), i);
+    }
+
+    for (j = 0; j < r->get_size(); ++i, ++j) {
+        newArray->set(r->get(j), i);
+    }
+    
+    return newArray;
 }
 
-lpc_array_t * array_sub(lpc_array_t *l, lpc_array_t *r, lpc_gc_t *gc)
+lpc_array_t * array_sub(lpc_array_t *l, lpc_array_t *r, lpc_allocator_t *alloc)
 {
-    return nullptr;
+
+    luint32_t i = 0, c = 0;
+    std::unordered_map<luint32_t, bool> skips;
+
+    for (; i < r->get_size(); ++i) {
+        lint32_t t = 0;
+        for (luint32_t j = 0; j < l->get_size(); ++j) {
+            if (r->get(i)->type == value_type::int_ && l->get(j)->type == value_type::int_ && l->get(j)->pval.number == r->get(i)->pval.number) {
+                skips[j] = 1;
+            }
+        }
+    }
+
+    // fixme size == 0
+    lpc_array_t *newArray = alloc->allocate_array(l->get_size() - skips.size());
+    for (i = 0; i < l->get_size(); ++i) {
+        if (skips.count(i)) {
+            continue;
+        }
+        
+        newArray->set(l->get(i), c++);
+    }
+
+    return newArray;
 }

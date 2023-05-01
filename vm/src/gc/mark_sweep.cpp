@@ -176,7 +176,7 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj, lint32_t & freeBytes)
     }
     case value_type::mappig_: {
         lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(obj);
-        map->dtor();
+        map->dtor(freeBytes);
         free(map);
         freeBytes += sizeof(lpc_mapping_t);
         break;
@@ -320,15 +320,17 @@ void mark_sweep_gc::collect()
     sweep_phase();
 }
 
-void * mark_sweep_gc::allocate(void *p, luint32_t sz)
+void * mark_sweep_gc::allocate(void *p, luint32_t sz, bool check)
 {
-
     void *ptr = realloc(p, sz);
     if (!ptr) {
         vm->panic();
     }
     
-    check_threshold();
+    if (check) {
+        check_threshold();
+    }
+
     blocks += sz;
 
     return ptr;

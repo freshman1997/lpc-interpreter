@@ -20,7 +20,7 @@ public:
 
 public:
     lpc_mapping_t(lpc_allocator_t *);
-    lpc_value_t * copy();
+    lpc_mapping_t * copy();
     bucket_t * get(lpc_value_t *k);
     lpc_value_t * get_value(lpc_value_t *k);
     void set(lpc_value_t *k, lpc_value_t *v);
@@ -33,19 +33,20 @@ public:
     void grow();
     void reset_iterator();
 
-    void dtor();
+    void dtor(lint32_t &freeBytes);
 
 private:
     int calc_hash(lpc_value_t *);
     void place(bucket_t *newBuckets, int newSize, bucket_t *buck, bool reuse = false);
     
     lpc_allocator_t *alloc;
-    luint32_t fill;
     bucket_t *members;
+    bucket_t *cur;
+
+    luint32_t fill;
     luint32_t used;
     luint32_t size;
 
-    bucket_t *cur;
     lint32_t idx;
 };
 

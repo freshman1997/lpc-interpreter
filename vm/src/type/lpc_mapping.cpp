@@ -3,6 +3,7 @@
 #include "type/lpc_string.h"
 #include "type/lpc_array.h"
 #include "type/lpc_mapping.h"
+#include <stdlib.h>
 
 extern int hash_(const char *str);
 extern int hash_pointer(int x);
@@ -17,20 +18,29 @@ int lpc_mapping_t::calc_hash(lpc_value_t *val)
     }
 }
 
-lpc_value_t * lpc_mapping_t::copy()
+lpc_mapping_t * lpc_mapping_t::copy()
 {
-    return nullptr;
+    lpc_mapping_t *newMap = alloc->allocate_mapping();
+
+    for (luint32_t i = 0; i < used; ++i) {
+        bucket_t *buck = iterate(i);
+        newMap->upset(&buck->pair[0], &buck->pair[1]);
+    }
+
+    reset_iterator();
+
+    return newMap;
 }
 
 lpc_mapping_t::lpc_mapping_t(lpc_allocator_t *alloc)
 {
-    this->size = 200;
-    this->members = new bucket_t[size];
-    fill = 0;
-    used = 0;
+    this->size = 10;
+    this->fill = 0;
+    this->used = 0;
     this->alloc = alloc;
     this->cur = nullptr;
     this->idx = 0;
+    this->members = alloc->allocate<bucket_t, true>(size);
 }
 
 bucket_t * lpc_mapping_t::get(lpc_value_t *k)
@@ -87,14 +97,14 @@ void lpc_mapping_t::set(lpc_value_t *k, lpc_value_t *v)
     }
 
     if (t == b && !b->pair) {
-        b->pair = new lpc_value_t[2];
+        b->pair = this->alloc->allocate<lpc_value_t, true>(2);
         b->pair[0] = *k;
         b->pair[1] = *v;
         ++used;
         ++fill;
     } else {
-        bucket_t *b1 = new bucket_t;
-        b1->pair = new lpc_value_t[2];
+        bucket_t *b1 = this->alloc->allocate<bucket_t, true>(1);
+        b1->pair = this->alloc->allocate<lpc_value_t, true>(2);
         b1->pair[0] = *k;
         b1->pair[1] = *v;
         b->next = b1;
@@ -123,13 +133,13 @@ void lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v)
         }
 
         if (t != b) {
-            bucket_t *node = new bucket_t;
+            bucket_t *node = this->alloc->allocate<bucket_t>(1);
             node->pair[0] = *k;
             node->pair[1] = *v;
             b->next = node;
         } else {
             if (!b->pair) {
-                b->pair = new lpc_value_t[2];
+                b->pair = this->alloc->allocate<lpc_value_t, true>(2);
                 ++fill;
             }
             b->pair[0] = *k;
@@ -156,7 +166,12 @@ void lpc_mapping_t::remove(lpc_value_t *k)
     while (b) {
         bucket_t *t = b;
         b = b->next;
-        delete t;
+        alloc->release(sizeof(bucket_t));
+        if (t->pair) {
+            alloc->release(sizeof(lpc_value_t) * 2);
+            free(t->pair);
+        }
+        free(t);
         --used;
     }
 
@@ -181,7 +196,7 @@ void lpc_mapping_t::place(bucket_t *newBuckets, int newSize, bucket_t *buck, boo
         if (reuse) {
             cur->next = buck;
         } else {
-            bucket_t *b = new bucket_t;
+            bucket_t *b = this->alloc->allocate<bucket_t>(1);
             b->next = nullptr;
             b->pair = buck->pair;
         }
@@ -193,7 +208,7 @@ void lpc_mapping_t::place(bucket_t *newBuckets, int newSize, bucket_t *buck, boo
 void lpc_mapping_t::grow()
 {
     int newSize = size << 1;
-    bucket_t *newBuckets = new bucket_t[newSize];
+    bucket_t *newBuckets = this->alloc->allocate<bucket_t, true>(newSize);
 
     // copy
     for (int i = 0; i < size; ++i) {
@@ -204,14 +219,15 @@ void lpc_mapping_t::grow()
             while (cur) {
                 place(newBuckets, newSize, cur, true);
                 bucket_t *t = cur->next;
-                delete cur;
                 cur->next = nullptr;
+                alloc->release(sizeof(bucket_t));
+                free(cur);
                 cur = t;
             }
         }
     }
 
-    delete[] members;
+    free(members);
     this->members = newBuckets;
     this->size = newSize;
 }
@@ -270,21 +286,30 @@ bucket_t * lpc_mapping_t::iterate(int i)
     return cur;
 }
 
-void lpc_mapping_t::dtor()
+void lpc_mapping_t::dtor(lint32_t &freeBytes)
 {
     for (int i = 0; i < size; ++i) {
         bucket_t *buck = &members[i];
+        if (buck->pair) {
+            freeBytes += sizeof(lpc_value_t) * 2;
+        }
+
         if (buck->next) {
             bucket_t *t = buck->next;
             while (t) {
+                freeBytes += sizeof(bucket_t);
                 bucket_t *tmp = t;
+                if (tmp->pair) {
+                    freeBytes += sizeof(lpc_value_t) * 2;
+                }
                 t = t->next;
-                delete tmp;
+                free(tmp);
             }
         }
     }
 
-    delete [] members;
+    freeBytes += sizeof(bucket_t) * size;
+    free(members);
 }
 
 lpc_array_t * mapping_values(lpc_mapping_t *m, lpc_allocator_t *alloc)

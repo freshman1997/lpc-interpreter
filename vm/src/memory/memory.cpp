@@ -34,7 +34,7 @@ lpc_mapping_t * lpc_allocator_t::allocate_mapping()
 lpc_object_t * lpc_allocator_t::allocate_object()
 {
     lpc_object_t *obj = (lpc_object_t *)vm->get_gc()->allocate(sizeof(lpc_object_t));
-    new(obj)lpc_object_t();
+    new(obj)lpc_object_t(this);
     vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(obj), value_type::object_);
     return obj;
 }
@@ -53,6 +53,7 @@ lpc_closure_t * lpc_allocator_t::allocate_closure(function_proto_t *funcProto, l
     clo->proto = funcProto;
     clo->owner = owner;
     clo->init();
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(clo), value_type::closure_);
     return clo;
 }
 
@@ -62,7 +63,7 @@ lpc_string_t * lpc_allocator_t::allocate_string(const char *init,  bool newOne)
     const char *buf = init;
     if (newOne) {
         size_t len = strlen(init);
-        buf = (const char *)vm->get_gc()->allocate(len);
+        buf = (const char *)vm->get_gc()->allocate(len, false);
     }
     new(str)lpc_string_t(buf);
     vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(str), value_type::string_);
@@ -88,12 +89,17 @@ lpc_function_t * lpc_allocator_t::allocate_function(function_proto_t *funcProto,
     return f;
 }
 
-void * lpc_allocator_t::allocate(luint32_t sz)
+void * lpc_allocator_t::allocate(luint32_t sz, bool check)
 {
-    return vm->get_gc()->allocate(sz);
+    return vm->get_gc()->allocate(sz, check);
 }
 
 void * lpc_allocator_t::allocate(void *p, luint32_t newSz)
 {
-    return vm->get_gc()->allocate(p, newSz);
+    return vm->get_gc()->allocate(p, newSz, false);
+}
+
+void lpc_allocator_t::release(luint32_t sz)
+{
+    vm->get_gc()->release(sz);
 }

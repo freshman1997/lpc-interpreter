@@ -1,16 +1,19 @@
 ﻿#ifndef __LPC_OBJECT__
 #define __LPC_OBJECT__
+#include "memory/memory.h"
 #include "type/lpc_string.h"
 #include "lpc_proto.h"
 
 struct lpc_value_t;
+class lpc_allocator_t;
 class lpc_object_t
 {
 public: 
     gc_header header;
 
 public:
-    lpc_value_t * copy();
+    lpc_object_t * copy();
+    lpc_object_t(lpc_allocator_t *);
     object_proto_t * get_proto();
     void set_proto(object_proto_t *);
     const char * get_pc();
@@ -45,9 +48,10 @@ private:
     const char *name = nullptr;
     int hash = 0;
     int no = 0;
-
+    
     lpc_value_t *locals;
     object_proto_t *proto = nullptr;
+    lpc_allocator_t *alloc = nullptr;
 };
 
 #endif

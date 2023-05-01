@@ -1,5 +1,6 @@
 ﻿#ifndef __MEMORY_H__
 #define __MEMORY_H__
+#include <memory>
 #include "lpc.h"
 
 struct lpc_value_t;
@@ -29,10 +30,32 @@ public:
     lpc_buffer_t * allocate_buffer(luint32_t size);
     lpc_function_t * allocate_function(function_proto_t *, lpc_object_t *, lint16_t);
 
-    void * allocate(luint32_t sz);
+    void * allocate(luint32_t sz, bool check = true);
     void * allocate(void *p, luint32_t newSz);
     lpc_allocator_t(lpc_vm_t * v) : vm(v) {}
-    
+
+    void release(luint32_t sz);
+
+    template<typename T, bool call = false>
+    T * allocate(luint32_t sz) 
+    {
+        T *p = (T *)allocate(sz * sizeof(T), false);
+        if (call) {
+            for (int i = 0; i < sz; ++i) {
+                new(p + i)(T);
+            }
+        }
+
+        return p;
+    }
+
+    template<typename T>
+    T * allocate(void *origin, luint32_t newSize) 
+    {
+        void *p = allocate(origin, newSize);
+        return (T *)p;
+    }
+
 private:
     lpc_vm_t *vm;
 };

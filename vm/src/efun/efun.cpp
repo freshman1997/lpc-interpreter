@@ -130,7 +130,7 @@ static void build_basic(string &buf, lpc_value_t *val, int deep)
         lpc_object_t *obj = reinterpret_cast<lpc_object_t *>(val->gcobj);
         char tmp[50] = {0};
         auto ptr = reinterpret_cast<std::uintptr_t>(obj);
-        sprintf(tmp, "object@0x%x", ptr);
+        sprintf(tmp, "object@0x%llx", ptr);
         buf.append(tmp);   
         break;
     }
@@ -138,7 +138,7 @@ static void build_basic(string &buf, lpc_value_t *val, int deep)
         lpc_function_t *f = reinterpret_cast<lpc_function_t *>(val->gcobj);
         char tmp[50] = {0};
         auto ptr = reinterpret_cast<std::uintptr_t>(f);
-        sprintf(tmp, "function@0x%x", ptr);
+        sprintf(tmp, "function@0x%llx", ptr);
         buf.append(tmp);
         break;
     }

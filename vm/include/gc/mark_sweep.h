@@ -8,7 +8,7 @@
 class mark_sweep_gc
 {
 public:
-    void * allocate(void *, luint32_t sz);
+    void * allocate(void *, luint32_t sz, bool check = true);
     void collect();
     void link(lpc_gc_object_t *gcobj, value_type type);
     void set_vm(lpc_vm_t *vm)
@@ -23,6 +23,11 @@ public:
         }
     }
 
+    void release(luint32_t sz) 
+    {
+        blocks -= sz;        
+    }
+
 private:
     void mark_phase();
     void mark(lpc_gc_object_t *);
@@ -34,7 +39,7 @@ private:
 
     luint32_t total_objects = 0;
     luint64_t blocks = 0;
-    luint64_t gc_threshold = 2048;
+    luint64_t gc_threshold = 1024 * 1024 * 1024;
     lpc_vm_t *vm = nullptr;
     lpc_gc_object_t *root = nullptr;
 };

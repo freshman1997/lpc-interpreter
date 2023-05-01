@@ -4,7 +4,7 @@
 #include "opcode.h"
 
 struct lpc_value_t;
-class lpc_gc_t;
+class lpc_allocator_t;
 
 class lpc_array_t
 {
@@ -13,9 +13,9 @@ public:
 
 public:
     lpc_array_t(luint32_t sz, lpc_value_t *);
-    lpc_value_t * get(int i);
-    void set(lpc_value_t *val, lint32_t i);
-    lpc_value_t * copy();
+    lpc_value_t * get(luint32_t i);
+    void set(lpc_value_t *val, luint32_t i);
+    lpc_array_t * copy(lpc_allocator_t *alloc);
     luint32_t get_size() const;
     lpc_value_t * get_members()
     {
@@ -27,8 +27,8 @@ private:
     lpc_value_t *members;
 };
 
-lpc_array_t * array_add(lpc_array_t *l, lpc_array_t *r, lpc_gc_t *gc);
-lpc_array_t * array_sub(lpc_array_t *l, lpc_array_t *r, lpc_gc_t *gc);
+lpc_array_t * array_add(lpc_array_t *l, lpc_array_t *r, lpc_allocator_t *alloc);
+lpc_array_t * array_sub(lpc_array_t *l, lpc_array_t *r, lpc_allocator_t *alloc);
 
 
 #endif
