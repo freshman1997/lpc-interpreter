@@ -24,7 +24,7 @@ lpc_mapping_t * lpc_mapping_t::copy()
 
     for (luint32_t i = 0; i < used; ++i) {
         bucket_t *buck = iterate(i);
-        newMap->upset(&buck->pair[0], &buck->pair[1]);
+        newMap->upset(&buck->pair[0], &buck->pair[1], OpCode::op_load_global);
     }
 
     reset_iterator();
@@ -116,14 +116,30 @@ void lpc_mapping_t::set(lpc_value_t *k, lpc_value_t *v)
     }
 }
 
-void lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v)
+#define oper(val, v, op) \
+    if (val->type == value_type::int_) { \
+        val->pval.number op v->type == value_type::int_ ? v->pval.number : v->pval.real; \
+    } else if (val->type == value_type::float_) { \
+        val->pval.real op v->type == value_type::int_ ? v->pval.number : v->pval.real; \
+    } else if (val->type == value_type::null_) { \
+        if (v->type == value_type::int_ || v->type == value_type::float_) { \
+            *val = *v; \
+        } else { \
+            return false; \
+        } \
+    } else { \
+        return false; \
+    }
+
+
+bool lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v, OpCode op)
 {
     bucket_t *found = get(k);
+    lpc_value_t *val = nullptr;
     if (found) {
         found->pair[0] = *k;
-        found->pair[1] = *v;
-        ++used;
-        ++fill;
+        //found->pair[1] = *v;
+        val = &found->pair[1];
     } else {
         int hash = calc_hash(k) % this->size;
         bucket_t *b = &members[hash];
@@ -135,22 +151,68 @@ void lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v)
         if (t != b) {
             bucket_t *node = this->alloc->allocate<bucket_t>(1);
             node->pair[0] = *k;
-            node->pair[1] = *v;
+            //node->pair[1] = *v;
+            val = &node->pair[1];
             b->next = node;
+            ++used;
         } else {
             if (!b->pair) {
                 b->pair = this->alloc->allocate<lpc_value_t, true>(2);
                 ++fill;
+                ++used;
             }
             b->pair[0] = *k;
-            b->pair[1] = *v;
+            //b->pair[1] = *v;
+            val = &b->pair[1];
         }
-        ++used;
+    }
+
+    switch (op)
+    {
+    case OpCode::op_load_global: {
+        *val = *v;
+        break;
+    }
+    case OpCode::op_add: {
+        oper(val, v, +=)
+        break;
+    }
+    case OpCode::op_sub: {
+        oper(val, v, -=)
+        break;
+    }
+    case OpCode::op_mul: {
+        oper(val, v, *=)
+        break;
+    }
+    case OpCode::op_div: {
+        oper(val, v, /=)
+        break;
+    }
+    case OpCode::op_mod: {
+        if (val->type == value_type::int_) {
+            val->pval.number %= v->pval.number;
+        } else if (val->type == value_type::null_) {
+            if (v->type == value_type::int_ || v->type == value_type::float_) {
+                *val = *v;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        break;
+    }
+    default:
+        return false;
+        break;
     }
         
     if (fill * 1.0 / size >= 0.75) {
         grow();
     }
+
+    return true;
 }
 
 void lpc_mapping_t::remove(lpc_value_t *k)

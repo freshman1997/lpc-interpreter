@@ -15,6 +15,7 @@ public:
     lpc_array_t(luint32_t sz, lpc_value_t *);
     lpc_value_t * get(luint32_t i);
     void set(lpc_value_t *val, luint32_t i);
+    bool upset(lpc_value_t *val, luint32_t i, OpCode op);
     lpc_array_t * copy(lpc_allocator_t *alloc);
     luint32_t get_size() const;
     lpc_value_t * get_members()

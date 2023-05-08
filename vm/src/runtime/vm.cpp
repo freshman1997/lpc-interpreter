@@ -23,7 +23,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     if (!name) return nullptr;
     const string &cwd = get_cwd();
 #ifdef WIN32
-    string realName = "D:/code/src/vs/lpc-interpreter/build/compiler/Debug/" + string(name) + ".b";
+    string realName = "D:/test/test/lpc-interpreter/build/compiler/Debug/" + string(name) + ".b";
 #else
     string realName = "/home/yuan/codes/test/lpc/build/compiler/" + string(name) + ".b";
 #endif

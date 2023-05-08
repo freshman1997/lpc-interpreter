@@ -16,6 +16,77 @@ void lpc_array_t::set(lpc_value_t *val, luint32_t i)
     this->members[i] = *val;
 }
 
+#define oper(val, v, op) \
+    if (val->type == value_type::int_) { \
+        val->pval.number op v->type == value_type::int_ ? v->pval.number : v->pval.real; \
+    } else if (val->type == value_type::float_) { \
+        val->pval.real op v->type == value_type::int_ ? v->pval.number : v->pval.real; \
+    } else if (val->type == value_type::null_) { \
+        if (v->type == value_type::int_ || v->type == value_type::float_) { \
+            *val = *v; \
+        } else { \
+            return false; \
+        } \
+    } else { \
+        return false; \
+    }
+
+bool lpc_array_t::upset(lpc_value_t *v, luint32_t i, OpCode op)
+{
+    if (i >= this->size) {
+        return false;
+    }
+    
+    if (v->type != value_type::int_ && v->type != value_type::float_) {
+        return false;
+    }
+
+    lpc_value_t *val = &this->members[i];
+
+    switch (op)
+    {
+    case OpCode::op_load_global: {
+        *val = *v;
+        break;
+    }
+    case OpCode::op_add: {
+        oper(val, v, +=)
+        break;
+    }
+    case OpCode::op_sub: {
+        oper(val, v, -=)
+        break;
+    }
+    case OpCode::op_mul: {
+        oper(val, v, *=)
+        break;
+    }
+    case OpCode::op_div: {
+        oper(val, v, /=)
+        break;
+    }
+    case OpCode::op_mod: {
+        if (val->type == value_type::int_) {
+            val->pval.number %= v->pval.number;
+        } else if (val->type == value_type::null_) {
+            if (v->type == value_type::int_ || v->type == value_type::float_) {
+                *val = *v;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        break;
+    }
+    default:
+        return false;
+        break;
+    }
+
+    return true;
+}
+
 luint32_t lpc_array_t::get_size() const
 {
     return size;

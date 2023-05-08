@@ -535,10 +535,16 @@ new_frame:
                 }
 
                 lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(con->gcobj);
-                arr->set(v, k->pval.number);
+                bool res = arr->upset(v, k->pval.number, OpCode(op));
+                if (!res) {
+                    ERROR("upset array failed!!");
+                }
             } else if (con->type == value_type::mappig_) {
                 lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(con->gcobj);
-                map->upset(k, v);
+                bool res = map->upset(k, v, OpCode(op));
+                if (!res) {
+                    ERROR("upset mapping failed!!");
+                }
             } else {
                 std::string msg = "error type to index: " + std::to_string((int)con->type);
                 ERROR(msg);
