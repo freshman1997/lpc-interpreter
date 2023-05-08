@@ -112,6 +112,6 @@ int main(int argc, char **argv)
 
 		generate_one(doc, docs);
 	}
-	getchar();
+	
 	return 0;
 }
