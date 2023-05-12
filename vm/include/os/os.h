@@ -4,9 +4,10 @@
 
 namespace  os
 {
-
     void init_seed(lint64_t);
     lint64_t random();
+
+    void register_exception_handler();
 
 } // namespace  os
 

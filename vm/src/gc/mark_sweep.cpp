@@ -199,6 +199,10 @@ void mark_sweep_gc::free_object(lpc_gc_object_t *obj, lint32_t & freeBytes)
     }
     case value_type::object_: {
         lpc_object_t *o = reinterpret_cast<lpc_object_t *>(obj);
+
+        // call destructor
+        vm->on_destruct_object(o);
+
         object_proto_t *proto = o->get_proto();
         if (o->get_name() != proto->name) {
             delete [] o->get_name();

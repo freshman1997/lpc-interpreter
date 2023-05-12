@@ -11,7 +11,7 @@ lpc_stack_t::lpc_stack_t(int sz)
 
 bool lpc_stack_t::push(lpc_value_t *val)
 {
-    if (idx >= size) return false;
+    if (idx >= size || !val) return false;
     stack[idx] = *val;
     ++idx;
     return true;
@@ -19,6 +19,7 @@ bool lpc_stack_t::push(lpc_value_t *val)
 
 lpc_value_t * lpc_stack_t::get(int idx)
 {
+    if (idx >= size) return nullptr;
     return &stack[idx];
 }
 

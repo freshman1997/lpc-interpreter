@@ -442,7 +442,7 @@ void CodeGenerator::generate_unop(AbstractExpression *exp)
     }
 
     if (uop->exp->get_type() == ExpressionType::index_) {
-        generate_index(exp, true);
+        generate_index(uop->exp, true);
     } else {
         GENERATE_OP(uop->exp, DeclType::none_)
     }
@@ -551,7 +551,7 @@ static std::set<TokenKind> constFold = {
     ValueExpression *val = new ValueExpression; \
     if (left->valType == 0 && right->valType == 0) { \
         val->valType = 0; \
-        val->val.ival = left->val.ival + right->val.ival; \
+        val->val.ival = left->val.ival op right->val.ival; \
     } else { \
         val->valType = 0; \
         val->val.dval = (left->valType == 0 ? left->val.ival : left->val.dval) op (right->valType == 0 ? right->val.ival : right->val.dval); \

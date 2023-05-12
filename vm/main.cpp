@@ -32,6 +32,8 @@ string get_cwd()
 
 int main(int argc, char **argv)
 {
+	os::register_exception_handler();
+	
 #if WIN32
 	char *buf;
 	// Get the current working directory:

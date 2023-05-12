@@ -13,7 +13,7 @@
 #include "type/lpc_string.h"
 #include "runtime/vm.h"
 
-#define ERROR(msg) std::cout << msg << std::endl; std::cout.flush(); lvm->traceback(); exit(-1);
+#define ERROR(msg) std::cout << msg << std::endl; lvm->traceback(); std::cout.flush(); exit(-1);
 
 #define EXTRACT_2_PARAMS luint16_t idx = luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc)); pc += 2;
 #define EXTRACT_2_PARAMS_1 luint16_t idx1 = luint8_t(*(pc + 1)) << 8 | luint8_t(*(pc)); pc += 2;
@@ -525,23 +525,27 @@ new_frame:
             break;
         }
         case OpCode::op_upset: {
+            OpCode op = (OpCode)*(pc++);
             lpc_value_t *k = sk->pop();
             lpc_value_t *con = sk->pop();
-            lpc_value_t *v = sk->pop();
-            lint8_t op = *(pc++);
+            lpc_value_t *v = nullptr;
+            if (op != OpCode::op_inc && op != OpCode::op_dec && op != OpCode::op_minus) {
+                v = sk->pop();
+            }
+
             if (con->type == value_type::array_) {
                 if (k->type != value_type::int_) {
                     ERROR("error found!");
                 }
 
                 lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(con->gcobj);
-                bool res = arr->upset(v, k->pval.number, OpCode(op));
+                bool res = arr->upset(v, k->pval.number, op);
                 if (!res) {
                     ERROR("upset array failed!!");
                 }
             } else if (con->type == value_type::mappig_) {
                 lpc_mapping_t *map = reinterpret_cast<lpc_mapping_t *>(con->gcobj);
-                bool res = map->upset(k, v, OpCode(op));
+                bool res = map->upset(k, v, op);
                 if (!res) {
                     ERROR("upset mapping failed!!");
                 }
@@ -603,17 +607,14 @@ new_frame:
             call->father = father->get_proto();
             call->inherit_offset = proto->inherit_offsets[idx];
             goto new_frame;
-            break;
         }
         case OpCode::op_return: {
+            lvm->pop_frame();
             if (ci->call_other || ci->call_init) {
-                lvm->pop_frame();
                 return;
             }
 
-            lvm->pop_frame();
             goto new_frame;
-            break;
         }
         case OpCode::op_set_upvalue: {
             ERROR("error found!");

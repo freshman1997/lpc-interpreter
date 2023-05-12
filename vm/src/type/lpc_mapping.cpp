@@ -158,6 +158,8 @@ bool lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v, OpCode op)
         } else {
             if (!b->pair) {
                 b->pair = this->alloc->allocate<lpc_value_t, true>(2);
+                b->pair[0].type = value_type::null_;
+                b->pair[1].type = value_type::null_;
                 ++fill;
                 ++used;
             }
@@ -200,6 +202,39 @@ bool lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v, OpCode op)
             }
         } else {
             return false;
+        }
+        break;
+    }
+    case OpCode::op_inc: {
+        if (val->type == value_type::int_) {
+            val->pval.number++;
+        } else if (val->type == value_type::float_) {
+            val->pval.real++;
+        } else if (val->type == value_type::null_) {
+            val->type = value_type::int_;
+            val->pval.number = 1;
+        }
+        break;
+    }
+    case OpCode::op_dec: {
+         if (val->type == value_type::int_) {
+            val->pval.number--;
+        } else if (val->type == value_type::float_) {
+            val->pval.real--;
+        } else if (val->type == value_type::null_) {
+            val->type = value_type::int_;
+            val->pval.number = -1;
+        }
+        break;
+    }
+    case OpCode::op_minus: {
+        if (val->type == value_type::int_) {
+            val->pval.number = -val->pval.number;
+        } else if (val->type == value_type::float_) {
+            val->pval.real = -val->pval.real;
+        } else if (val->type == value_type::null_) {
+            val->type = value_type::int_;
+            val->pval.number = 0;
         }
         break;
     }

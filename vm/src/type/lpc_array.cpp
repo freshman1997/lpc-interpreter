@@ -37,7 +37,7 @@ bool lpc_array_t::upset(lpc_value_t *v, luint32_t i, OpCode op)
         return false;
     }
     
-    if (v->type != value_type::int_ && v->type != value_type::float_) {
+    if (v && v->type != value_type::int_ && v->type != value_type::float_) {
         return false;
     }
 
@@ -76,6 +76,30 @@ bool lpc_array_t::upset(lpc_value_t *v, luint32_t i, OpCode op)
             }
         } else {
             return false;
+        }
+        break;
+    }
+    case OpCode::op_inc: {
+        if (val->type == value_type::int_) {
+            val->pval.number++;
+        } else if (val->type == value_type::float_) {
+            val->pval.real++;
+        }
+        break;
+    }
+    case OpCode::op_dec: {
+         if (val->type == value_type::int_) {
+            val->pval.number--;
+        } else if (val->type == value_type::float_) {
+            val->pval.real--;
+        }
+        break;
+    }
+    case OpCode::op_minus: {
+        if (val->type == value_type::int_) {
+            val->pval.number = -val->pval.number;
+        } else if (val->type == value_type::float_) {
+            val->pval.number = -val->pval.real;
         }
         break;
     }
