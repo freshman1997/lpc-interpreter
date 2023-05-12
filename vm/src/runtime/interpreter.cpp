@@ -80,7 +80,7 @@ new_frame:
         {
         case OpCode::op_load_global: {
             EXTRACT_2_PARAMS
-            if (idx >= ci->cur_obj->get_proto()->nvariable) {
+            if (idx >= ci->cur_obj->get_proto()->nvariable || idx < 0) {
                 std::string msg = "invalid number to indexing glable varibal: " + std::to_string(idx);
                 ERROR(msg);
             }
@@ -90,7 +90,7 @@ new_frame:
         }
         case OpCode::op_store_global: {
             EXTRACT_2_PARAMS
-            if (idx >= ci->cur_obj->get_proto()->nvariable) {
+            if (idx >= ci->cur_obj->get_proto()->nvariable || idx < 0) {
                 std::string msg = "invalid number to indexing glable varibal: " + std::to_string(idx);
                 ERROR(msg);
             }
@@ -101,7 +101,7 @@ new_frame:
         }
         case OpCode::op_load_local: {
             EXTRACT_2_PARAMS
-            if (idx >= fun->nlocal) {
+            if (idx >= fun->nlocal || idx < 0) {
                 std::string msg = "invalid number to indexing local varibal: " + std::to_string(idx);
                 ERROR(msg);
             }
@@ -110,7 +110,7 @@ new_frame:
         }
         case OpCode::op_store_local: {
             EXTRACT_2_PARAMS
-            if (idx >= fun->nlocal) {
+            if (idx >= fun->nlocal || idx < 0) {
                 std::string msg = "invalid number to indexing local varibal: " + std::to_string(idx);
                 ERROR(msg);
             }
@@ -123,13 +123,13 @@ new_frame:
             EXTRACT_2_PARAMS
             const0.type = value_type::int_;
             if (ci->father) {
-                if ((ci->father->niconst <= idx)) {
+                if ((ci->father->niconst <= idx || idx < 0)) {
                     ERROR("error found: float const index over range!!!");
                 }
 
                 const0.pval.number = ci->father->iconst[idx].item.number;
             } else {
-                if ((ci->cur_obj->get_proto()->niconst <= idx)) {
+                if ((ci->cur_obj->get_proto()->niconst <= idx || idx < 0)) {
                     ERROR("error found: float const index over range!!!");
                 }
 
@@ -143,13 +143,13 @@ new_frame:
             EXTRACT_2_PARAMS
             const0.type = value_type::float_;
             if (ci->father) {
-                if ((ci->father->nfconst <= idx)) {
+                if ((ci->father->nfconst <= idx || idx < 0)) {
                     ERROR("error found: float const index over range!!!");
                 }
 
                 const0.pval.number = ci->father->iconst[idx].item.real;
             } else {
-                if ((ci->cur_obj->get_proto()->nfconst <= idx)) {
+                if ((ci->cur_obj->get_proto()->nfconst <= idx || idx < 0)) {
                     ERROR("error found: float const index over range!!!");
                 }
 
@@ -163,14 +163,14 @@ new_frame:
             EXTRACT_2_PARAMS
             const0.type = value_type::string_;
             if (ci->father) {
-                if ((ci->father->nsconst <= idx)) {
+                if ((ci->father->nsconst <= idx || idx < 0)) {
                     ERROR("error found: string const index over range!!!");
                 }
 
                 lpc_string_t *s = ci->father->sconst[idx].item.str;
                 const0.gcobj = reinterpret_cast<lpc_gc_object_t *>(s);
             } else {
-                if ((ci->cur_obj->get_proto()->nsconst <= idx)) {
+                if ((ci->cur_obj->get_proto()->nsconst <= idx || idx < 0)) {
                     ERROR("error found: string const index over range!!!");
                 }
 
@@ -185,7 +185,7 @@ new_frame:
             EXTRACT_2_PARAMS
             const0.type = value_type::function_;
             object_proto_t *proto = ci->cur_obj->get_proto();
-            if (proto->nfunction <= idx) {
+            if (proto->nfunction <= idx || idx < 0) {
                 ERROR("error found: function index over range!!!");
             }
 
@@ -609,11 +609,12 @@ new_frame:
             goto new_frame;
         }
         case OpCode::op_return: {
-            lvm->pop_frame();
             if (ci->call_other || ci->call_init) {
+                lvm->pop_frame();
                 return;
             }
 
+            lvm->pop_frame();
             goto new_frame;
         }
         case OpCode::op_set_upvalue: {
