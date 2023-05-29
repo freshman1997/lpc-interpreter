@@ -912,6 +912,7 @@ static AbstractExpression * parse_return(Token *tok, Token *t)
             }
 
             tok = t->next;
+            r->fromLine = tok->lineno;
             r = parse_follow(r, tok, t);
             tok = t->next;
         } else {
@@ -1691,6 +1692,7 @@ static AbstractExpression * parse_primary(Token *tok, Token *t, bool fromOp)
     bool is_varargs = false;
     TokenKind initType = TokenKind::k_none;
     bool callInherit = false;
+    lint32_t fromLine = tok->lineno;
 
 start:
     TokenKind k = tok->kind;
@@ -2028,6 +2030,7 @@ clazz:
                 tok = n;
             }
             
+            exp->fromLine = tok->lineno;
             exp = parse_follow(exp, tok->next, t);
             
             if (callInherit) {
@@ -2069,7 +2072,7 @@ clazz:
     } else if (k == TokenKind::k_symbol_qm1 || k == TokenKind::k_symbol_qg1) {
         // 数组字面量
         ConstructExpression *con = new ConstructExpression;
-        con->type = k == TokenKind::k_symbol_qg1 ? 1 : 0;
+        con->ctype = k == TokenKind::k_symbol_qg1 ? 1 : 0;
         TokenKind endKind = (TokenKind)((int)k + 1);
 
         tok = tok->next;
@@ -2130,10 +2133,12 @@ static AbstractExpression * parse_unary(Token *tok, Token *t, bool fromOp)
 
     TokenKind k = tok->kind;
     if (unary_oper.count(k)) {
-        AbstractExpression *exp = parse_binay(tok->next, -1, t);
         UnaryExpression *uExp = new UnaryExpression;
+        uExp->fromLine = tok->lineno;
+        AbstractExpression *exp = parse_binay(tok->next, -1, t);
         uExp->op = k;
         uExp->exp = exp;
+        uExp->toLine = t->next->lineno;
 
         return uExp;
     } else {
@@ -2154,10 +2159,12 @@ static AbstractExpression * parse_unary(Token *tok, Token *t, bool fromOp)
                         }
                     }
 
-                    t->next = tok->next;
                     UnaryExpression *uExp = new UnaryExpression;
+                    uExp->fromLine = exp->fromLine;
+                    t->next = tok->next;
                     uExp->op = k;
                     uExp->exp = exp;
+                    uExp->toLine = t->next->lineno;
 
                     return uExp;
                 }
@@ -2190,6 +2197,7 @@ static AbstractExpression* parse_follow(AbstractExpression *exp, Token *tok, Tok
                 error(tok);
             }
             call->callee = last;
+            call->fromLine = last->fromLine;
             last = call;
         } else if (tok->kind == TokenKind::k_symbol_qm1) {
             AbstractExpression *i = parse_index(tok, t);
@@ -2202,6 +2210,7 @@ static AbstractExpression* parse_follow(AbstractExpression *exp, Token *tok, Tok
                 error(tok);
             }
             idx->l = last;
+            idx->fromLine = last->fromLine;
             last = idx;
         } else if (tok->kind == TokenKind::k_cmp_quetion) {
             AbstractExpression *triple = parse_triple(tok, t);
@@ -2215,6 +2224,7 @@ static AbstractExpression* parse_follow(AbstractExpression *exp, Token *tok, Tok
             }
             
             tp->cond = last;
+            tp->fromLine = last->fromLine;
             last = tp;
         } else {
             break;
@@ -2227,10 +2237,17 @@ static AbstractExpression* parse_follow(AbstractExpression *exp, Token *tok, Tok
 
 static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
 {
+    lint32_t fromLine = tok->lineno;
     AbstractExpression *exp1 = parse_unary(tok, cache, false);
+    exp1->fromLine = fromLine;
     tok = cache->next;
     if (!tok) {
         return exp1;
+    }
+
+    exp1->toLine = tok->lineno;
+    if (exp1->fromLine == exp1->toLine) {
+        exp1->toLine++;
     }
 
     int tprec = get_pre(tok->kind);
@@ -2242,6 +2259,7 @@ static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
             error(tok);
         }
 
+        exp2->fromLine = fromLine;
         exp2 = parse_follow(exp2, cache->next, cache);
 
         BinaryExpression *op = new BinaryExpression;
@@ -2251,6 +2269,8 @@ static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
 
         exp1 = op;
         tok = cache->next;
+        op->fromLine = fromLine;
+        op->toLine = tok->lineno;
         if (!tok) {
             break;
         }

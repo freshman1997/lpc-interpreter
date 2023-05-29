@@ -120,23 +120,8 @@ public:
         return nullptr;
     }
 
-    std::pair<lint16_t, lint16_t> find_inherit_func(const string &name)
-    {
-        lint16_t idx = 0;
-        for (auto &it : inherits) {
-            CodeGenerator *g = reinterpret_cast<CodeGenerator *>(it->gen);
-            std::vector<Func> &fs = g->get_funcs();
-            for (auto &it1 : fs) {
-                if (it1.name->strval == name) {
-                    return {inherits.size() - idx - 1, it1.idx};
-                }
-            }
-            ++idx;
-        }
-
-        return {-1, -1};
-    }
-
+    std::pair<lint16_t, lint16_t> find_inherit_func(const string &name);
+    
     void set_parsed_files(vector<AbstractExpression *> *parsed_files)
     {
         this->parsed_files = parsed_files;
@@ -145,18 +130,27 @@ public:
     void dump();
 
 private:
+    void line_change();
+
     bool on_var_decl = false;
     std::string cur_scope;
     std::string object_name;
     std::vector<luint8_t> var_init_codes;
     std::vector<luint8_t> opcodes;
 
+    
+    // 行数：指令偏移
+    std::vector<std::pair<lint32_t, lint32_t>> initLineMap;
+    std::vector<std::pair<lint32_t, lint32_t>> opLineMap;
+    lint32_t init_line = 0;
+    lint32_t op_line = 0;
+
     std::vector<ClassDecl> clazz;
     std::set<std::string> pre_decl_funcs;
     std::vector<Func> funcs;
-    luint16_t create_idx = -1;
-    luint16_t onload_in_idx = -1;
-    luint16_t on_destruct_idx = -1;
+    lint16_t create_idx = -1;
+    lint16_t onload_in_idx = -1;
+    lint16_t on_destruct_idx = -1;
 
     // 一个 block 就会有一层，主要是 switch case 下面的声明
     std::unordered_map<std::string, std::vector<Local>> locals;

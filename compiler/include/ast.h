@@ -3,7 +3,6 @@
 #include <vector>
 #include <string>
 
-#include "visitor.h"
 #include "token.h"
 
 using namespace std;
@@ -48,35 +47,26 @@ enum class DeclType
     mixed_,
     object_,
     string_,
+    array_,
+    buffer_,
     func_,
     class_,
     user_define_,
     varargs_,
 };
 
-class ExpressionVisitor
-{
+class AbstractExpression {
 public:
-    virtual void accept(Visitor *visitor) = 0;
+    lint32_t fromLine = 0;
+    lint32_t toLine = 0;
     virtual ExpressionType get_type() = 0;
-    virtual string get_name() = 0;
-    virtual void pre_print(int deep) = 0;
-
-    virtual ~ExpressionVisitor() {};
-};
-
-class AbstractExpression : public ExpressionVisitor
-{
+    virtual ~AbstractExpression(){}
 };
 
 class VarDeclExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
-
+    virtual ExpressionType get_type() { return ExpressionType::var_decl_; };
     bool varargs = false;
     bool is_arr = false;
     bool is_static = false;
@@ -88,24 +78,15 @@ public:
 class ConstructExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
-    ~ConstructExpression() {}
-
-    int type;       // 0 数组， 1 哈希表
+    virtual ExpressionType get_type() { return ExpressionType::construct_; };
+    int ctype;       // 0 数组， 1 哈希表
     vector<AbstractExpression *> body;
 };
 
 class ValueExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
-    virtual ~ValueExpression(){};
+    virtual ExpressionType get_type() { return ExpressionType::value_; };
 
     bool is_arr = false;    // for 连续声明
     bool is_var_arg = false;
@@ -124,10 +105,8 @@ public:
 class UnaryExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::uop_; };
+
 
     TokenKind op = TokenKind::k_none;
     AbstractExpression *exp = nullptr;
@@ -137,10 +116,7 @@ public:
 class BinaryExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::oper_; };
 
     TokenKind oper = TokenKind::k_none;
     AbstractExpression *l = nullptr;
@@ -150,10 +126,7 @@ public:
 class FunctionDeclExpression : public VarDeclExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::func_decl_; };
 
     bool is_arr = false;
     bool lambda = false;
@@ -166,10 +139,7 @@ public:
 class CallExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::call_; };
 
     bool callInherit = false;
     AbstractExpression *callee = nullptr;
@@ -179,10 +149,7 @@ public:
 class IndexExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::index_; };
 
     bool toend = false;
     AbstractExpression *l = nullptr;
@@ -193,10 +160,7 @@ public:
 class NewExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::new_; };
 
     AbstractExpression *id = nullptr;
     vector<AbstractExpression *> inits;
@@ -205,10 +169,7 @@ public:
 class ImportExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::import_; };
 
     vector<Token *> path;
     Token *asName = nullptr;
@@ -217,10 +178,7 @@ public:
 class TripleExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::triple_; };
 
     AbstractExpression *cond = nullptr;
     AbstractExpression *first = nullptr;
@@ -230,10 +188,8 @@ public:
 class IfExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::if_; };
+
     struct If {
         int type;   // 0 if, 1 else if, 2 else
         AbstractExpression *cond = nullptr;
@@ -246,10 +202,7 @@ public:
 class ForNormalExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::for_normal_; };
 
     vector<AbstractExpression *> inits;
     vector<AbstractExpression *> conditions;
@@ -260,10 +213,7 @@ public:
 class ForeachExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::foreach_; };
 
     vector<AbstractExpression*> decls;
     AbstractExpression *container = nullptr;
@@ -273,10 +223,7 @@ public:
 class ReturnExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::return_; };
 
     AbstractExpression *ret = nullptr;
 };
@@ -284,28 +231,19 @@ public:
 class BreakExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::break_; };
 };
 
 class ContinueExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::continue_; };
 };
 
 class whileExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::while_; };
 
     AbstractExpression *cond = nullptr;
     vector<AbstractExpression *> body;
@@ -314,10 +252,7 @@ public:
 class DoWhileExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::do_while_; };
 
     AbstractExpression *cond = nullptr;
     vector<AbstractExpression *> body;
@@ -326,10 +261,7 @@ public:
 class CaseExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::case_; };
 
     AbstractExpression *caser = nullptr;
     vector<AbstractExpression *> bodys;
@@ -338,19 +270,13 @@ public:
 class DefaultExpression : public CaseExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::default_; };
 };
 
 class SwitchCaseExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::switch_case_; };
 
     AbstractExpression *selector = nullptr;
     vector<AbstractExpression *> cases;
@@ -359,10 +285,7 @@ public:
 class ClassExpression : public VarDeclExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
+    virtual ExpressionType get_type() { return ExpressionType::class_; };
 
     Token *className= nullptr;
     vector<AbstractExpression *> fields;
@@ -371,11 +294,7 @@ public:
 class DocumentExpression : public AbstractExpression
 {
 public:
-    virtual void accept(Visitor *visitor);
-    virtual string get_name();
-    virtual void pre_print(int deep);
-    virtual ExpressionType get_type();
-    ~DocumentExpression() {}
+    virtual ExpressionType get_type() { return ExpressionType::document_; };
 
     string file_name;
     // funcs, fields

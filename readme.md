@@ -46,3 +46,6 @@ void create()
 ``"char/user.c"``, ``"module/template/mail.c"`` 这种形式表示
 
 测试请修改 ``vm/src/runtime/vm.cpp`` 下的加载二进制文件路径
+
+
+2023.5.30 此项目后续可能不再维护，因为好像不值得。

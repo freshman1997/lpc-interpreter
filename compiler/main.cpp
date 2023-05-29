@@ -107,7 +107,7 @@ int main(int argc, char **argv)
 
 	vector<AbstractExpression *> *docs = parser.parse(cwd.c_str());
 	for (auto &it : *docs) {
-		DocumentExpression *doc = dynamic_cast<DocumentExpression *>(it);
+		DocumentExpression *doc = static_cast<DocumentExpression *>(it);
 		if (doc->gen) continue;
 
 		generate_one(doc, docs);

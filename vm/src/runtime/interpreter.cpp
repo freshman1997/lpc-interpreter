@@ -31,7 +31,9 @@
         v2->pval.real = v2->pval.real op v1->pval.number; \
     } else if (v1->type == value_type::float_ && v2->type == value_type::float_){ \
         v2->pval.real = v2->pval.real op v1->pval.real; \
-    } \
+    } else { \
+        ERROR("unsupport opertion!!") \
+    }\
     sk->push(v2);
 
 #define SOME_CMP(op) \
@@ -75,6 +77,11 @@ new_frame:
     }
 
     for(;;) {
+        if (lvm->is_debug() && !lvm->check_run()) {
+            ci->savepc = pc;
+            break;
+        }
+
         OpCode op = (OpCode)*(pc++);
         switch (op)
         {
@@ -229,7 +236,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v2->pval.number % v1->pval.number;
             } else {
-                ERROR("error found!");
+                ERROR("error found: only integer number can use / operator!");
             }
             sk->push(v2);
             break;
@@ -240,7 +247,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v1->pval.number << v2->pval.number;
             } else {
-                ERROR("error found!");
+                ERROR("error found on oper << !");
             }
             sk->push(v2);
             break;
@@ -251,7 +258,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v1->pval.number >> v2->pval.number;
             } else {
-                ERROR("error found!");
+                ERROR("error found on oper >> !");
             }
             sk->push(v2);
             break;
@@ -262,7 +269,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v1->pval.number & v2->pval.number;
             } else {
-                ERROR("error found!");
+                ERROR("error found on oper & !");
             }
             sk->push(v2);
             break;
@@ -273,7 +280,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v1->pval.number | v2->pval.number;
             } else {
-                ERROR("error found!");
+                ERROR("error found on oper | !");
             }
             sk->push(v2);
             break;
@@ -283,7 +290,7 @@ new_frame:
             if (v1->type ==  value_type::int_) {
                 v1->pval.number = ~v1->pval.number;
             } else {
-                ERROR("error found!");
+                ERROR("error found on oper ~ !");
             }
             sk->push(v1);
             break;
@@ -294,7 +301,7 @@ new_frame:
             if (v1->type ==  value_type::int_ && v2->type == value_type::int_) {
                 v2->pval.number = v1->pval.number ^ v2->pval.number;
             } else {
-                ERROR("error found!");
+                ERROR("error found on oper ^ !");
             }
             sk->push(v2);
             break;
@@ -535,7 +542,7 @@ new_frame:
 
             if (con->type == value_type::array_) {
                 if (k->type != value_type::int_) {
-                    ERROR("error found!");
+                    ERROR("error found: only integer number can index a array object!");
                 }
 
                 lpc_array_t *arr = reinterpret_cast<lpc_array_t *>(con->gcobj);
@@ -576,12 +583,12 @@ new_frame:
             } else {
                 lpc_value_t *val = sk->pop();
                 if (val->type != value_type::function_) {
-                    ERROR("error found!");
+                    ERROR("error found on calling a function!");
                 }
 
                 lpc_function_t *f = reinterpret_cast<lpc_function_t *>(val->gcobj);
                 if (f->idx < 0) {
-                    ERROR("error found!");
+                    ERROR("error found: not a function object!");
                 }
                 
                 ci->savepc = pc;
@@ -615,14 +622,18 @@ new_frame:
             }
 
             lvm->pop_frame();
-            goto new_frame;
+            if (lvm->get_call_info() != nullptr) {
+                goto new_frame;
+            }
+
+            return;
         }
         case OpCode::op_set_upvalue: {
-            ERROR("error found!");
+            ERROR("error found: unimplements yet!");
             break;
         }
         case OpCode::op_get_upvalue: {
-            ERROR("error found!");
+            ERROR("error found: unimplements yet!");
             break;
         }
         case OpCode::op_new_class: {
@@ -640,12 +651,12 @@ new_frame:
             lpc_value_t *clazz = sk->pop();
             lpc_value_t *val = sk->pop(); 
             if (clazz->type != value_type::array_ || clazz->subtype != value_type::class_) {
-                ERROR("error found!");
+                ERROR("error found: not a class object!");
             }
 
             lpc_array_t &arr = clazz->gcobj->arr;
             if (arr.get_size() <= idx) {
-                ERROR("error found!");
+                ERROR("error found: can not set class field!");
             }
             arr.set(val, idx);
             break;
@@ -655,11 +666,11 @@ new_frame:
             lpc_value_t *clazz = sk->pop();
             lpc_value_t *val = sk->pop(); 
             if (clazz->type != value_type::array_ || clazz->subtype != value_type::class_) {
-                ERROR("error found!");
+                ERROR("error found: not a class object!");
             }
             lpc_array_t &arr = clazz->gcobj->arr;
             if (arr.get_size() <= idx) {
-                ERROR("error found!");
+                ERROR("error found: can not set class field!");
             }
             const0 = *arr.get(idx);
             sk->push(&const0);
@@ -679,7 +690,7 @@ new_frame:
             } else if (val->type == value_type::int_) {
                 const0.pval.number = val->pval.number;
             } else {
-                ERROR("error found!");
+                ERROR("error found: only string or number can calculate a hash number!");
             }
             
             // 查找跳转表

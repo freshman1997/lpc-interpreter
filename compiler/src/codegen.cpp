@@ -180,6 +180,25 @@ static luint16_t find_func_idx(const string &name, vector<Func> &con)
         } \
     }
 
+#define LINE_CHECK(exp) \
+    if (on_var_decl) { \
+        if (!init_line) { \
+            init_line = exp->fromLine - 1; \
+        } \
+        if (exp->toLine > init_line) { \
+            line_change(); \
+            init_line = exp->toLine; \
+        } \
+    } else { \
+        if (!op_line) { \
+            op_line = exp->fromLine - 1; \
+        } \
+        if (exp->toLine > op_line) { \
+            line_change(); \
+            op_line = exp->toLine; \
+        } \
+    }
+
 #define GENERATE_OP(exp, check) \
     if (exp->get_type() == ExpressionType::index_) { \
         generate_index(exp, false); \
@@ -196,7 +215,8 @@ static luint16_t find_func_idx(const string &name, vector<Func> &con)
         GENERATE_VALUE(exp, check) \
     } else { \
         error_at(__LINE__);\
-    }
+    }\
+    LINE_CHECK(exp)
 
 
 #define GENERATE_BODY(body, cons) \
@@ -236,7 +256,8 @@ static luint16_t find_func_idx(const string &name, vector<Func> &con)
                 break; \
             } \
             case ExpressionType::index_: { \
-                generate_index(it, true); \
+                /* skip */ \
+                /*generate_index(it, true); */\
                 break;\
             } \
             case ExpressionType::break_: { \
@@ -277,6 +298,7 @@ static luint16_t find_func_idx(const string &name, vector<Func> &con)
                 break; \
             } \
         } \
+        LINE_CHECK(it) \
     }
 
 
@@ -332,6 +354,23 @@ static void find_all_inherits(vector<AbstractExpression *> &container, vector<Do
     }
 }
 
+std::pair<lint16_t, lint16_t> CodeGenerator::find_inherit_func(const string &name)
+{
+    lint16_t idx = 0;
+    for (auto &it : inherits) {
+        CodeGenerator *g = reinterpret_cast<CodeGenerator *>(it->gen);
+        std::vector<Func> &fs = g->get_funcs();
+        for (auto &it1 : fs) {
+            if (it1.name->strval == name) {
+                return {inherits.size() - idx - 1, it1.idx};
+            }
+        }
+        ++idx;
+    }
+
+    return {-1, -1};
+}
+
 extern void generate_one(DocumentExpression *doc, vector<AbstractExpression *> *docs);
 
 void CodeGenerator::generate(AbstractExpression *exp)
@@ -343,7 +382,7 @@ void CodeGenerator::generate(AbstractExpression *exp)
         // copy field
         find_all_inherits(*this->parsed_files, inherits, doc);
         if (inherits.empty()) {
-            error_at(__LINE__);
+            error_at(__LINE__);\
         }
 
         auto &locs = this->locals[object_name];
@@ -396,6 +435,8 @@ void CodeGenerator::generate(AbstractExpression *exp)
                 break;
             }
         }
+
+        LINE_CHECK(it)
     }
 }
 
@@ -435,7 +476,7 @@ void CodeGenerator::generate_unop(AbstractExpression *exp)
     }
 
     if (uop->exp->get_type() == ExpressionType::value_) {
-        ValueExpression *v =dynamic_cast<ValueExpression *>(uop->exp);
+        ValueExpression *v = dynamic_cast<ValueExpression *>(uop->exp);
         if (v->valType == 2 || v->valType == 3) {
             error_at(__LINE__);
         }
@@ -470,20 +511,20 @@ void CodeGenerator::generate_unop(AbstractExpression *exp)
                     if (idx < 0) {
                         error_at(__LINE__);
                     }
-                    opcodes.push_back((luint8_t)(OpCode::op_store_global));
+                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_store_global));
                 } else {
-                    opcodes.push_back((luint8_t)(OpCode::op_store_local));
+                    (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_store_local));
                 }
-                LOAD_IDX_2(opcodes, idx)
+                LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
             } else {
                 error_at(__LINE__);
             }
         }
     } else if (uop->exp->get_type() == ExpressionType::index_) {
         luint8_t op = opcodes.back();
-        opcodes.pop_back();
-        opcodes.push_back((luint8_t)OpCode::op_upset);
-        opcodes.push_back(op);
+        (on_var_decl ? var_init_codes : opcodes).pop_back();
+        (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)OpCode::op_upset);
+        (on_var_decl ? var_init_codes : opcodes) .push_back(op);
     } else if (uop->exp->get_type() == ExpressionType::uop_) {
         generate_unop(uop->exp);
     } else if (uop->exp->get_type() == ExpressionType::oper_) {
@@ -721,7 +762,7 @@ void CodeGenerator::generate_ctor(AbstractExpression *exp)
     } 
     
     const char * idx2char = (const char *)&count;
-    if (ctor->type) {
+    if (ctor->ctype) {
         if (count % 2 != 0) { 
             error_at(__LINE__); 
         } 
@@ -1934,7 +1975,8 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
                     break;
                 }
                 case ExpressionType::index_: {
-                    generate_index(it, true);
+                    // skip
+                    // generate_index(it, true);
                     break;
                 }
                 case ExpressionType::switch_case_: {
@@ -1957,6 +1999,8 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
                     break;
                 }
             }
+
+            LINE_CHECK(it)
         }
     } else {
         pre_decl_funcs.insert(funDecl->name->strval);
@@ -1976,6 +2020,15 @@ void CodeGenerator::generate_func(AbstractExpression *exp)
     }
 }
 
+void CodeGenerator::line_change()
+{
+    if (on_var_decl) {
+        initLineMap.push_back({init_line, var_init_codes.size()});
+    } else {
+        opLineMap.push_back({op_line, opcodes.size()});
+    }
+}
+
 static string get_pure_name(const string &src)
 {
     const string &cwd = get_cwd();
@@ -1986,7 +2039,7 @@ void CodeGenerator::dump()
 {
     size_t idx = object_name.find_last_of(".");
     if (idx == string::npos) {
-        return;
+        idx = object_name.size();
     }
 
     string bFile = object_name.substr(0, idx) + ".b";
@@ -2093,9 +2146,26 @@ void CodeGenerator::dump()
     out.write((char *)&sz, 4);
     out.write(reinterpret_cast<char *>(var_init_codes.data()), sz);
 
+    sz = initLineMap.size();
+    out.write((char *)&sz, 4);
+    if (sz > 0) {
+        for (auto &it : initLineMap) {
+            out.write((char *)&it.first, 4);
+            out.write((char *)&it.second, 4);
+        }
+    }
+
     sz = opcodes.size();
     out.write((char *)&sz, 4);
-    out.write(reinterpret_cast<char *>((on_var_decl ? var_init_codes : opcodes).data()), sz);
+    out.write(reinterpret_cast<char *>(opcodes.data()), sz);
+    sz = opLineMap.size();
+    out.write((char *)&sz, 4);
+    if (sz > 0) {
+        for (auto &it : opLineMap) {
+            out.write((char *)&it.first, 4);
+            out.write((char *)&it.second, 4);
+        }
+    }
 
     out.close();
 }

@@ -12,6 +12,7 @@
 #include "memory/memory.h"
 #include "gc/gc.h"
 #include "type/lpc_string.h"
+#include "debug.h"
 
 using namespace std;
 extern string get_cwd();
@@ -23,7 +24,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     if (!name) return nullptr;
     const string &cwd = get_cwd();
 #ifdef WIN32
-    string realName = "D:/test/test/lpc-interpreter/build/compiler/Debug/" + string(name) + ".b";
+    string realName = "D:/code/src/vs/lpc-interpreter/build/compiler/Debug/" + string(name) + ".b";
 #else
     string realName = "/home/yuan/codes/test/lpc/build/compiler/" + string(name) + ".b";
 #endif
@@ -210,6 +211,16 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     }
 
     in.read((char *)&sz, 4);
+    if (sz > 0) {
+        lint32_t lineno = 0, opoff = 0;
+        for (lint32_t i = 0; i < sz; ++i) {
+            in.read((char *)&lineno, 4);
+            in.read((char *)&opoff, 4);
+            proto->initLineMap.push_back({lineno + 1, opoff});
+        }
+    }
+
+    in.read((char *)&sz, 4);
     proto->instructions = nullptr;
     proto->instruction_size = 0;
     if (sz > 0) {
@@ -218,6 +229,16 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 
         proto->instructions = opcodes;
         proto->instruction_size = sz;
+    }
+
+    in.read((char *)&sz, 4);
+    if (sz > 0) {
+        lint32_t lineno = 0, opoff = 0;
+        for (lint32_t i = 0; i < sz; ++i) {
+            in.read((char *)&lineno, 4);
+            in.read((char *)&opoff, 4);
+            proto->lineMap.push_back({lineno + 1, opoff});
+        }
     }
 
     in.close();
@@ -278,7 +299,7 @@ lpc_object_t * lpc_vm_t::find_oject(lpc_value_t *name)
 lpc_vm_t::lpc_vm_t()
 {
     init_efuns(this);
-    this->stack = new lpc_stack_t(20000);
+    this->stack = new lpc_stack_t(20000, this);
     this->alloc = new lpc_allocator_t(this);
     this->gc = new lpc_gc_t(this);
 
@@ -288,6 +309,7 @@ lpc_vm_t::lpc_vm_t()
     cur_ci = nullptr;
     entry = "1";
     sfun_object_name = "rc/simulate_efun";
+    dbg = nullptr;
 }
 
 lpc_vm_t * lpc_vm_t::create_vm()
@@ -303,7 +325,6 @@ void lpc_vm_t::bootstrap()
     
     lpc_object_t *obj = load_object(entry);
     this->entry_obj = obj;
-    
 }
 
 void lpc_vm_t::set_entry(const char *entry)
@@ -324,6 +345,27 @@ void lpc_vm_t::on_exit()
 void lpc_vm_t::load_config()
 {
     
+}
+
+void lpc_vm_t::run_main()
+{
+    string main = "main";
+    object_proto_t *proto = entry_obj->get_proto();
+    if (proto->func_table) {
+        lint16_t funIdx = -1;
+        for (int i = 0; i < proto->nfunction; ++i) {
+            auto *fun = &proto->func_table[i];
+            if (0 == strcmp(fun->name, main.c_str()) && !fun->is_static) {
+                funIdx = i;
+                break;
+            }
+        }
+
+        if (funIdx >= 0) {
+            new_frame(entry_obj, funIdx);
+            run();
+        }
+    }
 }
 
 lpc_stack_t * lpc_vm_t::get_stack()
@@ -400,9 +442,7 @@ void lpc_vm_t::pop_frame()
         if (pre->call_other) {
             cur_ci = nullptr;
             delete pre;
-            return;
         }
-        cur_ci = pre;
         return;
     }
 
@@ -410,7 +450,7 @@ void lpc_vm_t::pop_frame()
     object_proto_t *proto = pre->father ? pre->father : pre->cur_obj->get_proto();
     const function_proto_t &f = proto->func_table[pre->funcIdx];
 
-    int n = f.nlocal - f.nargs;
+    int n = f.nlocal;
     int n1 = stack->top() - base;
     n = n1 > n ? n1 : n;
     
@@ -488,6 +528,7 @@ void lpc_vm_t::traceback()
 {
     call_info_t *tmp = base_ci;
     stringstream buf;
+    buf << "stack: \n";
     while (tmp) {
         buf << "in file: ";
         if (tmp->father) {
@@ -512,4 +553,23 @@ void lpc_vm_t::panic()
 void lpc_vm_t::stack_overflow()
 {
     // 跳回去    
+}
+
+void lpc_vm_t::on_debug_mode()
+{
+    this->dbg = new lpc_debugger_t(this);
+}
+
+bool lpc_vm_t::check_run()
+{
+    if (dbg) {
+        return dbg->can_run();
+    } 
+
+    return true;
+}
+
+void lpc_vm_t::start_debug()
+{
+    dbg->start();
 }

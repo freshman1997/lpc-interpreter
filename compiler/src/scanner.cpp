@@ -302,10 +302,11 @@ start:
             c = scanner->read();
         }
 
-        if (keywords.count(t->strval)) 
+        t->kind = TokenKind::k_identity;
+        
+        if (keywords.count(t->strval)) {
             t->kind = keywords[t->strval];
-        else 
-            t->kind = TokenKind::k_identity;
+        }
 
         //scanner->peek1();
         t->newline = scanner->peek() == '\n';

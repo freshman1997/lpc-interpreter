@@ -5,6 +5,12 @@
 #include "lpc.h"
 #include "type/lpc_string.h"
 
+class variable_proto_t
+{
+public:
+    const char *name = nullptr;
+    lint32_t offset;
+};
 
 class function_proto_t
 {
@@ -18,13 +24,7 @@ public:
     lint32_t offset;
     lint32_t fromPC = 0;                // 在当前对象指令的位置
     lint32_t toPC = 0;
-};
-
-class variable_proto_t
-{
-public:
-    const char *name = nullptr;
-    lint32_t offset;
+    variable_proto_t *vprotos = nullptr;
 };
 
 class class_proto_t
@@ -46,17 +46,6 @@ class constant_proto_t
 {
 public:
     const_t item;
-};
-
-struct op_line_map_t
-{
-
-};
-
-class line_info_t
-{
-public:
-
 };
 
 class object_proto_t
@@ -105,6 +94,13 @@ public:
     std::vector<std::unordered_map<lint32_t, lint32_t>> *lookup_table;
     // 第几个：goto
     std::unordered_map<lint32_t, lint32_t> *defaults;
+
+    // 全局变量原型
+    variable_proto_t *gvprotos = nullptr;
+    
+    // 行数：指令位置
+    std::vector<std::pair<luint32_t, luint32_t>> initLineMap;
+    std::vector<std::pair<luint32_t, luint32_t>> lineMap;
 };
 
 #endif

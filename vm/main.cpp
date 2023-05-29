@@ -64,8 +64,15 @@ int main(int argc, char **argv)
 	time_t start = clock();
     lpc_vm_t *vm = lpc_vm_t::create_vm();
     vm->bootstrap();
+
+	//vm->on_debug_mode();
+	//vm->start_debug();
+	vm->run_main();
+
 	cout << "Exited normally.\n";
 	time_t end = clock();
 	cout << "spent: " << (end - start) << endl;
+	cout.flush();
+	
 	return 0;
 }

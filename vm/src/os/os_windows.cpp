@@ -1,6 +1,8 @@
 ﻿#include "os/os.h"
 #include "os/os_windows.h"
 
+extern std::string GetFormatTime();
+
 #ifdef WIN32
 
 #include <Windows.h>  
@@ -9,9 +11,9 @@
 #pragma comment(lib,"DbgHelp.lib")  
 
 // 创建Dump文件  
-void CreateDumpFile(LPCWSTR lpstrDumpFilePathName, EXCEPTION_POINTERS *pException)  
+void CreateDumpFile(LPCSTR lpstrDumpFilePathName, EXCEPTION_POINTERS *pException)  
 {  
-    HANDLE hDumpFile = CreateFileW(lpstrDumpFilePathName, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);  
+    HANDLE hDumpFile = CreateFile(lpstrDumpFilePathName, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);  
 
     // Dump信息  
     MINIDUMP_EXCEPTION_INFORMATION dumpInfo;  
@@ -27,7 +29,7 @@ void CreateDumpFile(LPCWSTR lpstrDumpFilePathName, EXCEPTION_POINTERS *pExceptio
 // 处理Unhandled Exception的回调函数  
 LONG ApplicationCrashHandler(EXCEPTION_POINTERS *pException)  
 {     
-    CreateDumpFile(L"Test.dmp", pException); 
+    CreateDumpFile((GetFormatTime() + ".dmp").c_str(), pException); 
     return EXCEPTION_EXECUTE_HANDLER;  
 }  
 

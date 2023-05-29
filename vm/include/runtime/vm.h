@@ -10,6 +10,7 @@ struct lpc_value_t;
 class lpc_stack_t;
 class lpc_allocator_t;
 class lpc_gc_t;
+class lpc_debugger_t;
 
 struct call_info_t
 {
@@ -47,6 +48,8 @@ public:
     {
         vm::eval(this);
     }
+
+    void run_main();
 
     call_info_t * get_call_info();
     call_info_t * get_base_call()
@@ -104,6 +107,12 @@ public:
     void panic();
     void stack_overflow();
 
+    void on_debug_mode();
+    bool is_debug() { return dbg != nullptr; }
+    bool check_run();
+
+    void start_debug();
+
 private:
     lpc_vm_t();
     const char *entry;
@@ -124,6 +133,7 @@ private:
     lpc_object_t *sfun_obj;     // sfun obj，调用是根据偏移找到
     lpc_allocator_t * alloc;
     lpc_gc_t *gc;
+    lpc_debugger_t *dbg;
 };
 
 #endif
