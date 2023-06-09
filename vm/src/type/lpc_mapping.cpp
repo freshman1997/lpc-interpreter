@@ -3,7 +3,6 @@
 #include "type/lpc_string.h"
 #include "type/lpc_array.h"
 #include "type/lpc_mapping.h"
-#include <stdlib.h>
 
 extern int hash_(const char *str);
 extern int hash_pointer(int x);

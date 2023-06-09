@@ -1,4 +1,5 @@
-﻿#include <string>
+﻿#include <stdlib.h>
+#include <string>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -531,10 +532,15 @@ void lpc_vm_t::traceback()
     buf << "stack: \n";
     while (tmp) {
         buf << "in file: ";
-        if (tmp->father) {
-            buf << tmp->father->name << ", func: " << tmp->father->func_table[tmp->funcIdx].name << "\n";
+        if (tmp->call_init) {
+            lint32_t fIdx = abs(tmp->funcIdx);
+            if (tmp->father) {
+                buf << tmp->father->name << ", func: " << tmp->father->func_table[fIdx].name << "\n";
+            } else {
+                buf << tmp->cur_obj->get_proto()->name << ", func: " << tmp->cur_obj->get_proto()->func_table[fIdx].name << "\n";
+            }
         } else {
-            buf << tmp->cur_obj->get_proto()->name << ", func: " << tmp->cur_obj->get_proto()->func_table[tmp->funcIdx].name << "\n";
+            buf << "init object \n"; 
         }
 
         tmp = tmp->next;

@@ -45,17 +45,17 @@ union lpc_gc_object_t
 
 struct lpc_value_t
 {
-    value_type type;
-    value_type subtype;
+    value_type type = value_type::null_;
+    value_type subtype = value_type::null_;
 
     union pure_val
     {
         float real;
         int number;
         unsigned char byte;
-    } pval;
+    } pval = {0};
     
-    lpc_gc_object_t *gcobj;
+    lpc_gc_object_t *gcobj = nullptr;
 };
 
 #endif

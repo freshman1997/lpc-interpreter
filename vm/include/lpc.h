@@ -18,10 +18,10 @@ typedef const char *            lstring_t;
 
 union lpc_gc_object_t;
 struct gc_header{
-    lpc_gc_object_t * next;
-    lpc_gc_object_t *gclist;
-    lint8_t marked;
-    lint8_t type;
+    lpc_gc_object_t * next = nullptr;
+    lpc_gc_object_t *gclist = nullptr;
+    lint8_t marked = 0;
+    lint8_t type = 0;
 };
 
 class lpc_vm_t;

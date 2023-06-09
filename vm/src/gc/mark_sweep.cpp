@@ -10,9 +10,15 @@
 
 void mark_sweep_gc::mark(lpc_gc_object_t *obj)
 {
+    if (!obj) {
+        this->vm->panic();    
+    }
+    
     switch ((value_type)obj->head.type)
     {
     case value_type::function_:
+    case value_type::buffer_:
+    case value_type::closure_:
     case value_type::string_: {
         obj->head.marked = 1;
         break;
@@ -55,7 +61,7 @@ void mark_sweep_gc::mark(lpc_gc_object_t *obj)
         for (int i = 0; i < proto->nvariable; ++i) {
             lpc_value_t *val = &locs[i];
             if (val->type >= value_type::buffer_) {
-                mark(locs[i].gcobj);
+                mark(val->gcobj);
             }
         }
 

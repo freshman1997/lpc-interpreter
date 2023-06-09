@@ -357,7 +357,7 @@ new_frame:
             lpc_value_t *val1 = sk->pop();
             const0.type = value_type::int_;
             if (val1->type == value_type::int_) {
-                const0.pval.number = !val1->pval.number;
+                const0.pval.number = ~val1->pval.number;
             } else if (val1->type == value_type::float_) {
                 const0.pval.number = !val1->pval.real;
             } else {
@@ -690,7 +690,7 @@ new_frame:
             } else if (val->type == value_type::int_) {
                 const0.pval.number = val->pval.number;
             } else {
-                ERROR("error found: only string or number can calculate a hash number!");
+                ERROR("error found: only string or number can be calculated a hash number!");
             }
             
             // 查找跳转表

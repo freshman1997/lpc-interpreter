@@ -1,6 +1,7 @@
 #include "lpc_value.h"
 #include "runtime/stack.h"
 #include "runtime/vm.h"
+#include <iostream>
 
 lpc_stack_t::lpc_stack_t(lint32_t sz, lpc_vm_t *_vm)
 {
@@ -33,15 +34,18 @@ lpc_value_t * lpc_stack_t::top()
 void lpc_stack_t::check_stack(lint32_t n)
 {
     call_info_t *cur_ci = vm->get_call_info();
-    lint32_t nparam = 0;
-    if (cur_ci->father) {
-        nparam = cur_ci->father->func_table[cur_ci->funcIdx].nlocal;
-    } else {
-        nparam = cur_ci->cur_obj->get_proto()->func_table[cur_ci->funcIdx].nlocal;
-    }
+    if (!cur_ci->call_init) {
+        lint32_t nparam = 0;
+        if (cur_ci->father) {
+            nparam = cur_ci->father->func_table[abs(cur_ci->funcIdx)].nlocal;
+        } else {
+            nparam = cur_ci->cur_obj->get_proto()->func_table[abs(cur_ci->funcIdx)].nlocal;
+        }
 
-    if (cur_ci->base + nparam > stack + idx - n) {
-        vm->panic();
+        if (cur_ci->base + nparam > stack + idx - n) {
+            std::cout << "xxxxxxxxxxxxxx " << idx << ", " << n << ", " << cur_ci->funcIdx;
+            vm->panic();
+        }
     }
 }
 
