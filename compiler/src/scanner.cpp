@@ -5,6 +5,24 @@
 
 using namespace std;
 
+#define READ_SYMBOL \
+    if ((c & 0x80) == 0x00) { \
+        t->strval.push_back(c); \
+    } else if ((c & 0xE0) == 0xC0) { /* 下面是正常读取中文字符的 */ \
+        t->strval.push_back(c); \
+        t->strval.push_back(scanner->read()); \
+    } else if ((c & 0xF0) == 0xE0) { \
+        t->strval.push_back(c); \
+        t->strval.push_back(scanner->read()); \
+        t->strval.push_back(scanner->read()); \
+    } else if ((c & 0xF8) == 0xF0) { \
+        t->strval.push_back(c); \
+        t->strval.push_back(scanner->read()); \
+        t->strval.push_back(scanner->read()); \
+        t->strval.push_back(scanner->read()); \
+    } \
+    c = scanner->read();
+
 static unordered_map<string, TokenKind> keywords = {
     {"int", TokenKind::k_key_word_int},
     {"float", TokenKind::k_key_word_float},
@@ -178,6 +196,11 @@ static bool is_alpha(luint8_t ch)
     return ch == '_' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
 }
 
+static bool is_iden(luint8_t c)
+{
+    return is_alpha(c) || ((c & 0xE0) == 0xC0 || (c & 0xF0) == 0xE0 || (c & 0xF8) == 0xF0);
+}
+
 static bool is_digit(luint8_t ch)
 {
     return ch >= '0' && ch <= '9';
@@ -295,11 +318,11 @@ start:
             t->kind = TokenKind::k_integer;
         }
     }
-    else if (is_alpha(ch)) {
-        luint8_t c = scanner->read();
-        while ((is_alpha(c) || is_digit(c)) && !is_eof()) {
-            t->strval.push_back(c);
-            c = scanner->read();
+    else if (is_iden(ch)) {
+        t->strval.pop_back();
+        luint8_t c = ch;
+        while ((is_iden(c) || is_digit(c)) && !is_eof()) {
+            READ_SYMBOL
         }
 
         t->kind = TokenKind::k_identity;
@@ -318,24 +341,7 @@ start:
                 t->strval.pop_back();
                 luint8_t c = scanner->read();
                 while (c != '"' && !is_eof()) {
-                    
-                    if ((c & 0x80) == 0x00) {
-                        t->strval.push_back(c);
-                    } else if ((c & 0xE0) == 0xC0) { // 下面是正常读取中文字符的
-                        t->strval.push_back(c);
-                        t->strval.push_back(scanner->read());
-                    } else if ((c & 0xF0) == 0xE0) {
-                        t->strval.push_back(c);
-                        t->strval.push_back(scanner->read());
-                        t->strval.push_back(scanner->read());
-                    } else if ((c & 0xF8) == 0xF0) {
-                        t->strval.push_back(c);
-                        t->strval.push_back(scanner->read());
-                        t->strval.push_back(scanner->read());
-                        t->strval.push_back(scanner->read());
-                    }
-                    
-                    c = scanner->read();
+                    READ_SYMBOL
                 }
                 scanner->peek1();
                 t->kind = TokenKind::k_string;

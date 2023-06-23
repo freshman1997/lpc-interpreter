@@ -2,37 +2,71 @@
 
 语法类似
 ```
-static string* gHandlers = {
-    "item": 100,
-    "legion": 1000,
-    "player": 10000
-};
+inherit "3.txt";
 
-void hello()
+string msg = "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";
+
+static void swap(int *arr, int i, int j)
 {
-    puts("你好，世界！！");
-    puts(gHandlers);
-    int count = 0;
-    mapping p = {"c" : 0};
-    while (1) {
-        if (p["c"] > 1000) {
-            sleep(3000);
-            break;
-        }
-        p["c"] += 1;
-        puts(p);
-        mapping aa = {};
-    }
+    mixed t = arr[i];
+    arr[i] = arr[j];
+    arr[j] = t;
 }
 
-void create()
+static void quick_sort(int *arr, int l, int r)
 {
-    int *aa = [1, 2];
-    ++aa[0];
-    puts(aa);
+    if (l >= r) return;
 
-    hello();
-    test();
+    int i = l, j = r;
+    int p = arr[i];
+    while (i < j) {
+        while(i < j && arr[j] >= p) --j;
+        while(i < j && arr[i] <= p) ++i;
+        if (i < j) {
+            swap(arr, i, j);
+        }
+    }
+
+    arr[l] = arr[i];
+    arr[i] = p;
+    
+    quick_sort(arr, l, i - 1);
+    quick_sort(arr, i + 1, r);
+}
+
+int get_size()
+{
+    int *arr = [3, 1, 2, 0, 7, 8, 4, 5, 100, 78, 6, 0, 111, 222, 5];
+    quick_sort(arr, 0, sizeof(arr) - 1);
+    puts(arr);
+    return sizeof(arr) ? sizeof(arr) : -1;
+}
+
+void test1()
+{
+    // id1 定义在 3.txt 里面
+    id1 = 100;
+    puts("====================");
+    puts(id1);
+    puts("====================");
+}
+
+void main()
+{
+    fun f = test1;
+    mapping 好的 = {"hello": "world", "f": f};
+    好的["aaa"]++;
+    ++ ++ 好的["aaa"]++++;
+    好的["f"]();
+    puts(好的);
+
+    for (int count = 0; count < 10000000 ; ++count) {
+        mapping m1 = {};
+    }
+    
+    int count = 100;
+    
+    get_size();
 }
 
 ```

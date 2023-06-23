@@ -54,6 +54,27 @@
         } \
         sk->push(&const0);
 
+#define EQ_OR_NEQ(op) \
+    lpc_value_t *val1 = sk->pop(); \
+    lpc_value_t *val2 = sk->pop(); \
+    const0.type = value_type::int_; \
+    if (val1->type == value_type::int_ && val2->type == value_type::int_) { \
+        const0.pval.number = val1->pval.number op val2->pval.number; \
+    } else if (val1->type == value_type::int_ && val2->type == value_type::int_) { \
+        const0.pval.number = val1->pval.real op val2->pval.real; \
+    } else if (val1->type == value_type::int_ && val2->type == value_type::float_) { \
+        const0.pval.number = val1->pval.number op val2->pval.real; \
+    } else if (val1->type == value_type::float_ && val2->type == value_type::int_) { \
+        const0.pval.number = val1->pval.real op val2->pval.number; \
+    } else if (val1->type == value_type::string_ && val2->type == value_type::string_) { \
+        lpc_string_t *str1 = reinterpret_cast<lpc_string_t *>(val1->gcobj); \
+        lpc_string_t *str2 = reinterpret_cast<lpc_string_t *>(val2->gcobj); \
+        const0.pval.number = str1->get_hash() op str2->get_hash(); \
+    } else { \
+        const0.pval.number = val1->gcobj op val2->gcobj; \
+    } \
+    sk->push(&const0);
+
 void vm::eval(lpc_vm_t *lvm)
 {
     lpc_value_t const0;
@@ -367,47 +388,11 @@ new_frame:
             break;
         }
         case OpCode::op_cmp_eq: {
-            lpc_value_t *val1 = sk->pop();
-            lpc_value_t *val2 = sk->pop();
-            const0.type = value_type::int_;
-            if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val1->pval.number == val2->pval.number;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val1->pval.real == val2->pval.real;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::float_) {
-                const0.pval.number = val1->pval.number == val2->pval.real;
-            } else if (val1->type == value_type::float_ && val2->type == value_type::int_) {
-                const0.pval.number = val1->pval.real == val2->pval.number;
-            } else if (val1->type == value_type::string_ && val2->type == value_type::string_) {
-                lpc_string_t *str1 = reinterpret_cast<lpc_string_t *>(val1->gcobj);
-                lpc_string_t *str2 = reinterpret_cast<lpc_string_t *>(val2->gcobj);
-                const0.pval.number = str1->get_hash() == str2->get_hash();
-            } else {
-                const0.pval.number = val1->gcobj == val2->gcobj;
-            }
-            sk->push(&const0);
+            EQ_OR_NEQ(==)
             break;
         }
         case OpCode::op_cmp_neq: {
-            lpc_value_t *val1 = sk->pop();
-            lpc_value_t *val2 = sk->pop();
-            const0.type = value_type::int_;
-            if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val1->pval.number != val2->pval.number;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::int_) {
-                const0.pval.number = val1->pval.real != val2->pval.real;
-            } else if (val1->type == value_type::int_ && val2->type == value_type::float_) {
-                const0.pval.number = val1->pval.number != val2->pval.real;
-            } else if (val1->type == value_type::float_ && val2->type == value_type::int_) {
-                const0.pval.number = val1->pval.real != val2->pval.number;
-            } else if (val1->type == value_type::string_ && val2->type == value_type::string_) {
-                lpc_string_t *str1 = reinterpret_cast<lpc_string_t *>(val1->gcobj);
-                lpc_string_t *str2 = reinterpret_cast<lpc_string_t *>(val2->gcobj);
-                const0.pval.number = str1->get_hash() != str2->get_hash();
-            } else {
-                const0.pval.number = val1->gcobj != val2->gcobj;
-            }
-            sk->push(&const0);
+            EQ_OR_NEQ(!=)
             break;
         }
         case OpCode::op_cmp_gt: {

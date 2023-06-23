@@ -62,7 +62,7 @@ public:
     void generate_ctor(AbstractExpression *);
     void generate_import(AbstractExpression *);
     void generate_decl(AbstractExpression *);
-    void generate_unop(AbstractExpression *);
+    AbstractExpression * generate_unop(AbstractExpression *,bool fromSame = false);
     void generate_binary(AbstractExpression *, bool fromAssign = false);
     void generate_if_else(AbstractExpression *, lint32_t forContinue, std::vector<lint32_t> &forBreaks);
     void generate_triple(AbstractExpression *);

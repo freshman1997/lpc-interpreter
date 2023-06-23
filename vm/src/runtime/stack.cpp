@@ -43,7 +43,6 @@ void lpc_stack_t::check_stack(lint32_t n)
         }
 
         if (cur_ci->base + nparam > stack + idx - n) {
-            std::cout << "xxxxxxxxxxxxxx " << idx << ", " << n << ", " << cur_ci->funcIdx;
             vm->panic();
         }
     }

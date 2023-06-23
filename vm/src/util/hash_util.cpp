@@ -89,13 +89,13 @@ inline int whashstr(const char *s, int maxn)
 #define MAP_POINTER_HASH(x) (((POINTER_INT)(x) >> 4) ^ ((POINTER_INT)(x) & 0xFFFFFFF))
 
 // 字符串表的大小
-static int htable_size_minus_one = 100;
+//static int htable_size_minus_one = 100;
 
-#define StrHash(s) (whashstr((s), 20) & (htable_size_minus_one))
+#define StrHash(s, htable_size_minus_one) (whashstr((s), 1024) & (htable_size_minus_one))
 
 int hash_(const char *str)
 {
-    return StrHash(str);
+    return StrHash(str, 0x7fffffff);
 }
 
 int hash_pointer(int x)

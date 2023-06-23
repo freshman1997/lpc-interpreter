@@ -2076,6 +2076,8 @@ clazz:
         TokenKind endKind = (TokenKind)((int)k + 1);
 
         tok = tok->next;
+        int count = 0;
+
         while (tok) {
             if (tok->kind == endKind) {
                 break;
@@ -2094,6 +2096,11 @@ clazz:
 
             con->body.push_back(element);
             tok = t->next;
+            ++count;
+
+            if (k == TokenKind::k_symbol_qg1 && count % 2 != 0 && tok->kind != TokenKind::k_symbol_show) {
+                error(tok);
+            }
         }
 
         exp = con;
@@ -2127,12 +2134,8 @@ clazz:
 
 static AbstractExpression * parse_unary(Token *tok, Token *t, bool fromOp)
 {
-    static set<TokenKind> unary_oper = {
-        TokenKind::k_oper_minus, TokenKind::k_oper_plus_plus, TokenKind::k_oper_sub_sub, TokenKind::k_cmp_not,
-    };
-
     TokenKind k = tok->kind;
-    if (unary_oper.count(k)) {
+    if ( k == TokenKind::k_oper_plus_plus || k == TokenKind::k_oper_sub_sub || k == TokenKind::k_cmp_not || k == TokenKind::k_oper_minus) {
         UnaryExpression *uExp = new UnaryExpression;
         uExp->fromLine = tok->lineno;
         AbstractExpression *exp = parse_binay(tok->next, -1, t);
@@ -2151,7 +2154,7 @@ static AbstractExpression * parse_unary(Token *tok, Token *t, bool fromOp)
             tok = t->next;
             if (tok) {
                 k = tok->kind;
-                if (k == TokenKind::k_oper_plus_plus || k == TokenKind::k_oper_sub_sub) {
+                while (k == TokenKind::k_oper_plus_plus || k == TokenKind::k_oper_sub_sub) {
                     if (exp->get_type() == ExpressionType::value_) {
                         ValueExpression *v = dynamic_cast<ValueExpression *>(exp);
                         if (!v || !t->next || v->valType != 4) {
@@ -2166,7 +2169,9 @@ static AbstractExpression * parse_unary(Token *tok, Token *t, bool fromOp)
                     uExp->exp = exp;
                     uExp->toLine = t->next->lineno;
 
-                    return uExp;
+                    exp = uExp;
+                    tok = tok->next;
+                    k = tok->kind;
                 }
             }
         }
@@ -2270,10 +2275,11 @@ static AbstractExpression * parse_binay(Token *tok, int pre, Token *cache)
         exp1 = op;
         tok = cache->next;
         op->fromLine = fromLine;
-        op->toLine = tok->lineno;
         if (!tok) {
             break;
         }
+        
+        op->toLine = tok->lineno;
 
         tprec = get_pre(tok->kind);
         kind = tok->kind;

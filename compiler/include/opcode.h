@@ -17,8 +17,6 @@ enum class OpCode
     op_load_0,                  // for false, 0 
     op_load_1,                  // for true
 
-    op_pop,
-
     op_add,
     op_sub,
     op_mul,
