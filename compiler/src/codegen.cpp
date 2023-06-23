@@ -24,6 +24,7 @@ static vector<EfunDecl> efuns = {
     {"arrayp", {DeclType::mixed_}, false, DeclType::bool_},
     {"mapp", {DeclType::mixed_}, false, DeclType::bool_},
     {"undefinedp", {DeclType::mixed_}, false, DeclType::bool_},
+    {"nullp", {DeclType::mixed_}, false, DeclType::bool_},
 };
 
 static vector<Func> sfuns;
@@ -172,7 +173,7 @@ static luint16_t find_func_idx(const string &name, vector<Func> &con)
                 } \
             } \
             \
-            if (!isFun && vType != DeclType::none_ && loc->type != vType) { \
+            if (!isFun && vType != DeclType::none_ && loc->type != vType) { cout << (int)loc->type << " " << (int)vType << endl;\
                 /* TODO 类型不匹配 */ error_at(__LINE__);\
             } \
             \
@@ -1668,42 +1669,44 @@ void CodeGenerator::generate_index(AbstractExpression *exp, bool lhs)
 {
     IndexExpression *idex = dynamic_cast<IndexExpression *>(exp);
     // id, call, index, 
-    if (idex->l->get_type() == ExpressionType::value_) {
-        ValueExpression *val = dynamic_cast<ValueExpression *>(idex->l);
-        if (val->valType != 4) {
-            error_at(__LINE__);
-        }
-
-        Local *loc = nullptr;
-        vector<Local> &scopeLocals = locals[cur_scope];
-        lint16_t idx = find_local_idx(val->val.sval->strval, scopeLocals);
-        if (idx < 0) {
-            idx = find_local_idx(val->val.sval->strval, locals[object_name]);
-            if (idx < 0) {
-                cout << "undefined identifier: " << val->val.sval->strval << endl;
-                error(val->val.sval);
+    if (!idex->idx1) {
+        if (idex->l->get_type() == ExpressionType::value_) {
+            ValueExpression *val = dynamic_cast<ValueExpression *>(idex->l);
+            if (val->valType != 4) {
+                error_at(__LINE__);
             }
-            loc = &locals[object_name][idx];
-            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_global));
-        } else {
-            loc = &scopeLocals[idx];
-            (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_local));
-        }
 
-        if (loc->type != DeclType::mapping_ && !loc->is_arr && loc->type != DeclType::mixed_) {
+            Local *loc = nullptr;
+            vector<Local> &scopeLocals = locals[cur_scope];
+            lint16_t idx = find_local_idx(val->val.sval->strval, scopeLocals);
+            if (idx < 0) {
+                idx = find_local_idx(val->val.sval->strval, locals[object_name]);
+                if (idx < 0) {
+                    cout << "undefined identifier: " << val->val.sval->strval << endl;
+                    error(val->val.sval);
+                }
+                loc = &locals[object_name][idx];
+                (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_global));
+            } else {
+                loc = &scopeLocals[idx];
+                (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_load_local));
+            }
+
+            if (loc->type != DeclType::mapping_ && !loc->is_arr && loc->type != DeclType::mixed_) {
+                error_at(__LINE__);
+            }
+
+            LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
+        } else if (idex->l->get_type() == ExpressionType::call_) {
+            generate_call(idex->l);
+        } else if (idex->l->get_type() == ExpressionType::index_) {
+            // 多重 index 
+            generate_index(idex->l, false);
+        } else {
             error_at(__LINE__);
         }
-
-        LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
-    } else if (idex->l->get_type() == ExpressionType::call_) {
-        generate_call(idex->l);
-    } else if (idex->l->get_type() == ExpressionType::index_) {
-        // 多重 index 
-        generate_index(idex->l, false);
-    } else {
-        error_at(__LINE__);
     }
-
+    
     GENERATE_OP(idex->idx, DeclType::none_)
     if (idex->idx1) {
         if (lhs) {
@@ -1904,7 +1907,7 @@ void CodeGenerator::generate_return(AbstractExpression *exp)
             (on_var_decl ? var_init_codes : opcodes).push_back((luint8_t)(OpCode::op_new_class));
             LOAD_IDX_2((on_var_decl ? var_init_codes : opcodes), idx)
         } else if (ret->ret->get_type() != ExpressionType::construct_) {
-            GENERATE_OP(ret->ret, fun.retType)
+            GENERATE_OP(ret->ret, DeclType::none_)
         } else {
             generate_ctor(ret->ret);
         }

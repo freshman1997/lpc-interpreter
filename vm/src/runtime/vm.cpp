@@ -95,7 +95,7 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
                 in.read((char *)&caser, 4);
                 in.read((char *)&gotoW, 4);
                 if (gotoW < 0) {
-                    proto->defaults->at(i) = -gotoW;
+                    (*proto->defaults)[i] = -gotoW;
                 } else {
                     proto->lookup_table->back()[caser] = gotoW;
                 }
@@ -458,7 +458,7 @@ void lpc_vm_t::pop_frame()
     if (f.retType > 1) {
         lpc_value_t *ret = stack->pop();
         ret->subtype = value_type::return_;
-        stack->pop_n(n);
+        stack->pop_n(n - 1);
         if (stack->top()->subtype != value_type::return_) {
             stack->push(ret);
         } else {
@@ -532,7 +532,7 @@ void lpc_vm_t::traceback()
     buf << "stack: \n";
     while (tmp) {
         buf << "in file: ";
-        if (tmp->call_init) {
+        if (!tmp->call_init) {
             lint32_t fIdx = abs(tmp->funcIdx);
             if (tmp->father) {
                 buf << tmp->father->name << ", func: " << tmp->father->func_table[fIdx].name << "\n";
