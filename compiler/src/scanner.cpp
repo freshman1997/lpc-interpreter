@@ -229,7 +229,7 @@ static void read_hex(Scanner *sc, Token *t)
 static int skip_comment(Scanner *sc, string end)
 {
     luint8_t ch = sc->read();
-    int c = 0, i = 0, line = 0;
+    int i = 0, line = 0;
     if (ch == '\n') ++line;
     while (!sc->is_eof()) {
         
@@ -287,7 +287,7 @@ start:
             }
 
             if (dot && c == '.') {
-                // TODO error
+                
                 break;
             }
 

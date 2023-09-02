@@ -2062,7 +2062,7 @@ clazz:
     } else if (k == TokenKind::k_number) {
         ValueExpression *dVal = new ValueExpression;
         dVal->valType = 1;
-        dVal->val.ival = tok->dval;
+        dVal->val.dval = tok->dval;
         exp = dVal;
     } else if (k == TokenKind::k_string) {
         ValueExpression *sVal = new ValueExpression;

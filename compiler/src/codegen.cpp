@@ -73,7 +73,7 @@ static lint16_t find_fun_idx(const string &name, int type)
     return -1;
 }
 
-static luint16_t find_func_idx(const string &name, vector<Func> &con)
+static lint16_t find_func_idx(const string &name, vector<Func> &con)
 {
     luint16_t idx = 0;
     for (auto &it : con) {
@@ -2080,7 +2080,7 @@ void CodeGenerator::dump()
         return;
     }
 
-    string name = std::move(get_pure_name(object_name));
+    const string &name = get_pure_name(object_name);
     luint32_t sz = name.size();
     out.write((char *)&sz, 4);
     out.write(name.c_str(), sz);
@@ -2095,7 +2095,7 @@ void CodeGenerator::dump()
             nvar += lint16_t(locs->size());
             out.write((char *)&nvar, 2);
 
-            string iname = std::move(get_pure_name(it->file_name));
+            const string &iname = get_pure_name(it->file_name);
             sz = iname.size();
             out.write((char *)&sz, 4);
             out.write(iname.c_str(), sz);

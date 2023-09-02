@@ -106,18 +106,18 @@ enum class TokenKind
 
 struct Token
 {
-    Token *next = nullptr;
     TokenKind kind = TokenKind::k_none;
     lint32_t ival = 0;
-    lfloat64_t dval = 0;
-    std::string strval;
+    lfloat32_t dval = 0;
 
-    const char *filename;
     int lineno = 0;
     int col = 0;
     bool is_space = false;
     bool newline = false;
 
+    std::string strval;
+    Token *next = nullptr;
+    const char *filename = nullptr;
     // If this is expanded from a macro, the origin token
     Token *origin = nullptr;
 };

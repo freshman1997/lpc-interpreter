@@ -72,9 +72,9 @@ bucket_t * lpc_mapping_t::get(lpc_value_t *k)
                 target = b;
                 break;
             }
+        } else {
+            b = b->next;
         }
-
-        b = b->next;
     }
     
     return target ? target : nullptr;
@@ -242,7 +242,7 @@ bool lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v, OpCode op)
         break;
     }
         
-    if (fill * 1.0 / size >= 0.75) {
+    if (fill * 1.0 / size >= 0.70) {
         grow();
     }
 
@@ -283,22 +283,27 @@ void lpc_mapping_t::place(bucket_t *newBuckets, int newSize, bucket_t *buck, boo
     lpc_value_t &k = buck->pair[0];
     lpc_value_t &v = buck->pair[1];
     int hash = calc_hash(&k) % newSize;
-    if (!newBuckets[hash].pair) {
+    
+    if (newBuckets[hash].pair) {
         bucket_t *cur = &newBuckets[hash];
         while (cur->next) {
             cur = cur->next;
         }
 
+        buck->next = nullptr;
         if (reuse) {
             cur->next = buck;
         } else {
-            bucket_t *b = this->alloc->allocate<bucket_t>(1);
-            b->next = nullptr;
+            bucket_t *b = this->alloc->allocate<bucket_t, true>(1);
             b->pair = buck->pair;
         }
     } else {
-        newBuckets[hash].pair = buck->pair;
+        buck->next = nullptr;
+        newBuckets[hash] = *buck;
+        ++fill;
     }
+
+    ++used;
 }
 
 void lpc_mapping_t::grow()
@@ -306,18 +311,18 @@ void lpc_mapping_t::grow()
     int newSize = size << 1;
     bucket_t *newBuckets = this->alloc->allocate<bucket_t, true>(newSize);
 
+    this->fill = 0;
+    this->used = 0;
+
     // copy
     for (int i = 0; i < size; ++i) {
         if (members[i].pair) {
+            bucket_t *cur = members[i].next;
             place(newBuckets, newSize, &members[i]);
 
-            bucket_t *cur = members[i].next;
             while (cur) {
-                place(newBuckets, newSize, cur, true);
                 bucket_t *t = cur->next;
-                cur->next = nullptr;
-                alloc->release(sizeof(bucket_t));
-                free(cur);
+                place(newBuckets, newSize, cur, true);
                 cur = t;
             }
         }
@@ -372,8 +377,9 @@ bucket_t * lpc_mapping_t::iterate(int i)
         return cur;
     }
 
+    ++idx;
     for (; idx < size; ++idx) {
-        if (cur != &members[idx] && members[idx].pair) {
+        if (members[idx].pair) {
             cur = &members[idx];
             break;
         }

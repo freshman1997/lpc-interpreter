@@ -98,11 +98,13 @@ new_frame:
     }
 
     for(;;) {
+#ifdef _DEBUG
         if (lvm->is_debug() && !lvm->check_run()) {
             ci->savepc = pc;
             break;
         }
-
+#endif // DEBUG
+       
         OpCode op = (OpCode)*(pc++);
         switch (op)
         {
@@ -307,13 +309,12 @@ new_frame:
             break;
         }
         case OpCode::op_binary_not: {
-            lpc_value_t *v1 = sk->pop();
-            if (v1->type ==  value_type::int_) {
+            lpc_value_t *v1 = sk->top();
+            if (v1->type == value_type::int_) {
                 v1->pval.number = ~v1->pval.number;
             } else {
                 ERROR("error found on oper ~ !");
             }
-            sk->push(v1);
             break;
         }
         case OpCode::op_binary_xor: {
@@ -328,33 +329,30 @@ new_frame:
             break;
         }
         case OpCode::op_inc: {
-            lpc_value_t *val = sk->pop();
+            lpc_value_t *val = sk->top();
             if (val->type == value_type::int_) {
                 ++val->pval.number;
             } else if (val->type == value_type::float_){
                 ++val->pval.real;
             }
-            sk->push(val);
             break;
         }
         case OpCode::op_dec: {
-            lpc_value_t *val = sk->pop();
+            lpc_value_t *val = sk->top();
             if (val->type == value_type::int_) {
                 --val->pval.number;
             } else if (val->type == value_type::float_){
                 --val->pval.real;
             }
-            sk->push(val);
             break;
         }
         case OpCode::op_minus: {
-            lpc_value_t *val = sk->pop();
+            lpc_value_t *val = sk->top();
             if (val->type == value_type::int_) {
                 val->pval.number = -val->pval.number;
             } else if (val->type == value_type::float_){
                 val->pval.real = -val->pval.real;
             }
-            sk->push(val);
             break;
         }
 

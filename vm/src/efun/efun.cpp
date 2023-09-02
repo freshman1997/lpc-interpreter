@@ -27,8 +27,13 @@ static void build_basic(string &buf, lpc_value_t *val, int deep = 0);
 
 static void build_array(string &buf, lpc_array_t *arr, int deep)
 {
-    buf.append("[ \n");
     int sz = arr->get_size();
+    if (!sz) {
+        buf.append("[]");
+        return;
+    }
+
+    buf.append("[ \n");
 
     for (int i = 0; i < sz; ++i) {
         for (int t = 0; t < deep; ++t) {
@@ -89,6 +94,7 @@ static void build_basic(string &buf, lpc_value_t *val, int deep)
         break;
     case value_type::float_:
         buf.append(std::to_string(val->pval.real));
+        cout << "zzzzzzzzzz" << val->pval.real << endl;
         break;
     case value_type::string_: {
         lpc_string_t *str = reinterpret_cast<lpc_string_t *>(val->gcobj);
@@ -140,6 +146,14 @@ static void build_basic(string &buf, lpc_value_t *val, int deep)
         auto ptr = reinterpret_cast<std::uintptr_t>(f);
         sprintf(tmp, "function@0x%llx", ptr);
         buf.append(tmp);
+        break;
+    }
+    case value_type::bool_:{
+        if (val->pval.number != 0) {
+            buf.append("true");
+        } else {
+            buf.append("false");
+        }
         break;
     }
     
