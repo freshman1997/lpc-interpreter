@@ -9,17 +9,19 @@ public:
     gc_header header;
 
 public:
-    lpc_string_t(const char * _str);
+    lpc_string_t(const char * _str, bool owned = false);
     lpc_string_t(lpc_string_t &);
     lpc_string_t * operator=(lpc_string_t &);
     unsigned char get(int i);
     int get_size();
     lpc_string_t * copy();
     const char * get_str();
+    bool owns_str() const;
     int get_hash();
 
 private:
     const char *str = nullptr;
+    bool owned = false;
     int size = 0;
     int hash = 0;
 };

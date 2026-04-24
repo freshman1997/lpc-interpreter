@@ -1,11 +1,18 @@
-﻿#include "type/lpc_closure.h"
+#include <cstdlib>
+#include "type/lpc_closure.h"
 #include "lpc_value.h"
+#include "memory/memory.h"
+#include "runtime/vm.h"
 
-void lpc_closure_t::init()
+void lpc_closure_t::init(lpc_allocator_t *alloc)
 {
     upvalues = nullptr;
     if (proto->nupvalue) {
-        upvalues = new lpc_value_t[proto->nupvalue];
+        luint32_t sz = proto->nupvalue;
+        upvalues = (lpc_value_t *)alloc->allocate(sizeof(lpc_value_t) * sz, false);
+        for (luint32_t i = 0; i < sz; ++i) {
+            upvalues[i].set_undefined();
+        }
     }
 }
 
@@ -27,7 +34,11 @@ void lpc_closure_t::set(int i, lpc_value_t *v)
     *(upvalues + i) = *v;
 }
 
-void lpc_closure_t::dtor()
+void lpc_closure_t::dtor(lpc_allocator_t *alloc)
 {
-    if (upvalues) delete [] upvalues;
+    if (upvalues) {
+        alloc->release(sizeof(lpc_value_t) * proto->nupvalue);
+        free(upvalues);
+        upvalues = nullptr;
+    }
 }

@@ -1,0 +1,14 @@
+void main() {
+    puts(3 == 3);
+    puts(3 != 4);
+    puts(5 > 3);
+    puts(5 >= 5);
+    puts(3 < 5);
+    puts(3 <= 3);
+    puts(1 && 1);
+    puts(1 && 0);
+    puts(0 || 1);
+    puts(0 || 0);
+    puts(!0);
+    puts(!1);
+}

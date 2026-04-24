@@ -1,0 +1,11 @@
+void main() {
+    int a = stringp("hello");
+    print("stringp=" + to_string(a) + "\n");
+    int b = intp(42);
+    print("intp=" + to_string(b) + "\n");
+    print("strlen=" + to_string(strlen("hello")) + "\n");
+    print("abs=" + to_string(abs(-7)) + "\n");
+    print("capitalize=" + capitalize("hello") + "\n");
+    print("lower=" + lower_case("HELLO") + "\n");
+    print("upper=" + upper_case("hello") + "\n");
+}

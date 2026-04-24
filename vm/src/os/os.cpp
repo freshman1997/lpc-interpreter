@@ -1,5 +1,6 @@
 #include <cassert>
 #include <ctime>
+#include <cstdio>
 
 #include "os/os.h"
 
@@ -46,7 +47,7 @@ lint64_t os::random()
     return (_rand_seed = lo);
 }
 
-std::string GetFormatTime()
+std::string os::GetFormatTime()
 {
 #ifdef _WIN32
     time_t currentTime;

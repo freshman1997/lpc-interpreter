@@ -9,7 +9,9 @@
 #include "os/os.h"
 #include "runtime/vm.h"
 #include "runtime/interpreter.h"
+#include "runtime/self_check.h"
 #include "type/lpc_mapping.h"
+#include "cli/cli.h"
 
 #ifdef _POSIX_PATH_MAX
 #define PATHNAME_MAX		POSIX_PATH_MAX
@@ -33,10 +35,9 @@ string get_cwd()
 int main(int argc, char **argv)
 {
 	os::register_exception_handler();
-	
+
 #if WIN32
 	char *buf;
-	// Get the current working directory:
 	if ( (buf = getcwd( NULL, 0 )) == NULL ) {
 		perror( "_getcwd error" );
 		return -1;
@@ -55,6 +56,13 @@ int main(int argc, char **argv)
 
 	cwd = buf;
 #endif
+
+	if (argc > 1) {
+		if (argc == 2 && std::string(argv[1]) == "--self-check") {
+			return lpc::vmtest::RunSelfChecks();
+		}
+		return lpc::cli::Run(argc, argv);
+	}
     lint64_t seed = time(NULL);
 	srand(seed);
 	//debug_message("xxxxxxxxxxxxxxxxxxxxx %d:%d,%d,%d\n", 100, _abs(-1), hash_("hello"), luaS_hash("hello", 5, (unsigned int)(seed)));
@@ -68,6 +76,17 @@ int main(int argc, char **argv)
 	//vm->on_debug_mode();
 	//vm->start_debug();
 	vm->run_main();
+
+	cout << "[gc] major=" << vm->gc_major_collect_count()
+	     << " minor=" << vm->gc_minor_collect_count()
+	     << " allocated=" << vm->allocated_bytes()
+	     << " nursery=" << vm->gc_nursery_bytes() << "/" << vm->gc_nursery_limit_bytes()
+	     << " remembered=" << vm->gc_remembered_set_size()
+	     << " wb=" << vm->gc_write_barrier_count() << endl;
+	cout << "[gc] major_freed=" << vm->gc_major_total_freed_bytes()
+	     << " minor_freed=" << vm->gc_minor_total_freed_bytes()
+	     << " major_us=" << vm->gc_major_total_elapsed_us()
+	     << " minor_us=" << vm->gc_minor_total_elapsed_us() << endl;
 
 	cout << "Exited normally.\n";
 	time_t end = clock();

@@ -1,0 +1,11 @@
+fun add2(a, b) {
+  return a + b;
+}
+
+fun main() {
+  var x = add2(1, 2);
+  if ((x > 2) && (x != 4)) {
+    return x;
+  }
+  return 0;
+}

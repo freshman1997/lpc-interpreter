@@ -1,0 +1,10 @@
+fun main() {
+  int s = 0;
+  var arr = ({1,2,3});
+  catch {
+    foreach (x in arr) {
+      s += x;
+    }
+  }
+  return s;
+}

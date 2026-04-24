@@ -12,6 +12,12 @@ public:
     lint32_t offset;
 };
 
+enum upvalue_source_kind : lint16_t
+{
+    upvalue_from_parent_local = 0,
+    upvalue_from_parent_upvalue = 1,
+};
+
 class function_proto_t
 {
 public:
@@ -24,6 +30,8 @@ public:
     lint32_t offset;
     lint32_t fromPC = 0;                // 在当前对象指令的位置
     lint32_t toPC = 0;
+    lint16_t *upvalue_source_kind = nullptr;
+    lint16_t *upvalue_source_index = nullptr;
     variable_proto_t *vprotos = nullptr;
 };
 
@@ -90,17 +98,13 @@ public:
     lint32_t nconst = 0;
 
     lint32_t nswitch = 0;
-    // 第几个：case：goto
     std::vector<std::unordered_map<lint32_t, lint32_t>> *lookup_table;
-    // 第几个：goto
     std::unordered_map<lint32_t, lint32_t> *defaults;
 
-    // 全局变量原型
     variable_proto_t *gvprotos = nullptr;
     
-    // 行数：指令位置
-    std::vector<std::pair<luint32_t, luint32_t>> initLineMap;
-    std::vector<std::pair<luint32_t, luint32_t>> lineMap;
+    std::vector<std::pair<luint32_t, luint32_t>> *initLineMap = nullptr;
+    std::vector<std::pair<luint32_t, luint32_t>> *lineMap = nullptr;
 };
 
 #endif

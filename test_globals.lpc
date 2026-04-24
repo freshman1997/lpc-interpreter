@@ -1,0 +1,11 @@
+int g_count = 5;
+string g_name = "test";
+
+void main() {
+    print(to_string(g_count) + "\n");
+    print(g_name + "\n");
+    g_count = 10;
+    g_name = "hello";
+    print(to_string(g_count) + "\n");
+    print(g_name + "\n");
+}

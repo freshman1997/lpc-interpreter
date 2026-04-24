@@ -74,6 +74,11 @@ enum class OpCode
 
     op_foreach_step1,           // setup iterator, init first or next
     op_foreach_step2,           // assign
+    op_pop,                     // discard top of stack
+    op_test_not,                // pop and jump if truthy (4-byte offset)
+    op_store_index,             // store value at container[key]
+    op_dup,                     // duplicate top of stack
+    op_catch,                   // run block with abort capture target (4-byte offset)
 };
 
 #endif

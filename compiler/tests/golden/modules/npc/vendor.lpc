@@ -1,0 +1,14 @@
+fun main() {
+  var state = 2;
+  switch (state) {
+    case 1:
+      state = 10;
+      break;
+    case 2:
+      state = 20;
+      break;
+    default:
+      state = 30;
+  }
+  return state;
+}

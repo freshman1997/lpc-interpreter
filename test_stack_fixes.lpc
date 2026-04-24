@@ -1,0 +1,68 @@
+void main()
+{
+    // === ExprStmt pop: function calls as statements ===
+    write("=== ExprStmt pop ===\n");
+    write("hello\n");
+    write("world\n");
+
+    // === ForStmt post: null post ===
+    write("=== ForStmt null post ===\n");
+    int i = 0;
+    for (; i < 3; )
+    {
+        write(to_string(i) + " ");
+        i++;
+    }
+    write("\n");
+
+    // === ForStmt post: with post ===
+    write("=== ForStmt with post ===\n");
+    for (int j = 0; j < 3; j++)
+    {
+        write(to_string(j) + " ");
+    }
+    write("\n");
+
+    // === ForStmt infinite loop with break ===
+    write("=== ForStmt infinite ===\n");
+    int k = 0;
+    for (;;)
+    {
+        if (k >= 3) break;
+        write(to_string(k) + " ");
+        k++;
+    }
+    write("\n");
+
+    // === Assignment as expression ===
+    write("=== Assignment expression ===\n");
+    int a;
+    a = 42;
+    write("a=" + to_string(a) + "\n");
+
+    // === Compound assignment ===
+    write("=== Compound assignment ===\n");
+    int b = 10;
+    b += 5;
+    write("b+=5=" + to_string(b) + "\n");
+    b -= 3;
+    write("b-=3=" + to_string(b) + "\n");
+    b *= 2;
+    write("b*=2=" + to_string(b) + "\n");
+
+    // === Switch statement ===
+    write("=== Switch ===\n");
+    int val = 2;
+    switch (val)
+    {
+    case 1:
+        write("one\n");
+        break;
+    case 2:
+        write("two\n");
+        break;
+    case 3:
+        write("three\n");
+        break;
+    }
+}

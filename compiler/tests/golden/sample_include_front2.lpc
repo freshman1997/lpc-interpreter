@@ -1,0 +1,6 @@
+#include "include_defs.lpc"
+
+fun main() {
+  var x = new IncludeItem();
+  return 0;
+}

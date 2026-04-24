@@ -1,0 +1,38 @@
+class Foo {
+    int x;
+    int y;
+}
+
+int main() {
+    Foo obj = new Foo();
+    obj->x = 10;
+    obj->y = 20;
+
+    obj->x++;
+    puts(obj->x);
+
+    ++obj->y;
+    puts(obj->y);
+
+    obj->x--;
+    puts(obj->x);
+
+    --obj->y;
+    puts(obj->y);
+
+    obj->x += 5;
+    puts(obj->x);
+
+    obj->y -= 3;
+    puts(obj->y);
+
+    int a = obj->x++;
+    puts(a);
+    puts(obj->x);
+
+    int b = ++obj->y;
+    puts(b);
+    puts(obj->y);
+
+    return 0;
+}

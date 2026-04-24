@@ -1,0 +1,16 @@
+inherit "base/room";
+
+class Item {
+  var id;
+}
+
+fun make_one() {
+  var x = new Item();
+  var y = 0;
+  return x;
+}
+
+fun main() {
+  var a = make_one();
+  return 0;
+}

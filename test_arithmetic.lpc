@@ -1,0 +1,13 @@
+void main() {
+    puts(10 + 20);
+    puts(100 - 30);
+    puts(6 * 7);
+    puts(100 / 3);
+    puts(100 % 7);
+    puts(-42);
+    puts(5 << 2);
+    puts(64 >> 2);
+    puts(255 & 15);
+    puts(240 | 15);
+    puts(255 ^ 15);
+}

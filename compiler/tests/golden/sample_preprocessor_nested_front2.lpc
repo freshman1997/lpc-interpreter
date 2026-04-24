@@ -1,0 +1,13 @@
+#define FLAG_A 1
+#define FLAG_B FLAG_A
+#define FLAG_C FLAG_B
+
+#if FLAG_C
+fun nested_ok() { return 1; }
+#else
+fun nested_ok() { return 0; }
+#endif
+
+fun main() {
+  return nested_ok();
+}

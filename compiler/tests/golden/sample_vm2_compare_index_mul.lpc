@@ -1,0 +1,6 @@
+fun main() {
+  var arr = ({2, 4, 6});
+  var x = arr[2];
+  var y = arr[0];
+  return x * y;
+}

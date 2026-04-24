@@ -74,6 +74,11 @@ enum class OpCode
 
     op_foreach_step1,           // setup iterator, init first or next
     op_foreach_step2,           // assign
+    op_pop,
+    op_test_not,
+    op_store_index,
+    op_dup,
+    op_catch,
 };
 
 #endif

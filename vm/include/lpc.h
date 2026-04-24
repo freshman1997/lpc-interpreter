@@ -22,6 +22,8 @@ struct gc_header{
     lpc_gc_object_t *gclist = nullptr;
     lint8_t marked = 0;
     lint8_t type = 0;
+    luint8_t generation = 0;
+    luint8_t age = 0;
 };
 
 class lpc_vm_t;

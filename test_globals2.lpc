@@ -1,0 +1,13 @@
+int g_a;
+int g_b = 3;
+
+void main() {
+    print(to_string(g_a) + "\n");
+    print(to_string(g_b) + "\n");
+    g_a = g_b + 7;
+    print(to_string(g_a) + "\n");
+    g_a++;
+    print(to_string(g_a) + "\n");
+    g_b = g_a * 2;
+    print(to_string(g_b) + "\n");
+}

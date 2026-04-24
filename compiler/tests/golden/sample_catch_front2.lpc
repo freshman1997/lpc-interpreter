@@ -1,0 +1,6 @@
+fun main() {
+  catch {
+    puts("inside catch");
+  }
+  return 0;
+}

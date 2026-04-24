@@ -34,7 +34,7 @@ public:
     void grow();
     void reset_iterator();
 
-    void dtor(lint32_t &freeBytes);
+    void dtor(lint64_t &freeBytes);
 
 private:
     int calc_hash(lpc_value_t *);

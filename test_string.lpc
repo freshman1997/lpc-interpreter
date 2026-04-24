@@ -1,0 +1,6 @@
+int main() {
+    print("hello world");
+    int t = typeof("test");
+    puts(t);
+    return 0;
+}

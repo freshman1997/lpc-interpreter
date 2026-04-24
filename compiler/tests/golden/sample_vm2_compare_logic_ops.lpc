@@ -1,0 +1,9 @@
+fun main() {
+  var a = 1;
+  var b = 0;
+  var c = (a && !b) || 0;
+  if (c) {
+    return 9;
+  }
+  return 0;
+}

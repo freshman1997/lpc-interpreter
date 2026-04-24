@@ -8,6 +8,7 @@ class lpc_allocator_t;
 
 class lpc_array_t
 {
+    friend class lpc_allocator_t;
 public:
     gc_header header;
 
@@ -26,6 +27,7 @@ public:
 private:
     luint32_t size = 0;
     lpc_value_t *members;
+    lpc_allocator_t *alloc = nullptr;
 };
 
 lpc_array_t * array_add(lpc_array_t *l, lpc_array_t *r, lpc_allocator_t *alloc);

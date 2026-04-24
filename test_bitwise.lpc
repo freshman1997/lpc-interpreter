@@ -1,0 +1,31 @@
+int main() {
+    int a = 0xFF;
+    int b = 0x0F;
+    int c = 0xF0;
+
+    puts(a & b);
+    puts(a | c);
+    puts(a ^ b);
+    puts(~0);
+    puts(1 << 4);
+    puts(256 >> 4);
+
+    a &= 0x0F;
+    puts(a);
+
+    b |= 0xF0;
+    puts(b);
+
+    c ^= 0xFF;
+    puts(c);
+
+    int d = 1;
+    d <<= 3;
+    puts(d);
+
+    int e = 256;
+    e >>= 2;
+    puts(e);
+
+    return 0;
+}

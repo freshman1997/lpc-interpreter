@@ -3,9 +3,10 @@
 
 extern int hash_(const char *str);
 
-lpc_string_t::lpc_string_t(const char * _str)
+lpc_string_t::lpc_string_t(const char * _str, bool owned)
 {
     this->str = _str;
+    this->owned = owned;
     this->size = strlen(_str);
     this->hash = hash_(_str);
 }
@@ -24,6 +25,11 @@ lpc_string_t * lpc_string_t::operator=(lpc_string_t &l)
 const char * lpc_string_t::get_str()
 {
     return this->str;
+}
+
+bool lpc_string_t::owns_str() const
+{
+    return this->owned;
 }
 
 int lpc_string_t::get_hash()

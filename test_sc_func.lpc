@@ -1,0 +1,7 @@
+fun side_effect() { puts(999); return 1; }
+
+fun main() {
+  var x = 0 && side_effect();
+  puts(x);
+  return 0;
+}

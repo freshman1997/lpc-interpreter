@@ -1,0 +1,50 @@
+void main() {
+    print("=== String escapes ===\n");
+    print("tab:\there\n");
+    print("newline:\nhere\n");
+    print("quote: \"hello\"\n");
+    print("backslash: \\\n");
+    print("null:\0end\n");
+
+    print("=== Ternary operator ===\n");
+    int x = 5;
+    string s = x > 3 ? "big" : "small";
+    print(s + "\n");
+
+    int y = 1;
+    string s2 = y > 3 ? "yes" : "no";
+    print(s2 + "\n");
+
+    print("=== Do-while ===\n");
+    int i = 0;
+    do {
+        print(to_string(i) + " ");
+        i = i + 1;
+    } while (i < 3);
+    print("\n");
+
+    print("=== Postfix ++ ===\n");
+    int a = 10;
+    int b = a++;
+    print("a=" + to_string(a) + " b=" + to_string(b) + "\n");
+
+    int c = 10;
+    int d = ++c;
+    print("c=" + to_string(c) + " d=" + to_string(d) + "\n");
+
+    print("=== && operand values ===\n");
+    string r1 = 1 && "hello";
+    print(r1 + "\n");
+    string r2 = 0 && "hello";
+    print(to_string(r2 == "") + "\n");
+
+    print("=== || operand values ===\n");
+    string r3 = 0 || "world";
+    print(r3 + "\n");
+    string r4 = "yes" || "no";
+    print(r4 + "\n");
+
+    print("=== Mapping literal ===\n");
+    mapping m = ([ "a" : 1, "b" : 2 ]);
+    print("size=" + to_string(sizeof(m)) + "\n");
+}

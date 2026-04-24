@@ -1,0 +1,5 @@
+# debugger script error path smoke test
+help watch
+unknown_cmd_for_test
+info break csv
+q

@@ -1,0 +1,14 @@
+fun side_effect() {
+  puts(999);
+  return 1;
+}
+
+fun main() {
+  if (0 && side_effect()) {
+    puts(1);
+  }
+  if (1 || side_effect()) {
+    puts(2);
+  }
+  return 0;
+}

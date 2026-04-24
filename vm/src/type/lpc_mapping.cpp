@@ -1,19 +1,23 @@
+#include <cstring>
 #include "lpc_value.h"
 #include "memory/memory.h"
 #include "type/lpc_string.h"
 #include "type/lpc_array.h"
 #include "type/lpc_mapping.h"
+#include "runtime/vm.h"
 
 extern int hash_(const char *str);
 extern int hash_pointer(int x);
 
 int lpc_mapping_t::calc_hash(lpc_value_t *val)
 {
-    if (val->type == value_type::string_) {
-        lpc_string_t *str = reinterpret_cast<lpc_string_t *>(val->gcobj);
+    if (val->is_string()) {
+        lpc_string_t *str = reinterpret_cast<lpc_string_t *>(val->get_gcobj());
         return str->get_hash();
+    } else if (val->is_float()) {
+        return hash_pointer((int)val->get_float());
     } else {
-        return hash_pointer(val->pval.number);
+        return hash_pointer(val->get_int());
     }
 }
 
@@ -54,19 +58,26 @@ bucket_t * lpc_mapping_t::get(lpc_value_t *k)
     while (b) {
         lpc_value_t &key = b->pair[0];
         lpc_value_t &val = b->pair[1];
-        if (k->type == value_type::int_ || k->type == value_type::float_) {
-            if (key.type == value_type::int_ || key.type == value_type::float_) {
-                if (key.pval.number != k->pval.number) {
-                    b = b->next;
-                } else {
-                    target = b;
-                    break;
-                }
+        if (k->is_int() && key.is_int()) {
+            if (key.get_int() != k->get_int()) {
+                b = b->next;
+            } else {
+                target = b;
+                break;
             }
-        } else if (k->type == value_type::string_ && key.type == value_type::string_) {
-            lpc_string_t *str1 = reinterpret_cast<lpc_string_t *>(k->gcobj);
-            lpc_string_t *str2 = reinterpret_cast<lpc_string_t *>(key.gcobj);
-            if (str1->get_hash() != str2->get_hash()) {
+        } else if (k->is_number() && key.is_number()) {
+            float kv = k->is_float() ? k->get_float() : (float)k->get_int();
+            float kk = key.is_float() ? key.get_float() : (float)key.get_int();
+            if (kk != kv) {
+                b = b->next;
+            } else {
+                target = b;
+                break;
+            }
+        } else if (k->is_string() && key.is_string()) {
+            lpc_string_t *str1 = reinterpret_cast<lpc_string_t *>(k->get_gcobj());
+            lpc_string_t *str2 = reinterpret_cast<lpc_string_t *>(key.get_gcobj());
+            if (str1->get_hash() != str2->get_hash() || strcmp(str1->get_str(), str2->get_str()) != 0) {
                 b = b->next;
             } else {
                 target = b;
@@ -113,23 +124,14 @@ void lpc_mapping_t::set(lpc_value_t *k, lpc_value_t *v)
     if (fill * 1.0 / size >= 0.75) {
         grow();
     }
-}
 
-#define oper(val, v, op) \
-    if (val->type == value_type::int_) { \
-        val->pval.number op v->type == value_type::int_ ? v->pval.number : v->pval.real; \
-    } else if (val->type == value_type::float_) { \
-        val->pval.real op v->type == value_type::int_ ? v->pval.number : v->pval.real; \
-    } else if (val->type == value_type::null_) { \
-        if (v->type == value_type::int_ || v->type == value_type::float_) { \
-            *val = *v; \
-        } else { \
-            return false; \
-        } \
-    } else { \
-        return false; \
+    if (alloc && alloc->get_vm()) {
+        if ((k && k->is_gc_type() && k->get_gcobj()) || (v && v->is_gc_type() && v->get_gcobj())) {
+            lpc_value_t vv = v ? *v : lpc_value_t::make_null();
+            alloc->get_vm()->gc_write_barrier(reinterpret_cast<lpc_gc_object_t *>(this), &vv);
+        }
     }
-
+}
 
 bool lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v, OpCode op)
 {
@@ -137,7 +139,6 @@ bool lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v, OpCode op)
     lpc_value_t *val = nullptr;
     if (found) {
         found->pair[0] = *k;
-        //found->pair[1] = *v;
         val = &found->pair[1];
     } else {
         int hash = calc_hash(k) % this->size;
@@ -148,22 +149,23 @@ bool lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v, OpCode op)
         }
 
         if (t != b) {
-            bucket_t *node = this->alloc->allocate<bucket_t>(1);
+            bucket_t *node = this->alloc->allocate<bucket_t, true>(1);
+            node->pair = this->alloc->allocate<lpc_value_t, true>(2);
+            node->pair[0].set_null();
+            node->pair[1].set_null();
             node->pair[0] = *k;
-            //node->pair[1] = *v;
             val = &node->pair[1];
             b->next = node;
             ++used;
         } else {
             if (!b->pair) {
                 b->pair = this->alloc->allocate<lpc_value_t, true>(2);
-                b->pair[0].type = value_type::null_;
-                b->pair[1].type = value_type::null_;
+                b->pair[0].set_null();
+                b->pair[1].set_null();
                 ++fill;
                 ++used;
             }
             b->pair[0] = *k;
-            //b->pair[1] = *v;
             val = &b->pair[1];
         }
     }
@@ -175,26 +177,26 @@ bool lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v, OpCode op)
         break;
     }
     case OpCode::op_add: {
-        oper(val, v, +=)
+        if (!arith_binop(val, v, ArithBinOp::Add)) return false;
         break;
     }
     case OpCode::op_sub: {
-        oper(val, v, -=)
+        if (!arith_binop(val, v, ArithBinOp::Sub)) return false;
         break;
     }
     case OpCode::op_mul: {
-        oper(val, v, *=)
+        if (!arith_binop(val, v, ArithBinOp::Mul)) return false;
         break;
     }
     case OpCode::op_div: {
-        oper(val, v, /=)
+        if (!arith_binop(val, v, ArithBinOp::Div)) return false;
         break;
     }
     case OpCode::op_mod: {
-        if (val->type == value_type::int_) {
-            val->pval.number %= v->pval.number;
-        } else if (val->type == value_type::null_) {
-            if (v->type == value_type::int_ || v->type == value_type::float_) {
+        if (val->is_int()) {
+            val->set_int(val->get_int() % v->get_int());
+        } else if (val->is_null()) {
+            if (v->is_int() || v->is_float()) {
                 *val = *v;
             } else {
                 return false;
@@ -205,35 +207,32 @@ bool lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v, OpCode op)
         break;
     }
     case OpCode::op_inc: {
-        if (val->type == value_type::int_) {
-            val->pval.number++;
-        } else if (val->type == value_type::float_) {
-            val->pval.real++;
-        } else if (val->type == value_type::null_) {
-            val->type = value_type::int_;
-            val->pval.number = 1;
+        if (val->is_int()) {
+            val->set_int(val->get_int() + 1);
+        } else if (val->is_float()) {
+            val->set_float(val->get_float() + 1);
+        } else if (val->is_null()) {
+            val->set_int(1);
         }
         break;
     }
     case OpCode::op_dec: {
-         if (val->type == value_type::int_) {
-            val->pval.number--;
-        } else if (val->type == value_type::float_) {
-            val->pval.real--;
-        } else if (val->type == value_type::null_) {
-            val->type = value_type::int_;
-            val->pval.number = -1;
+        if (val->is_int()) {
+            val->set_int(val->get_int() - 1);
+        } else if (val->is_float()) {
+            val->set_float(val->get_float() - 1);
+        } else if (val->is_null()) {
+            val->set_int(-1);
         }
         break;
     }
     case OpCode::op_minus: {
-        if (val->type == value_type::int_) {
-            val->pval.number = -val->pval.number;
-        } else if (val->type == value_type::float_) {
-            val->pval.real = -val->pval.real;
-        } else if (val->type == value_type::null_) {
-            val->type = value_type::int_;
-            val->pval.number = 0;
+        if (val->is_int()) {
+            val->set_int(-val->get_int());
+        } else if (val->is_float()) {
+            val->set_float(-val->get_float());
+        } else if (val->is_null()) {
+            val->set_int(0);
         }
         break;
     }
@@ -246,36 +245,76 @@ bool lpc_mapping_t::upset(lpc_value_t *k, lpc_value_t *v, OpCode op)
         grow();
     }
 
+    if (alloc && alloc->get_vm() && val && val->is_gc_type() && val->get_gcobj()) {
+        alloc->get_vm()->gc_write_barrier(reinterpret_cast<lpc_gc_object_t *>(this), val);
+    }
+
     return true;
 }
 
 void lpc_mapping_t::remove(lpc_value_t *k)
 {
-    bucket_t *found = get(k);
-    if (!found) return;
-
     int hash = calc_hash(k) % this->size;
     bucket_t *b = &members[hash];
-    bucket_t *slot = b;
 
-    b = b->next;
-    while (b) {
-        bucket_t *t = b;
-        b = b->next;
-        alloc->release(sizeof(bucket_t));
-        if (t->pair) {
-            alloc->release(sizeof(lpc_value_t) * 2);
-            free(t->pair);
+    if (!b->pair) return;
+
+    bucket_t *prev = nullptr;
+    bucket_t *cur = b;
+
+    while (cur) {
+        lpc_value_t &key = cur->pair[0];
+        bool match = false;
+        if (k->is_number() && key.is_number()) {
+            if (k->is_int() && key.is_int()) {
+                match = (key.get_int() == k->get_int());
+            } else {
+                float kv = k->is_float() ? k->get_float() : (float)k->get_int();
+                float kk = key.is_float() ? key.get_float() : (float)key.get_int();
+                match = (kk == kv);
+            }
+        } else if (k->is_string() && key.is_string()) {
+            lpc_string_t *str1 = reinterpret_cast<lpc_string_t *>(k->get_gcobj());
+            lpc_string_t *str2 = reinterpret_cast<lpc_string_t *>(key.get_gcobj());
+            match = (str1->get_hash() == str2->get_hash() && strcmp(str1->get_str(), str2->get_str()) == 0);
         }
-        free(t);
-        --used;
-    }
 
-    slot->next = nullptr;
-    slot->pair[0].gcobj = nullptr;
-    slot->pair[1].gcobj = nullptr;
-    --fill;
-    --used;
+        if (match) {
+            if (prev) {
+                prev->next = cur->next;
+                if (cur->pair) {
+                    alloc->release(sizeof(lpc_value_t) * 2);
+                    free(cur->pair);
+                }
+                alloc->release(sizeof(bucket_t));
+                free(cur);
+                --used;
+            } else {
+                if (cur->next) {
+                    bucket_t *t = cur->next;
+                    cur->pair[0] = t->pair[0];
+                    cur->pair[1] = t->pair[1];
+                    cur->next = t->next;
+                    if (t->pair) {
+                        alloc->release(sizeof(lpc_value_t) * 2);
+                        free(t->pair);
+                    }
+                    alloc->release(sizeof(bucket_t));
+                    free(t);
+                    --used;
+                } else {
+                    cur->pair[0].set_null();
+                    cur->pair[1].set_null();
+                    --fill;
+                    --used;
+                }
+            }
+            return;
+        }
+
+        prev = cur;
+        cur = cur->next;
+    }
 }
 
 void lpc_mapping_t::place(bucket_t *newBuckets, int newSize, bucket_t *buck, bool reuse)
@@ -296,6 +335,7 @@ void lpc_mapping_t::place(bucket_t *newBuckets, int newSize, bucket_t *buck, boo
         } else {
             bucket_t *b = this->alloc->allocate<bucket_t, true>(1);
             b->pair = buck->pair;
+            cur->next = b;
         }
     } else {
         buck->next = nullptr;
@@ -314,7 +354,6 @@ void lpc_mapping_t::grow()
     this->fill = 0;
     this->used = 0;
 
-    // copy
     for (int i = 0; i < size; ++i) {
         if (members[i].pair) {
             bucket_t *cur = members[i].next;
@@ -388,7 +427,7 @@ bucket_t * lpc_mapping_t::iterate(int i)
     return cur;
 }
 
-void lpc_mapping_t::dtor(lint32_t &freeBytes)
+void lpc_mapping_t::dtor(lint64_t &freeBytes)
 {
     for (int i = 0; i < size; ++i) {
         bucket_t *buck = &members[i];
@@ -440,4 +479,3 @@ void map_delete(lpc_mapping_t *map, lpc_value_t *k)
 {
     map->remove(k);
 }
-

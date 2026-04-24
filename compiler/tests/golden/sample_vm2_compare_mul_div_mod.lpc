@@ -1,0 +1,6 @@
+fun main() {
+  var a = 6 * 3;
+  var b = a / 2;
+  var c = b % 4;
+  return c;
+}

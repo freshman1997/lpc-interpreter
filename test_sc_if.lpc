@@ -1,0 +1,9 @@
+fun main() {
+  if (0 && 1) {
+    puts(100);
+  }
+  if (1 || 0) {
+    puts(200);
+  }
+  return 0;
+}

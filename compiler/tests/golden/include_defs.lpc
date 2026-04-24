@@ -1,0 +1,3 @@
+class IncludeItem {
+  var value;
+}

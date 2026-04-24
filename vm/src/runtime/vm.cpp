@@ -1,13 +1,16 @@
-﻿#include <stdlib.h>
+#include <stdlib.h>
 #include <string>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <cstring>
+#include <cstdlib>
 
 #include "lpc_value.h"
 #include "runtime/vm.h"
 #include "runtime/stack.h"
+#include "runtime/verifier.h"
 #include "type/lpc_proto.h"
 #include "type/lpc_object.h"
 #include "memory/memory.h"
@@ -24,18 +27,25 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 {
     if (!name) return nullptr;
     const string &cwd = get_cwd();
-#ifdef WIN32
-    string realName = "D:/code/src/vs/lpc-interpreter/build/compiler/Debug/" + string(name) + ".b";
-#else
-    string realName = "/home/yuan/codes/test/lpc/build/compiler/" + string(name) + ".b";
-#endif
-
-    // TODO 检查文件夹啥的
+    string realName = cwd + "/bin/" + string(name) + ".b";
+    string fallbackName = cwd + "/build/compiler/" + string(name) + ".b";
 
     ifstream in;
     in.open(realName.c_str(), ios_base::binary);
     if (!in.good()) {
-        return nullptr;
+        in.clear();
+        in.open(fallbackName.c_str(), ios_base::binary);
+        if (!in.good()) {
+            in.clear();
+            string fallback2 = cwd + "/../build/compiler/" + string(name) + ".b";
+            in.open(fallback2.c_str(), ios_base::binary);
+            if (!in.good()) {
+            if (non_fatal_mode_) {
+                set_last_error(std::string("can not open object bytecode: ") + name);
+            }
+            return nullptr;
+            }
+        }
     }
 
     object_proto_t *proto = alloc->allocate_object_proto();
@@ -49,29 +59,23 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     in.read((char *)&sz, 4);
     proto->inherits = nullptr;
     proto->inherit_offsets = nullptr;
-    proto->ninherit = sz;
+    proto->ninherit = 0;
+    proto->class_table = nullptr;
+    proto->nclass = sz;
     if (sz > 0) {
-        proto->inherits = new void *[sz];
-        proto->inherit_offsets = new lint16_t[sz];
-        int size = sz;
-        lint16_t off;
-        for (int i = 0; i < size; ++i) {
-            in.read((char *)&off, 2);
-            proto->inherit_offsets[size - i - 1] = off - 1;
-
-            in.read((char *)&sz, 4);
-            char *inherit = new char[sz + 1];
-            in.read(inherit, sz);
-            inherit[sz] = '\0';
-
-            const char *pName = strrchr(inherit, '.');
-            if (pName != NULL && strcmp(pName, ".txt") == 0) {
-                inherit[sz - 4] = '\0';
+        class_proto_t *klass = new class_proto_t[sz];
+        for (int i = 0; i < static_cast<int>(sz); ++i) {
+            luint32_t nlen = 0;
+            in.read((char *)&nlen, 4);
+            if (nlen > 0) {
+                std::string tmp(nlen, '\0');
+                in.read(&tmp[0], nlen);
             }
-
-            lpc_string_t *str = alloc->allocate_string(inherit);
-            proto->inherits[size - i - 1] = str;
+            in.read((char *)&klass[i].is_static, 1);
+            in.read((char *)&klass[i].nfield, 2);
+            klass[i].field_table = nullptr;
         }
+        proto->class_table = klass;
     }
 
     in.read((char *)&proto->create_idx, 2);
@@ -79,27 +83,18 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
     in.read((char *)&proto->on_destruct_idx, 2);
     
     in.read((char *)&sz, 4);
-    proto->nswitch = sz;
+    proto->nswitch = 0;
     proto->lookup_table = nullptr;
     proto->defaults = nullptr;
+    proto->initLineMap = nullptr;
+    proto->lineMap = nullptr;
     if (sz > 0) {
-        proto->lookup_table = new std::vector<std::unordered_map<lint32_t, lint32_t>>;
-        proto->defaults = new std::unordered_map<lint32_t, lint32_t>;
-
-        lint32_t caser = 0, gotoW = 0;
-        for (int i = 0; i < sz; ++i) {
-            lint32_t sz1;
-            in.read((char *)&sz1, 4);
-            proto->lookup_table->push_back({});
-            for (int j = 0; j < sz1; ++j) {
-                in.read((char *)&caser, 4);
-                in.read((char *)&gotoW, 4);
-                if (gotoW < 0) {
-                    (*proto->defaults)[i] = -gotoW;
-                } else {
-                    proto->lookup_table->back()[caser] = gotoW;
-                }
-            }
+        proto->lineMap = new std::vector<std::pair<luint32_t, luint32_t>>();
+        lint32_t lineno = 0, opoff = 0;
+        for (lint32_t i = 0; i < sz; ++i) {
+            in.read((char *)&lineno, 4);
+            in.read((char *)&opoff, 4);
+            proto->lineMap->push_back({lineno + 1, opoff});
         }
     }
 
@@ -120,6 +115,17 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
         in.read((char *)&func_proto[i].is_static, 1);
         in.read((char *)&func_proto[i].nargs, 2);
         in.read((char *)&func_proto[i].nlocal, 2);
+        in.read((char *)&func_proto[i].nupvalue, 2);
+        func_proto[i].upvalue_source_kind = nullptr;
+        func_proto[i].upvalue_source_index = nullptr;
+        if (func_proto[i].nupvalue > 0) {
+            func_proto[i].upvalue_source_kind = new lint16_t[func_proto[i].nupvalue];
+            func_proto[i].upvalue_source_index = new lint16_t[func_proto[i].nupvalue];
+            for (int ui = 0; ui < func_proto[i].nupvalue; ++ui) {
+                in.read((char *)&func_proto[i].upvalue_source_kind[ui], 2);
+                in.read((char *)&func_proto[i].upvalue_source_index[ui], 2);
+            }
+        }
         in.read((char *)&func_proto[i].fromPC, 4);
         in.read((char *)&func_proto[i].toPC, 4);
 
@@ -184,13 +190,18 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 
     bool hasClazz = false;
     in.read((char *)&hasClazz, 1);
-    proto->class_table = nullptr;
     if (!hasClazz) {
         in.read((char *)&sz, 4);
+        if (proto->class_table) {
+            delete [] proto->class_table;
+            proto->class_table = nullptr;
+        }
+        proto->nclass = sz;
         class_proto_t *sproto = new class_proto_t[sz];
-        for (int i = 0; i < sz; ++i) {
+        for (int i = 0; i < static_cast<int>(sz); ++i) {
             in.read((char *)&sproto[i].is_static, 1);
             in.read((char *)&sproto[i].nfield, 2);
+            sproto[i].field_table = nullptr;
         }
 
         proto->class_table = sproto;
@@ -213,11 +224,14 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 
     in.read((char *)&sz, 4);
     if (sz > 0) {
+        if (!proto->initLineMap) {
+            proto->initLineMap = new std::vector<std::pair<luint32_t, luint32_t>>();
+        }
         lint32_t lineno = 0, opoff = 0;
         for (lint32_t i = 0; i < sz; ++i) {
             in.read((char *)&lineno, 4);
             in.read((char *)&opoff, 4);
-            proto->initLineMap.push_back({lineno + 1, opoff});
+            proto->initLineMap->push_back({lineno + 1, opoff});
         }
     }
 
@@ -234,15 +248,30 @@ object_proto_t * lpc_vm_t::load_object_proto(const char *name)
 
     in.read((char *)&sz, 4);
     if (sz > 0) {
+        if (!proto->lineMap) {
+            proto->lineMap = new std::vector<std::pair<luint32_t, luint32_t>>();
+        }
         lint32_t lineno = 0, opoff = 0;
         for (lint32_t i = 0; i < sz; ++i) {
             in.read((char *)&lineno, 4);
             in.read((char *)&opoff, 4);
-            proto->lineMap.push_back({lineno + 1, opoff});
+            proto->lineMap->push_back({lineno + 1, opoff});
         }
     }
 
     in.close();
+
+    vm::VerifyResult vr = vm::VerifyV1Bytecode(*proto);
+    if (!vr.ok) {
+        std::cout << "bytecode verify failed for object: " << proto->name
+                  << ", offset=" << vr.offset
+                  << ", reason=" << vr.message << std::endl;
+        if (non_fatal_mode_) {
+            set_last_error(std::string("bytecode verify failed: ") + vr.message);
+            return nullptr;
+        }
+        exit(-1);
+    }
 
     return proto;
 }
@@ -253,7 +282,29 @@ lpc_object_t * lpc_vm_t::load_object(const char *name, bool newOne)
     object_proto_t *proto = load_object_proto(name);
     if (!proto) {
         cout << "can not load object: " << name << endl;
+        if (non_fatal_mode_) {
+            if (!has_error()) {
+                set_last_error(std::string("can not load object: ") + name);
+            }
+            return nullptr;
+        }
         exit(-1);
+    }
+
+    if (non_fatal_mode_) {
+        try {
+            obj->set_proto(proto);
+            on_loaded_object(obj, name, newOne);
+        } catch (const std::bad_alloc &) {
+            set_last_error(std::string("load object bad_alloc: ") + name);
+            return nullptr;
+        } catch (const vm_abort_signal &) {
+            return nullptr;
+        } catch (...) {
+            set_last_error(std::string("load object unknown exception: ") + name);
+            return nullptr;
+        }
+        return obj;
     }
 
     obj->set_proto(proto);
@@ -270,12 +321,10 @@ void lpc_vm_t::on_loaded_object(lpc_object_t *obj, const char *name, bool newOne
     
     lpc_string_t *k = alloc->allocate_string(name, newOne);
     lpc_value_t key;
-    key.type = value_type::string_;
-    key.gcobj = reinterpret_cast<lpc_gc_object_t *>(k);
+    key.set_string(reinterpret_cast<lpc_gc_object_t *>(k));
 
     lpc_value_t val;
-    val.type = value_type::object_;
-    val.gcobj = reinterpret_cast<lpc_gc_object_t *>(obj);
+    val.set_object(reinterpret_cast<lpc_gc_object_t *>(obj));
     loaded_protos->set(&key, &val);
 
     this->on_create_object(obj);
@@ -284,16 +333,16 @@ void lpc_vm_t::on_loaded_object(lpc_object_t *obj, const char *name, bool newOne
 
 lpc_object_t * lpc_vm_t::find_oject(lpc_value_t *name)
 {
-    if (name->type != value_type::string_) {
+    if (!name->is_string()) {
         return nullptr;
     }
 
     lpc_value_t *val = loaded_protos->get_value(name);
     if (val) {
-        return reinterpret_cast<lpc_object_t *>(val->gcobj);
+        return reinterpret_cast<lpc_object_t *>(val->get_gcobj());
     } else {
-        lpc_string_t *str = reinterpret_cast<lpc_string_t *>(name->gcobj);
-        return load_object(str->get_str());;
+        lpc_string_t *str = reinterpret_cast<lpc_string_t *>(name->get_gcobj());
+        return load_object(str->get_str());
     }
 }
 
@@ -308,9 +357,38 @@ lpc_vm_t::lpc_vm_t()
     loaded_protos->header.marked = 1;
     base_ci = nullptr;
     cur_ci = nullptr;
-    entry = "1";
+    entry_storage = "1";
+    entry = entry_storage.c_str();
     sfun_object_name = "rc/simulate_efun";
     dbg = nullptr;
+}
+
+lpc_vm_t::~lpc_vm_t()
+{
+    if (profiler) {
+        delete profiler;
+        profiler = nullptr;
+    }
+    if (dbg) {
+        delete dbg;
+        dbg = nullptr;
+    }
+    if (stack) {
+        delete stack;
+        stack = nullptr;
+    }
+    if (efuns) {
+        delete [] efuns;
+        efuns = nullptr;
+    }
+    if (gc) {
+        delete gc;
+        gc = nullptr;
+    }
+    if (alloc) {
+        delete alloc;
+        alloc = nullptr;
+    }
 }
 
 lpc_vm_t * lpc_vm_t::create_vm()
@@ -321,21 +399,79 @@ lpc_vm_t * lpc_vm_t::create_vm()
 
 void lpc_vm_t::bootstrap()
 {
+    clear_last_error();
+    set_memory_limit_bytes(2ULL * 1024ULL * 1024ULL * 1024ULL);
+    const char *mem_limit = std::getenv("LPC_VM_MAX_MEM");
+    if (mem_limit && *mem_limit) {
+        char *end = nullptr;
+        unsigned long long bytes = std::strtoull(mem_limit, &end, 10);
+        if (end != mem_limit && bytes > 0) {
+            set_memory_limit_bytes(static_cast<luint64_t>(bytes));
+        }
+    }
+
+    const char *nursery_limit = std::getenv("LPC_VM_NURSERY_MEM");
+    if (nursery_limit && *nursery_limit) {
+        char *end = nullptr;
+        unsigned long long bytes = std::strtoull(nursery_limit, &end, 10);
+        if (end != nursery_limit && bytes > 0) {
+            set_nursery_limit_bytes(static_cast<luint64_t>(bytes));
+        }
+    }
+
     lpc_object_t *eobj = load_object(sfun_object_name, true);
+    if (!eobj) {
+        if (!has_error()) {
+            set_last_error("failed to load simulate_efun object");
+        }
+        return;
+    }
     this->sfun_obj = eobj;
+
+    const char *env_entry = std::getenv("LPC_ENTRY");
+    if (env_entry && *env_entry) {
+        set_entry_owned(env_entry);
+    }
+
+    if (strcmp(entry, "1") == 0) {
+        namespace fs = std::filesystem;
+        std::string p = get_cwd() + "/bin/entry.txt";
+        if (fs::exists(fs::path(p))) {
+            std::ifstream in(p.c_str(), std::ios::binary);
+            std::string m;
+            if (in.is_open()) {
+                std::getline(in, m);
+                in.close();
+                if (!m.empty()) {
+                    set_entry_owned(m);
+                }
+            }
+        }
+    }
     
     lpc_object_t *obj = load_object(entry);
+    if (!obj) {
+        if (!has_error()) {
+            set_last_error(std::string("failed to load entry object: ") + entry);
+        }
+        return;
+    }
     this->entry_obj = obj;
+
+    if (gc_nursery_limit_bytes() <= 1024ULL * 1024ULL) {
+        set_nursery_limit_bytes(8ULL * 1024ULL * 1024ULL);
+    }
 }
 
 void lpc_vm_t::set_entry(const char *entry)
 {
-    this->entry = entry;
+    if (entry) {
+        set_entry_owned(entry);
+    }
 }
 
 void lpc_vm_t::on_start()
 {
-    // init something
 }
 
 void lpc_vm_t::on_exit()
@@ -350,6 +486,14 @@ void lpc_vm_t::load_config()
 
 void lpc_vm_t::run_main()
 {
+    clear_last_error();
+    has_last_int_result_ = false;
+    last_int_result_ = 0;
+    if (!entry_obj) {
+        set_last_error("entry object is null");
+        return;
+    }
+
     string main = "main";
     object_proto_t *proto = entry_obj->get_proto();
     if (proto->func_table) {
@@ -363,9 +507,24 @@ void lpc_vm_t::run_main()
         }
 
         if (funIdx >= 0) {
+            function_proto_t *f = &proto->func_table[funIdx];
+            lpc_value_t null_val;
+            null_val.set_null();
+            for (int i = 0; i < f->nargs; ++i) {
+                stack->push(&null_val);
+            }
             new_frame(entry_obj, funIdx);
             run();
+            lpc_value_t *topv = stack->top();
+            if (topv && topv->is_int()) {
+                has_last_int_result_ = true;
+                last_int_result_ = topv->get_int();
+            }
+        } else {
+            set_last_error("main function not found");
         }
+    } else {
+        set_last_error("entry object has no function table");
     }
 }
 
@@ -379,9 +538,96 @@ call_info_t * lpc_vm_t::get_call_info()
     return this->cur_ci;
 }
 
-call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
+const object_proto_t * lpc_vm_t::get_frame_proto(const call_info_t *ci) const
 {
-    call_info_t *nci = new call_info_t;
+    if (!ci) {
+        return nullptr;
+    }
+    if (ci->father) {
+        return ci->father;
+    }
+    if (ci->cur_obj) {
+        return ci->cur_obj->get_proto();
+    }
+    return nullptr;
+}
+
+const function_proto_t * lpc_vm_t::get_frame_function(const call_info_t *ci) const
+{
+    if (!ci) {
+        return nullptr;
+    }
+    if (ci->call_init) {
+        const object_proto_t *proto = get_frame_proto(ci);
+        return proto ? proto->init_fun : nullptr;
+    }
+
+    const object_proto_t *proto = get_frame_proto(ci);
+    if (!proto || !proto->func_table || ci->funcIdx < 0 || ci->funcIdx >= proto->nfunction) {
+        return nullptr;
+    }
+    return &proto->func_table[ci->funcIdx];
+}
+
+const char * lpc_vm_t::get_frame_code_base(const call_info_t *ci) const
+{
+    if (!ci) {
+        return nullptr;
+    }
+    const object_proto_t *proto = get_frame_proto(ci);
+    if (!proto) {
+        return nullptr;
+    }
+    return ci->call_init ? proto->init_codes : proto->instructions;
+}
+
+const std::vector<std::pair<luint32_t, luint32_t>> * lpc_vm_t::get_frame_line_map(const call_info_t *ci) const
+{
+    const object_proto_t *proto = get_frame_proto(ci);
+    if (!proto) {
+        return nullptr;
+    }
+    return ci && ci->call_init ? proto->initLineMap : proto->lineMap;
+}
+
+bool lpc_vm_t::get_frame_info(const call_info_t *ci, vm_frame_info_t *out) const
+{
+    if (!ci || !out) {
+        return false;
+    }
+
+    const object_proto_t *proto = get_frame_proto(ci);
+    const function_proto_t *func = get_frame_function(ci);
+    const char *base = get_frame_code_base(ci);
+    if (!proto || !base || !ci->savepc) {
+        return false;
+    }
+
+    out->object_name = proto->name;
+    out->function_name = ci->call_init ? "<init>" : (func ? func->name : "<unknown>");
+    out->pc_offset = static_cast<luint32_t>(ci->savepc - base);
+    out->line = 0;
+    out->has_line = false;
+
+    const auto *line_map = get_frame_line_map(ci);
+    if (!line_map || line_map->empty()) {
+        return true;
+    }
+
+    for (const auto &it : *line_map) {
+        if (it.second <= out->pc_offset) {
+            out->line = it.first;
+            out->has_line = true;
+            continue;
+        }
+        break;
+    }
+    return true;
+}
+
+call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init, lpc_function_t *callee)
+{
+    call_info_t *nci = ci_pool.alloc();
     if (idx < 0 && !init) {
         idx = -idx;
         nci->call_other = true;
@@ -406,6 +652,7 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
     
     nci->funcIdx = idx;
     nci->cur_obj = obj;
+    nci->callee = callee;
     nci->pre = cur_ci;
     nci->base = stack->top() - (f->nargs > 0 ? f->nargs - 1 : 0);
     nci->top = f->retType > 1 ? stack->top() + f->nlocal + 1 : stack->top() + f->nlocal;
@@ -415,6 +662,13 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init)
         cur_ci = nci;
     } else {
         cur_ci = nci;
+    }
+
+    if (is_profiling() && !init) {
+        object_proto_t *p = nci->father ? nci->father : obj->get_proto();
+        if (p && idx >= 0 && idx < p->nfunction && p->func_table[idx].name) {
+            get_profiler()->CountFunction(p->func_table[idx].name);
+        }
     }
 
     if (!base_ci && !init) {
@@ -434,7 +688,7 @@ void lpc_vm_t::pop_frame()
     lpc_value_t *base = pre->base;
     if (pre->call_init) {
         cur_ci = pre->pre;
-        delete pre;
+        ci_pool.release(pre);
         return;
     }
     
@@ -442,7 +696,7 @@ void lpc_vm_t::pop_frame()
     if (!cur_ci) {
         if (pre->call_other) {
             cur_ci = nullptr;
-            delete pre;
+            ci_pool.release(pre);
         }
         return;
     }
@@ -457,25 +711,153 @@ void lpc_vm_t::pop_frame()
     
     if (f.retType > 1) {
         lpc_value_t *ret = stack->pop();
-        ret->subtype = value_type::return_;
-        stack->pop_n(n - 1);
-        if (stack->top()->subtype != value_type::return_) {
-            stack->push(ret);
-        } else {
-            *stack->top() = *ret;
-        }
+        stack->pop_n(n);
+        stack->push(ret);
     } else {
         stack->pop_n(n);
     }
-    delete pre;
+    ci_pool.release(pre);
+
+    if (!cur_ci) {
+        base_ci = nullptr;
+    }
 
     --ncall;
-    gc->gc();
+
+    if (ncall % 64 == 0) {
+        gc->gc();
+    }
 }
 
 lpc_gc_t * lpc_vm_t::get_gc()
 {
     return this->gc;
+}
+
+void lpc_vm_t::set_memory_limit_bytes(luint64_t bytes)
+{
+    if (gc) {
+        gc->set_memory_limit_bytes(bytes);
+    }
+}
+
+luint64_t lpc_vm_t::memory_limit_bytes() const
+{
+    return gc ? gc->memory_limit_bytes() : 0;
+}
+
+luint64_t lpc_vm_t::allocated_bytes() const
+{
+    return gc ? gc->allocated_bytes() : 0;
+}
+
+luint64_t lpc_vm_t::gc_collect_count() const
+{
+    return gc ? gc->gc_collect_count() : 0;
+}
+
+luint64_t lpc_vm_t::gc_last_freed_bytes() const
+{
+    return gc ? gc->gc_last_freed_bytes() : 0;
+}
+
+luint64_t lpc_vm_t::gc_total_freed_bytes() const
+{
+    return gc ? gc->gc_total_freed_bytes() : 0;
+}
+
+luint64_t lpc_vm_t::gc_last_collected_objects() const
+{
+    return gc ? gc->gc_last_collected_objects() : 0;
+}
+
+luint64_t lpc_vm_t::gc_total_collected_objects() const
+{
+    return gc ? gc->gc_total_collected_objects() : 0;
+}
+
+luint64_t lpc_vm_t::gc_write_barrier_count() const
+{
+    return gc ? gc->gc_write_barrier_count() : 0;
+}
+
+luint64_t lpc_vm_t::gc_minor_collect_count() const
+{
+    return gc ? gc->gc_minor_collect_count() : 0;
+}
+
+luint64_t lpc_vm_t::gc_major_collect_count() const
+{
+    return gc ? gc->gc_major_collect_count() : 0;
+}
+
+luint64_t lpc_vm_t::gc_nursery_bytes() const
+{
+    return gc ? gc->gc_nursery_bytes() : 0;
+}
+
+luint64_t lpc_vm_t::gc_nursery_limit_bytes() const
+{
+    return gc ? gc->gc_nursery_limit_bytes() : 0;
+}
+
+luint64_t lpc_vm_t::gc_remembered_set_size() const
+{
+    return gc ? gc->gc_remembered_set_size() : 0;
+}
+
+luint64_t lpc_vm_t::gc_minor_last_freed_bytes() const
+{
+    return gc ? gc->gc_minor_last_freed_bytes() : 0;
+}
+
+luint64_t lpc_vm_t::gc_minor_total_freed_bytes() const
+{
+    return gc ? gc->gc_minor_total_freed_bytes() : 0;
+}
+
+luint64_t lpc_vm_t::gc_major_last_freed_bytes() const
+{
+    return gc ? gc->gc_major_last_freed_bytes() : 0;
+}
+
+luint64_t lpc_vm_t::gc_major_total_freed_bytes() const
+{
+    return gc ? gc->gc_major_total_freed_bytes() : 0;
+}
+
+luint64_t lpc_vm_t::gc_minor_last_elapsed_us() const
+{
+    return gc ? gc->gc_minor_last_elapsed_us() : 0;
+}
+
+luint64_t lpc_vm_t::gc_minor_total_elapsed_us() const
+{
+    return gc ? gc->gc_minor_total_elapsed_us() : 0;
+}
+
+luint64_t lpc_vm_t::gc_major_last_elapsed_us() const
+{
+    return gc ? gc->gc_major_last_elapsed_us() : 0;
+}
+
+luint64_t lpc_vm_t::gc_major_total_elapsed_us() const
+{
+    return gc ? gc->gc_major_total_elapsed_us() : 0;
+}
+
+void lpc_vm_t::set_nursery_limit_bytes(luint64_t bytes)
+{
+    if (gc) {
+        gc->set_nursery_limit_bytes(bytes);
+    }
+}
+
+void lpc_vm_t::gc_write_barrier(lpc_gc_object_t *container, const lpc_value_t *value)
+{
+    if (gc) {
+        gc->write_barrier(container, value);
+    }
 }
 
 void lpc_vm_t::eval_init_codes(lpc_object_t *obj)
@@ -493,7 +875,6 @@ void lpc_vm_t::on_create_object(lpc_object_t *obj)
 {
     object_proto_t *proto = obj->get_proto();
     if (proto->create_idx < 0) {
-        // TODO warning
         return;
     }
 
@@ -505,7 +886,6 @@ void lpc_vm_t::on_load_in_object(lpc_object_t *obj)
 {
     object_proto_t *proto = obj->get_proto();
     if (proto->on_load_in_idx < 0) {
-        // TODO warning
         return;
     }
 
@@ -517,7 +897,6 @@ void lpc_vm_t::on_destruct_object(lpc_object_t *obj)
 {
     object_proto_t *proto = obj->get_proto();
     if (proto->on_destruct_idx < 0) {
-        // TODO warning
         return;
     }
 
@@ -527,43 +906,81 @@ void lpc_vm_t::on_destruct_object(lpc_object_t *obj)
 
 void lpc_vm_t::traceback()
 {
-    call_info_t *tmp = base_ci;
-    stringstream buf;
-    buf << "stack: \n";
-    while (tmp) {
-        buf << "in file: ";
-        if (!tmp->call_init) {
-            lint32_t fIdx = abs(tmp->funcIdx);
-            if (tmp->father) {
-                buf << tmp->father->name << ", func: " << tmp->father->func_table[fIdx].name << "\n";
-            } else {
-                buf << tmp->cur_obj->get_proto()->name << ", func: " << tmp->cur_obj->get_proto()->func_table[fIdx].name << "\n";
-            }
-        } else {
-            buf << "init object \n"; 
-        }
+    cout << traceback_string();
+}
 
+std::string lpc_vm_t::current_frame_string() const
+{
+    std::stringstream buf;
+    call_info_t *ci = cur_ci;
+    vm_frame_info_t frame;
+    if (ci && get_frame_info(ci, &frame)) {
+        buf << (frame.object_name ? frame.object_name : "<unknown>")
+            << "::"
+            << (frame.function_name ? frame.function_name : "<unknown>");
+        if (frame.has_line) {
+            buf << ":" << (frame.line + 1);
+        }
+    } else {
+        buf << "<no-frame>";
+    }
+    return buf.str();
+}
+
+std::string lpc_vm_t::traceback_string() const
+{
+    call_info_t *tmp = base_ci;
+    std::stringstream buf;
+    buf << "stack:\n";
+    while (tmp) {
+        vm_frame_info_t frame;
+        if (get_frame_info(tmp, &frame)) {
+            buf << "in file: "
+                << (frame.object_name ? frame.object_name : "<unknown>")
+                << ", func: "
+                << (frame.function_name ? frame.function_name : "<unknown>");
+            if (frame.has_line) {
+                buf << ", line: " << (frame.line + 1);
+            }
+            buf << "\n";
+        } else {
+            buf << "in file: <unknown>, func: <unknown>\n";
+        }
         tmp = tmp->next;
     }
-
-    cout << buf.str();
+    return buf.str();
 }
 
 void lpc_vm_t::panic()
 {
-    // 退出
+    if (non_fatal_mode_) {
+        if (!has_error()) {
+            set_last_error("runtime panic");
+        }
+        throw vm_abort_signal();
+    }
+
     traceback();
     exit(-1);
 }
 
 void lpc_vm_t::stack_overflow()
 {
-    // 跳回去    
+    const char *msg = "runtime error: stack overflow";
+    if (non_fatal_mode_) {
+        set_last_error(msg);
+        throw vm_abort_signal();
+    }
+    std::cout << msg << std::endl;
+    traceback();
+    exit(-1);
 }
 
 void lpc_vm_t::on_debug_mode()
 {
-    this->dbg = new lpc_debugger_t(this);
+    if (!this->dbg) {
+        this->dbg = new lpc_debugger_t(this);
+    }
 }
 
 bool lpc_vm_t::check_run()

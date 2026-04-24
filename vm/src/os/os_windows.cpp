@@ -1,8 +1,6 @@
 ﻿#include "os/os.h"
 #include "os/os_windows.h"
 
-extern std::string GetFormatTime();
-
 #ifdef WIN32
 
 #include <Windows.h>  
@@ -29,7 +27,7 @@ void CreateDumpFile(LPCSTR lpstrDumpFilePathName, EXCEPTION_POINTERS *pException
 // 处理Unhandled Exception的回调函数  
 LONG ApplicationCrashHandler(EXCEPTION_POINTERS *pException)  
 {     
-    CreateDumpFile((GetFormatTime() + ".dmp").c_str(), pException); 
+    CreateDumpFile((os::GetFormatTime() + ".dmp").c_str(), pException); 
     return EXCEPTION_EXECUTE_HANDLER;  
 }  
 

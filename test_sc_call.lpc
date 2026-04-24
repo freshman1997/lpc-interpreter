@@ -1,0 +1,6 @@
+fun foo() { puts(42); return 1; }
+fun main() {
+  var x = 1 && foo();
+  puts(x);
+  return 0;
+}

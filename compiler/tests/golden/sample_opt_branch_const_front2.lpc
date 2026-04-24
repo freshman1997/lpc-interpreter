@@ -1,0 +1,11 @@
+int f() {
+  if (1) {
+    return 10;
+  } else {
+    return 20;
+  }
+}
+
+fun main() {
+  return f();
+}

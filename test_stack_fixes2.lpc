@@ -1,0 +1,57 @@
+void main()
+{
+    // === Assignment as expression producing value ===
+    write("=== Assignment value ===\n");
+    int x;
+    int y;
+    x = y = 10;
+    write("x=" + to_string(x) + " y=" + to_string(y) + "\n");
+
+    // === Assignment in condition ===
+    write("=== Assignment in condition ===\n");
+    int z;
+    if (z = 5)
+    {
+        write("z=" + to_string(z) + " (truthy)\n");
+    }
+
+    // === Nested for with assignment init ===
+    write("=== For with assignment init ===\n");
+    int n;
+    for (n = 0; n < 3; n++)
+    {
+        write(to_string(n) + " ");
+    }
+    write("\n");
+
+    // === Switch with side-effect selector ===
+    write("=== Switch side-effect ===\n");
+    int counter = 0;
+    switch (counter + 2)
+    {
+    case 1:
+        write("one\n");
+        break;
+    case 2:
+        write("two\n");
+        break;
+    case 3:
+        write("three\n");
+        break;
+    }
+
+    // === Continue in for ===
+    write("=== Continue ===\n");
+    for (int i = 0; i < 5; i++)
+    {
+        if (i == 2) continue;
+        write(to_string(i) + " ");
+    }
+    write("\n");
+
+    // === Global assignment as expression ===
+    write("=== Global compound assign ===\n");
+    int g = 100;
+    g += 50;
+    write("g=" + to_string(g) + "\n");
+}

@@ -1,4 +1,4 @@
-﻿#include <cstring>
+#include <cstring>
 
 #include "memory/memory.h"
 #include "runtime/vm.h"
@@ -19,6 +19,7 @@ lpc_array_t * lpc_allocator_t::allocate_array(luint32_t size)
     }
     
     new(arr)lpc_array_t(size, m); // call ctor
+    arr->alloc = this;
     vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(arr), value_type::array_);
     return arr;
 }
@@ -27,7 +28,7 @@ lpc_mapping_t * lpc_allocator_t::allocate_mapping()
 {
     lpc_mapping_t *map = (lpc_mapping_t *)vm->get_gc()->allocate(sizeof(lpc_mapping_t));
     new(map)lpc_mapping_t(this);
-    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(map), value_type::mappig_);
+    vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(map), value_type::mapping_);
     return map;
 }
 
@@ -52,7 +53,7 @@ lpc_closure_t * lpc_allocator_t::allocate_closure(function_proto_t *funcProto, l
     lpc_closure_t *clo = (lpc_closure_t *)vm->get_gc()->allocate(sizeof(lpc_closure_t));
     clo->proto = funcProto;
     clo->owner = owner;
-    clo->init();
+    clo->init(this);
     vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(clo), value_type::closure_);
     return clo;
 }
@@ -61,11 +62,16 @@ lpc_string_t * lpc_allocator_t::allocate_string(const char *init,  bool newOne)
 {
     lpc_string_t *str = (lpc_string_t *)vm->get_gc()->allocate(sizeof(lpc_string_t));
     const char *buf = init;
+    bool owns_buf = false;
     if (newOne) {
         size_t len = strlen(init);
-        buf = (const char *)vm->get_gc()->allocate(len, false);
+        char *owned_buf = (char *)vm->get_gc()->allocate((luint32_t)len + 1, false);
+        memcpy(owned_buf, init, len);
+        owned_buf[len] = '\0';
+        buf = owned_buf;
+        owns_buf = true;
     }
-    new(str)lpc_string_t(buf);
+    new(str)lpc_string_t(buf, owns_buf);
     vm->get_gc()->link(reinterpret_cast<lpc_gc_object_t *>(str), value_type::string_);
     return str;
 }

@@ -4,6 +4,7 @@
 class lpc_vm_t;
 namespace vm {
     void eval(lpc_vm_t *);
+    void eval_legacy(lpc_vm_t *);
 }
 
 #endif

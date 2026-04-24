@@ -1,0 +1,1 @@
+vm/tests/stress_alloc_gc

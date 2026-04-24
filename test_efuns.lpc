@@ -1,0 +1,35 @@
+int main() {
+    // allocate
+    int *a = allocate(5);
+    print("allocate: " + sizeof(a) + "\n");
+
+    // reverse
+    int *b = ({1, 2, 3, 4, 5});
+    int *c = reverse(b);
+    print("reverse: " + c[0] + "," + c[4] + "\n");
+
+    // min / max
+    print("min: " + min(3, 7) + "\n");
+    print("max: " + max(3, 7) + "\n");
+
+    // sqrt
+    print("sqrt(49): " + to_int(sqrt(49)) + "\n");
+
+    // ctime
+    string t = ctime(0);
+    print("ctime len: " + strlen(t) + "\n");
+
+    // strsrch
+    print("strsrch: " + strsrch("hello world", "world") + "\n");
+    print("strsrch not found: " + strsrch("hello", "xyz") + "\n");
+
+    // replace_string
+    print("replace: " + replace_string("hello world", "world", "LPC") + "\n");
+
+    // sort_array
+    int *d = ({5, 3, 1, 4, 2});
+    int *e = sort_array(d);
+    print("sort: " + e[0] + "," + e[1] + "," + e[2] + "," + e[3] + "," + e[4] + "\n");
+
+    return 0;
+}

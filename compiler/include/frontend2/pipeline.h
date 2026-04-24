@@ -1,0 +1,37 @@
+#ifndef LPC_FRONTEND2_PIPELINE_H
+#define LPC_FRONTEND2_PIPELINE_H
+
+#include <string>
+#include <vector>
+
+#include "frontend2/diagnostic.h"
+#include "frontend2/mir.h"
+#include "frontend2/mir_opt.h"
+
+namespace lpc {
+namespace frontend2 {
+
+struct PipelineResult {
+    MirModule module;
+    MirModule pre_opt_module;
+    bool has_pre_opt_module = false;
+    int mir_instr_before_opt = 0;
+    int mir_instr_after_opt = 0;
+    MirOptStats mir_opt_stats;
+    DiagnosticSink diagnostics;
+};
+
+struct PipelineOptions {
+    bool keep_pre_opt_module = false;
+};
+
+PipelineResult CompileSourceToMir(
+    const std::string &path,
+    const std::string &text,
+    const std::vector<std::string> &include_dirs = {},
+    const PipelineOptions &options = {});
+
+} // namespace frontend2
+} // namespace lpc
+
+#endif

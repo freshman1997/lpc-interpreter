@@ -1,0 +1,10 @@
+int sum_to(int n, int acc) {
+  if (n <= 0) {
+    return acc;
+  }
+  return sum_to(n - 1, acc + n);
+}
+
+fun main() {
+  return sum_to(10, 0);
+}

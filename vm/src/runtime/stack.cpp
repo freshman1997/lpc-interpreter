@@ -1,7 +1,6 @@
 #include "lpc_value.h"
 #include "runtime/stack.h"
 #include "runtime/vm.h"
-#include <iostream>
 
 lpc_stack_t::lpc_stack_t(lint32_t sz, lpc_vm_t *_vm)
 {
@@ -14,15 +13,48 @@ lpc_stack_t::lpc_stack_t(lint32_t sz, lpc_vm_t *_vm)
 
 bool lpc_stack_t::push(lpc_value_t *val)
 {
-    if (idx >= size || !val) return false;
+    if (!val) return false;
+    if (idx >= size) {
+        if (vm) vm->stack_overflow();
+        return false;
+    }
     stack[idx] = *val;
     ++idx;
     return true;
 }
 
+bool lpc_stack_t::push_value(lpc_value_t val)
+{
+    if (idx >= size) {
+        if (vm) vm->stack_overflow();
+        return false;
+    }
+    stack[idx] = val;
+    ++idx;
+    return true;
+}
+
+lint32_t lpc_stack_t::frame_floor_idx() const
+{
+    if (!vm) {
+        return 0;
+    }
+    call_info_t *ci = vm->get_call_info();
+    if (!ci || !ci->base || !stack) {
+        return 0;
+    }
+
+    lpc_value_t *begin = stack;
+    lpc_value_t *end = stack + size;
+    if (ci->base < begin || ci->base >= end) {
+        return 0;
+    }
+    return static_cast<lint32_t>(ci->base - begin);
+}
+
 lpc_value_t * lpc_stack_t::get(lint32_t idx)
 {
-    if (idx >= size) return nullptr;
+    if (idx < 0 || idx >= size) return nullptr;
     return &stack[idx];
 }
 
@@ -31,28 +63,10 @@ lpc_value_t * lpc_stack_t::top()
     return this->get(idx == 0 ? idx : idx - 1);
 }
 
-void lpc_stack_t::check_stack(lint32_t n)
-{
-    call_info_t *cur_ci = vm->get_call_info();
-    if (!cur_ci->call_init) {
-        lint32_t nparam = 0;
-        if (cur_ci->father) {
-            nparam = cur_ci->father->func_table[abs(cur_ci->funcIdx)].nlocal;
-        } else {
-            nparam = cur_ci->cur_obj->get_proto()->func_table[abs(cur_ci->funcIdx)].nlocal;
-        }
-
-        if (cur_ci->base + nparam > stack + idx - n) {
-            vm->panic();
-        }
-    }
-}
-
 lpc_value_t * lpc_stack_t::pop()
 {
-    check_stack(1);
-
-    if (idx < 0) return nullptr;
+    const lint32_t floor = frame_floor_idx();
+    if (idx <= floor) return nullptr;
     --idx;
     lpc_value_t *val = &stack[idx];
     return val;
@@ -60,16 +74,23 @@ lpc_value_t * lpc_stack_t::pop()
 
 bool lpc_stack_t::pop_n(lint32_t n)
 {   
-    if (idx - n < 0) return false;
+    if (n < 0) return false;
+    const lint32_t floor = frame_floor_idx();
+    if (idx - n < floor) return false;
     idx -= n;
     return true;
 }
 void lpc_stack_t::set_local_size(lint32_t n)
 {
+    if (n < 0) {
+        return;
+    }
+    if (idx + n > size) {
+        if (vm) vm->stack_overflow();
+        return;
+    }
     for (lint32_t i = idx; i < idx + n; ++i) {
-        stack[i].type = value_type::int_;
-        stack[i].subtype = value_type::null_;
-        stack[i].pval.number = 0;
+        stack[i].set_undefined();
     }
 
     idx += n;

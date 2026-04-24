@@ -3,9 +3,12 @@ cmake_minimum_required(VERSION 3.16)
 project(lpc_compiler)
 
 include_directories(include)
-aux_source_directory(./src SRC)
+file(GLOB_RECURSE FRONTEND2_SRC ./src/frontend2/*.cpp)
 
 add_definitions("-Wall -fpermissive")
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(UNIX)
 	message("current platform: Linux ")
@@ -16,5 +19,5 @@ else()
 	message("current platform: unkonw ")
 endif()
 
-add_executable(lpc_compiler ${SRC} main.cpp)
+add_executable(lpc_compiler ${FRONTEND2_SRC} main_frontend2.cpp)
 

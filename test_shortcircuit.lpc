@@ -1,0 +1,15 @@
+fun main() {
+  var x = 1 && 0;
+  puts(x);
+  var y = 0 && 1;
+  puts(y);
+  var z = 1 || 0;
+  puts(z);
+  var w = 0 || 1;
+  puts(w);
+  var a = 1 && 1;
+  puts(a);
+  var b = 0 || 0;
+  puts(b);
+  return 0;
+}

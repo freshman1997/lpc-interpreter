@@ -1,0 +1,9 @@
+# debugger script smoke test
+help break
+b 1
+info break csv
+watch arg0
+info watch csv
+display arg0
+info display
+q

@@ -1,0 +1,7 @@
+fun main(a) {
+  var x = 0;
+  for (var i = 0; i; i = i - 1) {
+    x += i;
+  }
+  return x;
+}

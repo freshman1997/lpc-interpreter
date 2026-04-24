@@ -1,0 +1,13 @@
+fun recur(int n) {
+  if (n < 0) {
+    return 0;
+  }
+  return 1 + recur(n + 1);
+}
+
+fun main() {
+  catch {
+    recur(0);
+  }
+  return 0;
+}

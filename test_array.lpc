@@ -1,0 +1,14 @@
+void main() {
+    int arr = ({10, 20, 30, 40, 50});
+    puts(sizeof(arr));
+    puts(arr[0]);
+    puts(arr[2]);
+    puts(arr[4]);
+    int sum = 0;
+    int i = 0;
+    while (i < sizeof(arr)) {
+        sum = sum + arr[i];
+        i = i + 1;
+    }
+    puts(sum);
+}

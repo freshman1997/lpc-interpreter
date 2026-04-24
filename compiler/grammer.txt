@@ -1,9 +1,144 @@
-lpc 语言的语法规则
+LPC 语法规则（用于 frontend2 对齐）
 
-declKey := int | float | object | mapping | void | class
-decorateKey := static | private
+说明:
+1) 本文件以通用 LPC 语法为目标，作为编译器实现基线。
+2) 若实现与本文件冲突，以本文件为准。
+3) 预处理指令属于编译前阶段，不计入普通 statement。
 
-variableDelc := [decorateKey] declKey iden [ "=" initLists ] ";"
-funcDecl := [decorateKey] declKey ["*"] iden "(" args ")" "{" funcBody "}"
-classDecl := "class" iden "{" variableDelc*  "}"
+------------------------------------------------------------
+词法与预处理
+------------------------------------------------------------
+
+identifier      := [A-Za-z_][A-Za-z0-9_]*
+int_lit         := [0-9]+
+float_lit       := [0-9]+'.'[0-9]+
+string_lit      := '"' ... '"'
+
+preprocessor    := include_directive
+                | define_directive
+                | if_directive
+                | elif_directive
+                | else_directive
+                | endif_directive
+
+include_directive := '#include' (string_lit | '<' identifier '>' )
+define_directive  := '#define' identifier ...
+
+------------------------------------------------------------
+类型与声明
+------------------------------------------------------------
+
+decl_type       := 'void' | 'int' | 'float' | 'string' | 'object'
+                | 'mapping' | 'mixed' | identifier
+
+decorate_key    := 'static' | 'private' | 'public' | 'nomask'
+
+var_decl        := [decorate_key]* decl_type ['*'] identifier ['=' expr] ';'
+
+param           := [decl_type ['*']] identifier
+param_list      := param {',' param}
+
+func_decl       := [decorate_key]* decl_type ['*'] identifier
+                  '(' [param_list] ')' block
+
+class_decl      := 'class' identifier '{' {var_decl} '}'
+
+inherit_decl    := 'inherit' (identifier | string_lit) ';'
+
+top_decl        := preprocessor
+                | inherit_decl
+                | class_decl
+                | var_decl
+                | func_decl
+
+program         := {top_decl}
+
+------------------------------------------------------------
+语句
+------------------------------------------------------------
+
+stmt            := block
+                | var_decl
+                | expr_stmt
+                | if_stmt
+                | while_stmt
+                | for_stmt
+                | foreach_stmt
+                | switch_stmt
+                | return_stmt
+                | break_stmt
+                | continue_stmt
+
+block           := '{' {stmt} '}'
+expr_stmt       := expr ';'
+
+if_stmt         := 'if' '(' expr ')' stmt ['else' stmt]
+while_stmt      := 'while' '(' expr ')' stmt
+for_stmt        := 'for' '(' [expr|var_decl_no_semi] ';' [expr] ';' [expr] ')' stmt
+
+foreach_stmt    := 'foreach' '(' identifier [',' identifier] 'in' expr ')' stmt
+
+switch_stmt     := 'switch' '(' expr ')' '{' {case_clause} [default_clause] '}'
+case_clause     := 'case' expr ':' {stmt}
+default_clause  := 'default' ':' {stmt}
+
+return_stmt     := 'return' [expr] ';'
+break_stmt      := 'break' ';'
+continue_stmt   := 'continue' ';'
+
+------------------------------------------------------------
+表达式（按优先级，从低到高）
+------------------------------------------------------------
+
+expr            := assign_expr
+
+assign_expr     := logic_or_expr
+                  [ ('='|'+='|'-='|'*='|'/='|'%=') assign_expr ]
+
+logic_or_expr   := logic_and_expr {'||' logic_and_expr}
+logic_and_expr  := bit_or_expr {'&&' bit_or_expr}
+bit_or_expr     := bit_xor_expr {'|' bit_xor_expr}
+bit_xor_expr    := bit_and_expr {'^' bit_and_expr}
+bit_and_expr    := equality_expr {'&' equality_expr}
+
+equality_expr   := rel_expr {('=='|'!=') rel_expr}
+rel_expr        := shift_expr {('<'|'<='|'>'|'>=') shift_expr}
+shift_expr      := add_expr {('<<'|'>>') add_expr}
+add_expr        := mul_expr {('+'|'-') mul_expr}
+mul_expr        := unary_expr {('*'|'/'|'%') unary_expr}
+
+unary_expr      := ('!'|'-'|'~'|'++'|'--') unary_expr
+                | postfix_expr
+
+postfix_expr    := primary_expr {call_suffix | index_suffix | member_suffix}
+call_suffix     := '(' [arg_list] ')'
+arg_list        := expr {',' expr}
+index_suffix    := '[' expr [ '..' expr ] ']'
+member_suffix   := '->' identifier
+
+primary_expr    := identifier
+                | int_lit
+                | float_lit
+                | string_lit
+                | '(' expr ')'
+                | new_expr
+                | lambda_expr
+
+new_expr        := 'new' identifier ['(' [arg_list] ')']
+lambda_expr     := 'fun' '(' [param_list] ')' (block | '->' expr)
+
+------------------------------------------------------------
+frontend2 当前实现状态（简表）
+------------------------------------------------------------
+
+已实现:
+- inherit/class/new
+- if/while/for/foreach/switch
+- break/continue/return
+- 基本表达式与赋值
+
+未完成:
+- 完整 preprocessor (#include/#define/#if...) 实现
+- 语法中全部 typed declaration 与 decorator 语义收口
+- class/object 运行时行为完整对齐
 

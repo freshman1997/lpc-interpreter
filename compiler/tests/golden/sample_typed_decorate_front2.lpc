@@ -1,0 +1,17 @@
+static public int g_count = 1;
+private mapping table;
+
+class Player {
+  public string name;
+  int score;
+}
+
+public int add(int a, int b) {
+  int c = a + b;
+  return c;
+}
+
+fun main() {
+  int n = add(1, 2);
+  return n;
+}

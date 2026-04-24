@@ -1,0 +1,8 @@
+fun main() {
+  var x = 5;
+  var y = 5;
+  if (x == y) {
+    return x - 3;
+  }
+  return 0;
+}

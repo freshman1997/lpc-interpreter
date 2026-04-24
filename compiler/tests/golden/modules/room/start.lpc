@@ -1,0 +1,11 @@
+fun main() {
+  var hp = 100;
+  while (hp) {
+    hp -= 10;
+    if (hp) {
+      continue;
+    }
+    break;
+  }
+  return hp;
+}

@@ -1,0 +1,18 @@
+#define FEATURE_A 1
+#define FEATURE_B 0
+#if FEATURE_A && !FEATURE_B
+fun a() { return 1; }
+#elif FEATURE_B
+fun a() { return 2; }
+#else
+fun a() { return 3; }
+#endif
+
+#undef FEATURE_A
+#if defined(FEATURE_A)
+fun bad() { return 9; }
+#endif
+
+fun main() {
+  return a();
+}

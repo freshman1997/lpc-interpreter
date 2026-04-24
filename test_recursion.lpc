@@ -1,0 +1,23 @@
+int fib(int n) {
+    if (n <= 1) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+int fact(int n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * fact(n - 1);
+}
+
+void main() {
+    puts(fib(0));
+    puts(fib(1));
+    puts(fib(5));
+    puts(fib(10));
+    puts(fact(1));
+    puts(fact(5));
+    puts(fact(10));
+}

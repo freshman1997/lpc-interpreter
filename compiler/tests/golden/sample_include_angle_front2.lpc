@@ -1,0 +1,6 @@
+#include <angle_defs.lpc>
+
+fun main() {
+  var x = new AngleItem();
+  return 0;
+}

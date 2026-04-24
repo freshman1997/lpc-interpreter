@@ -1,0 +1,4 @@
+fun main() {
+  continue;
+  return 0;
+}

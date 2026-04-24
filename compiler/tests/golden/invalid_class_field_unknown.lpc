@@ -1,0 +1,8 @@
+class User {
+  var level;
+}
+
+fun main() {
+  var u = new User();
+  return u->hp;
+}

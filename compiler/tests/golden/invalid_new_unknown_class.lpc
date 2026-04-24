@@ -1,0 +1,4 @@
+fun main() {
+  var a = new MissingClass();
+  return 0;
+}

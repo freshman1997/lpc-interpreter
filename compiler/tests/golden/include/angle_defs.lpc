@@ -1,0 +1,3 @@
+class AngleItem {
+  var value;
+}

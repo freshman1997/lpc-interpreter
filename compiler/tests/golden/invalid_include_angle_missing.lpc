@@ -1,0 +1,5 @@
+#include <missing_header_for_frontend2.lpc>
+
+fun main() {
+  return 0;
+}

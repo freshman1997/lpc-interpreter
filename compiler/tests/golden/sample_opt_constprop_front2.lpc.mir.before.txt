@@ -1,0 +1,26 @@
+module -- before-opt
+functions=2 globals=0
+fn f -- before-opt
+  nargs=0 locals=3 upvalues=0
+  [0] op=0 a=0 b=0 line=2
+  [1] op=5 a=0 b=0 line=2
+  [2] op=4 a=0 b=0 line=3
+  [3] op=0 a=1 b=0 line=3
+  [4] op=8 a=0 b=0 line=3
+  [5] op=5 a=1 b=0 line=3
+  [6] op=4 a=1 b=0 line=4
+  [7] op=0 a=2 b=0 line=4
+  [8] op=10 a=0 b=0 line=1
+  [9] op=5 a=2 b=0 line=4
+  [10] op=4 a=2 b=0 line=5
+  [11] op=43 a=0 b=0 line=5
+  [12] op=43 a=0 b=0 line=0
+fn main -- before-opt
+  nargs=0 locals=0 upvalues=0
+  [0] op=3 a=0 b=0 line=1
+  [1] op=35 a=0 b=0 line=1
+  [2] op=43 a=0 b=0 line=9
+  [3] op=43 a=0 b=0 line=0
+fn __init_globals -- init
+  nargs=0 locals=0 upvalues=0
+  [0] op=43 a=0 b=0 line=0

@@ -1,0 +1,7 @@
+fun main() {
+  var arr = 0;
+  foreach (item in arr) {
+    break;
+  }
+  return 0;
+}

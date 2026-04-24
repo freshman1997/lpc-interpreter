@@ -35,6 +35,7 @@ public:
     lpc_allocator_t(lpc_vm_t * v) : vm(v) {}
 
     void release(luint32_t sz);
+    lpc_vm_t * get_vm() const { return vm; }
 
     template<typename T, bool call = false>
     T * allocate(luint32_t sz) 

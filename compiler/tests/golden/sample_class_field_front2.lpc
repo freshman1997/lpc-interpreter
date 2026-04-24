@@ -1,0 +1,11 @@
+class User {
+  var level;
+  var hp;
+}
+
+fun main() {
+  var u = new User();
+  u->level = 3;
+  u->hp = u->level + 7;
+  return u->hp;
+}

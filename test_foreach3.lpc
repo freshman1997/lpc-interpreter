@@ -1,0 +1,10 @@
+fun main() {
+  var arr = ({10, 20, 30, 40, 50});
+  var sum = 0;
+  foreach (item in arr) {
+    sum = sum + item;
+    puts(item);
+  }
+  puts(sum);
+  return 0;
+}
