@@ -1,4 +1,4 @@
-#include <missing_header_for_frontend2.lpc>
+#include <missing_header_for_frontend.lpc>
 
 fun main() {
   return 0;

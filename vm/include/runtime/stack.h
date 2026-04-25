@@ -16,6 +16,10 @@ public:
     {
         return idx;
     }
+    lint32_t index_of(const lpc_value_t *ptr) const;
+    lpc_value_t * at_index(lint32_t index);
+    bool contains(const lpc_value_t *ptr) const;
+    bool valid_range(lint32_t from, lint32_t to) const;
     lpc_value_t * top();
     lpc_value_t * pop();
     bool pop_n(lint32_t n);

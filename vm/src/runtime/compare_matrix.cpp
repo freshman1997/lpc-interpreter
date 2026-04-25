@@ -4,25 +4,25 @@
 #include <iostream>
 #include <vector>
 
-#include "runtime/vm2_bridge.h"
+#include "runtime/bytecode_translator.h"
 
 namespace lpc {
 namespace runtime {
 
 core::Status RunCompareMatrix() {
     const std::vector<std::string> modules = {
-        "compiler/tests/golden/sample_vm2_bridge_min",
-        "compiler/tests/golden/sample_vm2_compare_ok",
-        "compiler/tests/golden/sample_vm2_compare_eq",
-        "compiler/tests/golden/sample_vm2_compare_neq",
-        "compiler/tests/golden/sample_vm2_compare_lte",
-        "compiler/tests/golden/sample_vm2_compare_gte_lt",
-        "compiler/tests/golden/sample_vm2_compare_not_or",
-        "compiler/tests/golden/sample_vm2_compare_logic_ops",
-        "compiler/tests/golden/sample_vm2_compare_logic_call",
-        "compiler/tests/golden/sample_vm2_compare_mul_div_mod",
-        "compiler/tests/golden/sample_vm2_compare_class_field",
-        "compiler/tests/golden/sample_vm2_compare_array_index",
+        "compiler/tests/golden/sample_nextvm_translate_min",
+        "compiler/tests/golden/sample_nextvm_compare_ok",
+        "compiler/tests/golden/sample_nextvm_compare_eq",
+        "compiler/tests/golden/sample_nextvm_compare_neq",
+        "compiler/tests/golden/sample_nextvm_compare_lte",
+        "compiler/tests/golden/sample_nextvm_compare_gte_lt",
+        "compiler/tests/golden/sample_nextvm_compare_not_or",
+        "compiler/tests/golden/sample_nextvm_compare_logic_ops",
+        "compiler/tests/golden/sample_nextvm_compare_logic_call",
+        "compiler/tests/golden/sample_nextvm_compare_mul_div_mod",
+        "compiler/tests/golden/sample_nextvm_compare_class_field",
+        "compiler/tests/golden/sample_nextvm_compare_array_index",
     };
 
     int pass = 0;

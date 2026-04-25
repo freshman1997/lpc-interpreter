@@ -1,4 +1,4 @@
-﻿#ifndef __LPC_STRING__
+#ifndef __LPC_STRING__
 #define __LPC_STRING__
 #include "lpc.h"
 #include "type/lpc_array.h"

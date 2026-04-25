@@ -1,0 +1,136 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "LPC",
+  "scopeName": "source.lpc",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#preprocessor"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#efuns"
+    },
+    {
+      "include": "#functions"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.lpc",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.lpc",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "preprocessor": {
+      "patterns": [
+        {
+          "name": "keyword.control.directive.lpc",
+          "match": "^\\s*#\\s*(include|define|undef|if|elif|else|endif)\\b"
+        },
+        {
+          "name": "string.quoted.include.lpc",
+          "match": "(<[^>]+>|\"[^\"]+\")"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.lpc",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.lpc",
+              "match": "\\\\([\\\\\"'nrt0abfv]|x[0-9A-Fa-f]+)"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.lpc",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.lpc",
+              "match": "\\\\([\\\\\"'nrt0abfv]|x[0-9A-Fa-f]+)"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.lpc",
+          "match": "\\b(?:\\d+\\.\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.lpc",
+          "match": "\\b(?:0[xX][0-9A-Fa-f]+|\\d+)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.lpc",
+          "match": "\\b(if|else|for|foreach|in|while|do|switch|case|default|break|continue|return|catch|inherit)\\b"
+        },
+        {
+          "name": "storage.modifier.lpc",
+          "match": "\\b(static|public|private|protected|nomask|varargs)\\b"
+        },
+        {
+          "name": "keyword.operator.word.lpc",
+          "match": "\\b(new|class)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.lpc",
+          "match": "\\b(void|int|float|string|mixed|mapping|object|function|fun|buffer)\\b(?:\\s*\\*)?"
+        }
+      ]
+    },
+    "efuns": {
+      "patterns": [
+        {
+          "name": "support.function.efun.lpc",
+          "match": "\\b(call_other|print|puts|sleep|sizeof|random|keys|values|typeof|to_string|to_int|this_object|clone_object|destruct|sprintf|write|time|member_array|explode|implode|stringp|intp|floatp|arrayp|mappingp|objectp|nullp|functionp|to_float|abs|strlen|map_delete|capitalize|lower_case|upper_case|allocate|reverse|min|max|sqrt|ctime|strsrch|replace_string|sort_array)\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.lpc",
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()"
+        }
+      ]
+    }
+  }
+}

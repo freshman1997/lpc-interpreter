@@ -4,10 +4,12 @@
 #include <cassert>
 #include <malloc.h>
 #include <chrono>
+#include <functional>
 
 #include "type/lpc_array.h"
 #include "gc/mark_sweep.h"
 #include "runtime/vm.h"
+#include "runtime/stack.h"
 
 namespace {
 
@@ -34,6 +36,47 @@ static bool IsAliveInRootList(lpc_gc_object_t *root, lpc_gc_object_t *obj)
         root = root->head.next;
     }
     return false;
+}
+
+static void ForEachStackRoot(lpc_vm_t *vm, const std::function<void(lpc_value_t *)> &visit)
+{
+    if (!vm || !vm->get_stack()) {
+        return;
+    }
+    lpc_stack_t *stack = vm->get_stack();
+    call_info_t *ci = vm->get_base_call();
+    if (!ci) {
+        ci = vm->get_call_info();
+    }
+    if (!ci) {
+        return;
+    }
+
+    lint32_t from = -1;
+    while (ci) {
+        if (ci->base_index >= 0) {
+            if (from < 0 || ci->base_index < from) {
+                from = ci->base_index;
+            }
+        } else if (ci->base) {
+            lint32_t idx = stack->index_of(ci->base);
+            if (idx >= 0 && (from < 0 || idx < from)) {
+                from = idx;
+            }
+        }
+        ci = ci->next;
+    }
+
+    lint32_t to = stack->get_idx() - 1;
+    if (from < 0 || to < from || !stack->valid_range(from, to)) {
+        return;
+    }
+    for (lint32_t i = from; i <= to; ++i) {
+        lpc_value_t *val = stack->at_index(i);
+        if (val) {
+            visit(val);
+        }
+    }
 }
 
 void mark_sweep_gc::remove_from_remembered_set(lpc_gc_object_t *obj)
@@ -171,39 +214,35 @@ void mark_sweep_gc::mark_minor(lpc_gc_object_t *obj)
 
 lpc_gc_object_t * mark_sweep_gc::mark_root()
 {
-    call_info_t *ci = vm->get_base_call();
-    lpc_gc_object_t *st = nullptr;
-    while (ci) {
-        if (ci->base && ci->top && ci->base <= ci->top) {
-            for (lpc_value_t *val = ci->base; val <= ci->top; ++val) {
-                if (val->is_gc_type() && val->get_gcobj() && !val->get_gcobj()->head.marked) {
-                    val->get_gcobj()->head.marked = 1;
-                    val->get_gcobj()->head.gclist = st;
-                    st = val->get_gcobj();
-                }
-            }
+    auto enqueue_root = [](lpc_gc_object_t *obj, lpc_gc_object_t *&st) {
+        if (!obj || obj->head.marked) {
+            return;
         }
+        obj->head.marked = 1;
+        obj->head.gclist = st;
+        st = obj;
+    };
 
-        ci = ci->next;
-    }
+    lpc_gc_object_t *st = nullptr;
+    ForEachStackRoot(vm, [&](lpc_value_t *val) {
+        if (val->is_gc_type() && val->get_gcobj()) {
+            enqueue_root(val->get_gcobj(), st);
+        }
+    });
 
     lpc_mapping_t *map = vm->get_object_cache();
-    map->header.marked = 1;
-    map->header.gclist = st;
-    st = reinterpret_cast<lpc_gc_object_t *>(map);
+    enqueue_root(reinterpret_cast<lpc_gc_object_t *>(map), st);
 
     for (int i = 0; i < map->get_size(); ++i) {
         bucket_t *buck = map->iterate(i);
         lpc_value_t *k = &buck->pair[0];
-        if (k->is_gc_type() && k->get_gcobj() && !k->get_gcobj()->head.marked) {
-            k->get_gcobj()->head.marked = 1;
+        if (k->is_gc_type() && k->get_gcobj()) {
+            enqueue_root(k->get_gcobj(), st);
         }
 
         lpc_value_t *val = &buck->pair[1];
-        if (val->is_gc_type() && val->get_gcobj() && !val->get_gcobj()->head.marked) {
-            val->get_gcobj()->head.marked = 1;
-            val->get_gcobj()->head.gclist = st;
-            st = val->get_gcobj();
+        if (val->is_gc_type() && val->get_gcobj()) {
+            enqueue_root(val->get_gcobj(), st);
         }
     }
 
@@ -218,8 +257,10 @@ void mark_sweep_gc::mark_all(lpc_gc_object_t *obj)
 
     lpc_gc_object_t *cur = obj;
     while (cur) {
+        lpc_gc_object_t *next = cur->head.gclist;
+        cur->head.marked = 0;
         mark(cur);
-        cur = cur->head.gclist;
+        cur = next;
     }
 }
 
@@ -233,17 +274,11 @@ void mark_sweep_gc::mark_phase()
 
 void mark_sweep_gc::minor_mark_phase()
 {
-    call_info_t *ci = vm->get_base_call();
-    while (ci) {
-        if (ci->base && ci->top && ci->base <= ci->top) {
-            for (lpc_value_t *val = ci->base; val <= ci->top; ++val) {
-                if (val->is_gc_type() && val->get_gcobj()) {
-                    mark_minor(val->get_gcobj());
-                }
-            }
+    ForEachStackRoot(vm, [&](lpc_value_t *val) {
+        if (val->is_gc_type() && val->get_gcobj()) {
+            mark_minor(val->get_gcobj());
         }
-        ci = ci->next;
-    }
+    });
 
     lpc_mapping_t *map = vm->get_object_cache();
     if (map) {
@@ -289,6 +324,19 @@ void mark_sweep_gc::minor_mark_phase()
             for (int i = 0; i < proto->nvariable; ++i) {
                 lpc_value_t *v = &locs[i];
                 if (v->is_gc_type() && v->get_gcobj()) {
+                    mark_minor(v->get_gcobj());
+                }
+            }
+            break;
+        }
+        case value_type::closure_: {
+            lpc_closure_t *cl = reinterpret_cast<lpc_closure_t *>(obj);
+            if (!cl->proto) {
+                break;
+            }
+            for (int i = 0; i < cl->proto->nupvalue; ++i) {
+                lpc_value_t *v = cl->get(i);
+                if (v && v->is_gc_type() && v->get_gcobj()) {
                     mark_minor(v->get_gcobj());
                 }
             }

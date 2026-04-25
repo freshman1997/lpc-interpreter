@@ -22,6 +22,8 @@ struct call_info_t
     const char *savepc;
     lpc_value_t *top;
     lpc_value_t *base;
+    lint32_t base_index = -1;
+    lint32_t top_index = -1;
     object_proto_t *father = nullptr;
     lpc_object_t *cur_obj;
     int funcIdx;
@@ -54,6 +56,8 @@ public:
             ci->savepc = nullptr;
             ci->top = nullptr;
             ci->base = nullptr;
+            ci->base_index = -1;
+            ci->top_index = -1;
             ci->father = nullptr;
             ci->cur_obj = nullptr;
             ci->funcIdx = 0;

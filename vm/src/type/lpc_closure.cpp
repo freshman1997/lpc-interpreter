@@ -6,6 +6,7 @@
 
 void lpc_closure_t::init(lpc_allocator_t *alloc)
 {
+    alloc_ = alloc;
     upvalues = nullptr;
     if (proto->nupvalue) {
         luint32_t sz = proto->nupvalue;
@@ -32,6 +33,9 @@ void lpc_closure_t::set(int i, lpc_value_t *v)
     }
 
     *(upvalues + i) = *v;
+    if (alloc_ && alloc_->get_vm() && v && v->is_gc_type() && v->get_gcobj()) {
+        alloc_->get_vm()->gc_write_barrier(reinterpret_cast<lpc_gc_object_t *>(this), v);
+    }
 }
 
 void lpc_closure_t::dtor(lpc_allocator_t *alloc)
@@ -41,4 +45,5 @@ void lpc_closure_t::dtor(lpc_allocator_t *alloc)
         free(upvalues);
         upvalues = nullptr;
     }
+    alloc_ = nullptr;
 }

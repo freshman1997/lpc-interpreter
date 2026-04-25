@@ -7,8 +7,8 @@ file(GLOB_RECURSE SRC ./src/*.cpp)
 
 add_executable(lpc_vm ${SRC} main.cpp)
 
-if (CMAKE_CXX_STANDARD LESS 17)
-    set(CMAKE_CXX_STANDARD 17)
+if (CMAKE_CXX_STANDARD LESS 20)
+    set(CMAKE_CXX_STANDARD 20)
 endif()
 
 if (WIN32)

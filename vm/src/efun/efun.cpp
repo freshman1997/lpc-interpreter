@@ -228,6 +228,7 @@ static void f_call_other(lpc_vm_t *vm, lint32_t nparam)
     ci->call_other = true;
 
     ci->base = sk->top() - (nparam - 2);
+    ci->base_index = sk->index_of(ci->base);
 
     vm->run();
 }

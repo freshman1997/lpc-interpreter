@@ -1,41 +1,41 @@
-# Compiler Refactor Plan (Frontend2)
+# Compiler Refactor Plan (Frontend)
 
 This plan restructures compiler stages into maintainable layers.
 
 ## New pipeline
 
 1. `Lexer` -> `Token[]`
-2. `Parser2` -> `AST2`
-3. `Sema2` -> `SemanticModel` (scope + capture metadata)
+2. `Parser` -> `ast`
+3. `Sema` -> `SemanticModel` (scope + capture metadata)
 4. `Lowering` -> `MIR`
-5. `BytecodeGen` (next step) -> legacy VM bytecode
+5. `BytecodeGen` -> nextvm bytecode, with older-runtime bytecode kept during migration
 
 ## Added scaffold
 
-- `compiler/include/frontend2/source.h`
-- `compiler/include/frontend2/diagnostic.h`
-- `compiler/include/frontend2/token.h`
-- `compiler/include/frontend2/lexer.h`
-- `compiler/include/frontend2/ast2.h`
-- `compiler/include/frontend2/parser2.h`
-- `compiler/include/frontend2/sema2.h`
-- `compiler/include/frontend2/mir.h`
-- `compiler/include/frontend2/pipeline.h`
-- `compiler/src/frontend2/lexer.cpp`
-- `compiler/src/frontend2/parser2.cpp`
-- `compiler/src/frontend2/sema2.cpp`
-- `compiler/src/frontend2/pipeline.cpp`
-- `compiler/main_frontend2.cpp`
+- `compiler/include/frontend/source.h`
+- `compiler/include/frontend/diagnostic.h`
+- `compiler/include/frontend/token.h`
+- `compiler/include/frontend/lexer.h`
+- `compiler/include/frontend/ast.h`
+- `compiler/include/frontend/Parser.h`
+- `compiler/include/frontend/Sema.h`
+- `compiler/include/frontend/mir.h`
+- `compiler/include/frontend/pipeline.h`
+- `compiler/src/frontend/lexer.cpp`
+- `compiler/src/frontend/Parser.cpp`
+- `compiler/src/frontend/Sema.cpp`
+- `compiler/src/frontend/pipeline.cpp`
+- `compiler/main.cpp`
 
 ## Current behavior
 
-- `lpc_compiler <source-file> [more files]` now runs frontend2 pipeline directly.
+- `lpc_compiler <source-file> [more files]` now runs frontend pipeline directly.
 - Diagnostics are reported with file + line/column.
 - MIR function list prints function locals/upvalue counts.
 
 ## Migration strategy
 
-1. Grow frontend2 coverage until grammar parity with legacy parser.
+1. Grow frontend coverage until grammar parity with legacy parser.
 2. Add MIR-to-bytecode backend adapter.
 3. Remove legacy macro-based codegen path.
 

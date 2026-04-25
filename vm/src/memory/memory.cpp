@@ -1,5 +1,6 @@
 #include <cstring>
 
+#include "lpc_value.h"
 #include "memory/memory.h"
 #include "runtime/vm.h"
 #include "gc/gc.h"
@@ -16,6 +17,9 @@ lpc_array_t * lpc_allocator_t::allocate_array(luint32_t size)
     lpc_value_t *m = nullptr;
     if (size > 0) {
         m = (lpc_value_t *)vm->get_gc()->allocate(sizeof(lpc_value_t) * size);
+        for (luint32_t i = 0; i < size; ++i) {
+            new(m + i)lpc_value_t();
+        }
     }
     
     new(arr)lpc_array_t(size, m); // call ctor

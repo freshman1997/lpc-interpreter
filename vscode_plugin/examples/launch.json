@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lpc",
+      "request": "launch",
+      "name": "Debug current LPC file",
+      "program": "${file}",
+      "stopOnEntry": true
+    },
+    {
+      "type": "lpc",
+      "request": "launch",
+      "name": "Debug module entry",
+      "program": "${workspaceFolder}/test_features.lpc",
+      "entryModule": "test_features",
+      "stopOnEntry": true
+    }
+  ]
+}

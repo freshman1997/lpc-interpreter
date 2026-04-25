@@ -1,4 +1,4 @@
-﻿#ifndef __LPC_ARRAY_H__
+#ifndef __LPC_ARRAY_H__
 #define __LPC_ARRAY_H__
 #include "lpc.h"
 #include "opcode.h"

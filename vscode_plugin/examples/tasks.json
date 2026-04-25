@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "lpc",
+      "command": "compile",
+      "program": "${file}",
+      "label": "LPC: compile current file",
+      "group": "build",
+      "problemMatcher": "$lpc-compiler"
+    },
+    {
+      "type": "lpc",
+      "command": "run",
+      "program": "${file}",
+      "label": "LPC: run current file",
+      "group": "test"
+    }
+  ]
+}

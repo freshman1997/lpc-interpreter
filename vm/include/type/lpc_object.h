@@ -1,4 +1,4 @@
-﻿#ifndef __LPC_OBJECT__
+#ifndef __LPC_OBJECT__
 #define __LPC_OBJECT__
 #include "memory/memory.h"
 #include "type/lpc_string.h"

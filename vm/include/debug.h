@@ -68,6 +68,12 @@ private:
     void print_displays();
     void run_display_items();
     void print_variable(const std::string &name);
+    void emit_json_event(const std::string &event, const std::string &body);
+    void emit_current_frame_json(const std::string &reason);
+    void emit_variables_json(const std::string &scope);
+    void emit_breakpoint_json(const std::string &action, const std::string &file, lint32_t line, bool verified, const std::string &message = "");
+    void emit_evaluate_json(const std::string &expr, bool success, const std::string &result);
+    void emit_runtime_error_json(const std::string &message);
     lint32_t get_current_line();
     bool check_breakpoint();
     bool check_watchpoint();
@@ -123,6 +129,7 @@ private:
     std::vector<std::string> scripted_cmds_;
     size_t scripted_cmd_idx_ = 0;
     bool scripted_strict_ = false;
+    bool json_protocol_ = false;
     call_info_t *until_frame_ = nullptr;
     std::string until_file_;
     lint32_t until_line_ = -1;

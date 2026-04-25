@@ -1,0 +1,41 @@
+{
+  "main function": {
+    "prefix": "main",
+    "body": [
+      "void main()",
+      "{",
+      "    $0",
+      "}"
+    ],
+    "description": "Create main function"
+  },
+  "create hook": {
+    "prefix": "create",
+    "body": [
+      "void create()",
+      "{",
+      "    $0",
+      "}"
+    ],
+    "description": "Create object initialization hook"
+  },
+  "foreach loop": {
+    "prefix": "foreach",
+    "body": [
+      "foreach (${1:item} in ${2:items}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Create foreach loop"
+  },
+  "class declaration": {
+    "prefix": "class",
+    "body": [
+      "class ${1:Name} {",
+      "    ${2:int} ${3:field};",
+      "}",
+      "$0"
+    ],
+    "description": "Create LPC class declaration"
+  }
+}

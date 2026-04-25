@@ -7,7 +7,7 @@ This document defines a cleaner opcode model for long-term VM evolution.
 1. Stable instruction semantics with explicit stack effect.
 2. Separation between control flow, data operations, and runtime intrinsics.
 3. Verifiable bytecode (bounds, operand width, stack behavior).
-4. Easy lowering path from MIR and compatibility bridge from current v1 bytecode.
+4. Easy lowering path from MIR and compatibility translator from current v1 bytecode.
 
 ## Core groups
 
@@ -82,7 +82,7 @@ This table is required for bytecode verifier.
 - `op_goto` -> `Jump`
 - `op_call(type=3)` -> `CallDirect`
 - `op_call(type=0)` -> `CallValue`
-- `op_call(type=1|2)` -> `CallIntrinsic` (bridge layer)
+- `op_call(type=1|2)` -> `CallIntrinsic` (translator layer)
 - `op_set_upvalue/op_get_upvalue` -> `StoreUpvalue/LoadUpvalue`
 - `op_new_array/op_new_mapping/op_index/op_sub_arr/op_upset` -> aggregate group
 - class ops -> object group

@@ -1,34 +1,39 @@
-# VM Compare Protocol (Current)
+# VM Compare Protocol
 
 ## Purpose
 
-Define a practical compare flow between legacy VM and VM2 while legacy runtime still has process-exit failure paths.
+Define the temporary compare flow while `nextvm` is becoming the primary runtime.
+New compiler output now includes direct `.nb` nextvm chunks when the MIR uses
+supported operations.
 
 ## Protocol v0
 
-1. Run VM2 first in-process.
-2. If VM2 fails, report compare failure immediately.
-3. Run legacy VM best-effort (current implementation uses in-process non-fatal mode).
-4. Report legacy subprocess exit status.
+1. Compile LPC through the frontend.
+2. Prefer direct `nextvm` bytecode (`.nb`) for `--vm next`.
+3. Fall back to the V1 bytecode translator only when `.nb` is unavailable.
+4. For compare mode, run `nextvm` first, then run the older runtime best-effort.
+5. Report both status streams.
 
 ## Output markers
 
-- `[compare] protocol: vm2-first, legacy-inprocess-best-effort`
-- `[compare] vm2_status=ok|error`
+- `[compare] protocol: NextVM-first, legacy-inprocess-best-effort`
+- `[compare] NextVM_status=ok|error`
 - `[compare] legacy_status=ok|error`
 - `[compare] done`
 
 ## Known limitations
 
-- Legacy VM still contains many direct panic/exit paths in interpreter/efun; compare only hardens bootstrap/load/main-dispatch level.
-- Compare currently does not assert semantic equivalence of return value, only path-level completion/error signals.
-- For unsupported bytecode/modules in legacy, compare may report legacy error even if VM2 succeeds.
+- Direct `.nb` lowering currently covers integer constants, locals, direct calls, branches, arithmetic/comparison/logical ops, arrays, simple classes, `dup`, `pop`, and return.
+- Missing nextvm coverage still includes efuns, globals, strings/floats, mappings, closure/upvalue, foreach, switch, catch, indexed store, virtual calls, and full debugger integration.
+- Compare currently still uses the older runtime as a second pass until nextvm coverage is broad enough to become the default.
 
 ## Next upgrade (v1)
 
-1. Refactor legacy run path to status-return model (no direct `exit` in hot path).
-2. Capture both VMs' observable result object and normalized error object.
-3. Add strict compare policy (`result + error type + location`).
+1. Add frontend diagnostics for MIR operations that cannot lower to `.nb`.
+2. Extend nextvm opcode coverage for efuns, globals, mappings, closures, and indexed stores.
+3. Move VS Code debug protocol onto nextvm frames and line tables.
+4. Switch `lpc_vm run` default from the older runtime to `nextvm`.
+5. Delete the old runtime after golden, debugger, and compare gates pass.
 
 ## Memory limit policy
 

@@ -1,4 +1,4 @@
-﻿#ifndef __LPC__
+#ifndef __LPC__
 #define __LPC__
 
 typedef unsigned char           luint8_t;

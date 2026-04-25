@@ -1,4 +1,4 @@
-﻿#ifndef __INTERPRETER_H__
+#ifndef __INTERPRETER_H__
 #define __INTERPRETER_H__
 
 class lpc_vm_t;

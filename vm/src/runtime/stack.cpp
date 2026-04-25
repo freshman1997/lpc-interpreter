@@ -34,22 +34,55 @@ bool lpc_stack_t::push_value(lpc_value_t val)
     return true;
 }
 
+lint32_t lpc_stack_t::index_of(const lpc_value_t *ptr) const
+{
+    if (!ptr || !stack) {
+        return -1;
+    }
+    const lpc_value_t *begin = stack;
+    const lpc_value_t *end = stack + size;
+    if (ptr < begin || ptr >= end) {
+        return -1;
+    }
+    return static_cast<lint32_t>(ptr - begin);
+}
+
+lpc_value_t * lpc_stack_t::at_index(lint32_t index)
+{
+    return get(index);
+}
+
+bool lpc_stack_t::contains(const lpc_value_t *ptr) const
+{
+    return index_of(ptr) >= 0;
+}
+
+bool lpc_stack_t::valid_range(lint32_t from, lint32_t to) const
+{
+    if (from < 0 || to < from) {
+        return false;
+    }
+    return from < size && to < size;
+}
+
 lint32_t lpc_stack_t::frame_floor_idx() const
 {
     if (!vm) {
         return 0;
     }
     call_info_t *ci = vm->get_call_info();
-    if (!ci || !ci->base || !stack) {
+    if (!ci || !stack) {
         return 0;
+    }
+    if (ci->base_index >= 0 && ci->base_index < size) {
+        return ci->base_index;
     }
 
-    lpc_value_t *begin = stack;
-    lpc_value_t *end = stack + size;
-    if (ci->base < begin || ci->base >= end) {
+    lint32_t base_index = index_of(ci->base);
+    if (base_index < 0) {
         return 0;
     }
-    return static_cast<lint32_t>(ci->base - begin);
+    return base_index;
 }
 
 lpc_value_t * lpc_stack_t::get(lint32_t idx)

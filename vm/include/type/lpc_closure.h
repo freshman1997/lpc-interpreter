@@ -17,6 +17,7 @@ public:
     void dtor(lpc_allocator_t *alloc);
 private:
     lpc_value_t *upvalues;
+    lpc_allocator_t *alloc_ = nullptr;
 };
 
 #endif

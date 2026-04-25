@@ -8,7 +8,7 @@
 #include "cli/cli.h"
 #include "core/status.h"
 #include "runtime/vm.h"
-#include "runtime/vm2_bridge.h"
+#include "runtime/bytecode_translator.h"
 #include "runtime/compare_matrix.h"
 
 extern std::string get_cwd();
@@ -139,9 +139,9 @@ int Run(int argc, char **argv) {
             if (entry_module.empty()) {
                 return 1;
             }
-            core::Status s = runtime::RunEntryModuleVm2(entry_module);
+            core::Status s = runtime::RunEntryModuleNextVM(entry_module);
             if (!s.ok()) {
-                std::cerr << "vm2 run failed: " << s.message << std::endl;
+                std::cerr << "NextVM run failed: " << s.message << std::endl;
                 return 1;
             }
             return 0;

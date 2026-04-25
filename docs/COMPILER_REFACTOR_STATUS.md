@@ -3,11 +3,11 @@
 ## Completed in this wave
 
 1. Legacy compiler pipeline was removed.
-2. Frontend2 is default compiler path.
+2. Frontend is default compiler path.
 3. Parser supports function/lambda, var, return, call, if/else, while, for.
 4. Sema covers symbol resolution and base capture tracking.
 5. MIR generation supports arithmetic, assignment, control flow, calls, locals/upvalues.
-6. MIR to V1 bytecode lowering bridge was added.
+6. MIR to V1 bytecode lowering translator was added.
 7. Compiler now emits bytecode files into `build/compiler` directly.
 8. VM can load generated `1.b` entry alias and execute.
 9. Output layout now follows source-relative module path under workspace `bin/`.
@@ -22,7 +22,7 @@
 2. Rich type system checks and stronger diagnostics.
 3. Harden nested-closure capture source correctness across deep chain cases.
 4. Tighten verifier with stronger function termination and inter-procedural call contract checks.
-5. Replace V1 bridge with V2 opcode backend.
+5. Replace V1 translator with V2 opcode backend.
 
 ## Grammar parity progress
 
@@ -33,7 +33,7 @@
 ## Practical state
 
 - End-to-end path now exists:
-  - source -> frontend2 -> MIR -> V1 bytecode -> VM load/run
+  - source -> Frontend -> MIR -> V1 bytecode -> VM load/run
 - This is a functional baseline, not final completeness.
 
 ## Output path rule
@@ -43,9 +43,9 @@
 - Output filename uses source stem: `<source_stem>.b`
 - Module name inside bytecode matches source-relative module path.
 - Example:
-  - source: `build/sample_front2.lpc`
-  - output file: `bin/build/sample_front2.b`
-  - module name: `build/sample_front2`
+  - source: `build/sample_frontend.lpc`
+  - output file: `bin/build/sample_frontend.b`
+  - module name: `build/sample_frontend`
 
 ## Entry execution
 
@@ -59,7 +59,7 @@
 - Environment variable override is supported:
   - `LPC_ENTRY=<module>`
 - You can run explicit module entry with CLI:
-  - `lpc_vm run build/sample_front2`
+  - `lpc_vm run build/sample_frontend`
 
 ## Compiler CLI options
 

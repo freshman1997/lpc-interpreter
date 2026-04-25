@@ -1,0 +1,25 @@
+module -- after-opt
+functions=1 globals=0
+fn main -- after-opt
+  nargs=0 locals=1 upvalues=0
+  [0] op=0 a=0 b=0 line=2
+  [1] op=5 a=0 b=0 line=2
+  [2] op=0 a=4 b=0 line=3
+  [3] op=45 a=0 b=0 line=3
+  [4] op=5 a=0 b=0 line=3
+  [5] op=44 a=0 b=0 line=3
+  [6] op=4 a=0 b=0 line=4
+  [7] op=0 a=2 b=0 line=4
+  [8] op=25 a=0 b=0 line=4
+  [9] op=40 a=16 b=0 line=4
+  [10] op=4 a=0 b=0 line=5
+  [11] op=0 a=3 b=0 line=5
+  [12] op=9 a=0 b=0 line=5
+  [13] op=45 a=0 b=0 line=5
+  [14] op=5 a=0 b=0 line=5
+  [15] op=44 a=0 b=0 line=5
+  [16] op=4 a=0 b=0 line=7
+  [17] op=43 a=0 b=0 line=7
+fn __init_globals -- init
+  nargs=0 locals=0 upvalues=0
+  [0] op=43 a=0 b=0 line=0

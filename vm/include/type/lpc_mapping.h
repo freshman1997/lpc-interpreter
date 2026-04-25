@@ -1,4 +1,4 @@
-﻿#ifndef __LPC_MAPPING_H__
+#ifndef __LPC_MAPPING_H__
 #define __LPC_MAPPING_H__
 #include "lpc.h"
 #include "opcode.h"

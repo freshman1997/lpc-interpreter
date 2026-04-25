@@ -33,14 +33,37 @@ static int get_call_depth(lpc_vm_t *vm)
 static std::string trim_copy(const std::string &s)
 {
     size_t b = 0;
-    while (b < s.size() && (s[b] == ' ' || s[b] == '\t')) {
+    while (b < s.size() && (s[b] == ' ' || s[b] == '\t' || s[b] == '\r' || s[b] == '\n')) {
         ++b;
     }
     size_t e = s.size();
-    while (e > b && (s[e - 1] == ' ' || s[e - 1] == '\t')) {
+    while (e > b && (s[e - 1] == ' ' || s[e - 1] == '\t' || s[e - 1] == '\r' || s[e - 1] == '\n')) {
         --e;
     }
     return s.substr(b, e - b);
+}
+
+static std::string json_escape(const std::string &s)
+{
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (char ch : s) {
+        switch (ch) {
+        case '\\': out += "\\\\"; break;
+        case '"': out += "\\\""; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default:
+            if (static_cast<unsigned char>(ch) < 0x20) {
+                out += ' ';
+            } else {
+                out += ch;
+            }
+            break;
+        }
+    }
+    return out;
 }
 
 static bool parse_break_spec(const std::string &spec, const std::string &default_file, std::string *out_file, lint32_t *out_line)
@@ -230,6 +253,11 @@ lpc_debugger_t::lpc_debugger_t(lpc_vm_t *_vm)
         scripted_strict_ = (std::string(strict) == "1" || std::string(strict) == "true" ||
             std::string(strict) == "TRUE" || std::string(strict) == "on" || std::string(strict) == "ON");
     }
+    const char *protocol = std::getenv("LPC_DEBUG_PROTOCOL");
+    if (protocol && *protocol) {
+        std::string p = protocol;
+        json_protocol_ = (p == "json" || p == "jsonl" || p == "JSON" || p == "JSONL");
+    }
 }
 
 bool lpc_debugger_t::can_run()
@@ -407,6 +435,7 @@ void lpc_debugger_t::continue_run()
 void lpc_debugger_t::do_exit()
 {
     force_exit = true;
+    emit_json_event("terminated", "{}");
 }
 
 call_info_t *lpc_debugger_t::active_frame()
@@ -737,6 +766,7 @@ void lpc_debugger_t::start()
         run();
     } else {
         cout << "Program completed immediately.\n";
+        emit_json_event("terminated", "{}");
     }
 }
 
@@ -1366,8 +1396,10 @@ void lpc_debugger_t::fetch_cmd(cmd_def &cmd)
                     cout << " if " << cond;
                 }
                 cout << "\n";
+                emit_breakpoint_json("set", bfile, bline, true);
             } else {
                 cout << "Invalid breakpoint. Usage: b <line> [if <expr>] or b <file>:<line> [if <expr>]\n";
+                emit_breakpoint_json("set", "", 0, false, "invalid breakpoint");
             }
             continue;
         } else if (line.compare(0, 3, "tb ") == 0 || line.compare(0, 7, "tbreak ") == 0) {
@@ -1385,8 +1417,10 @@ void lpc_debugger_t::fetch_cmd(cmd_def &cmd)
                 set_break_point(bfile, bline);
                 temp_break_points[bfile].insert(bline);
                 cout << "Temporary breakpoint set: " << bfile << ":" << bline << "\n";
+                emit_breakpoint_json("set", bfile, bline, true);
             } else {
                 cout << "Invalid breakpoint. Usage: tb <line> or tb <file>:<line>\n";
+                emit_breakpoint_json("set", "", 0, false, "invalid temporary breakpoint");
             }
             continue;
         } else if (line.compare(0, 6, "until ") == 0 || line.compare(0, 8, "advance ") == 0) {
@@ -1428,6 +1462,7 @@ void lpc_debugger_t::fetch_cmd(cmd_def &cmd)
                 }
                 reset_break_point(rows[id].first, rows[id].second);
                 cout << "Breakpoint cleared: " << rows[id].first << ":" << rows[id].second << "\n";
+                emit_breakpoint_json("clear", rows[id].first, rows[id].second, true);
                 continue;
             }
             string bfile;
@@ -1441,8 +1476,10 @@ void lpc_debugger_t::fetch_cmd(cmd_def &cmd)
             if (parse_break_spec(args, default_file, &bfile, &bline)) {
                 reset_break_point(bfile, bline);
                 cout << "Breakpoint cleared: " << bfile << ":" << bline << "\n";
+                emit_breakpoint_json("clear", bfile, bline, true);
             } else {
                 cout << "Invalid breakpoint. Usage: del <line> or del <file>:<line>\n";
+                emit_breakpoint_json("clear", "", 0, false, "invalid breakpoint");
             }
             continue;
         } else if (line.compare(0, 9, "commands ") == 0) {
@@ -1625,6 +1662,7 @@ void lpc_debugger_t::run()
         call_info_t *cur_ci = vm->get_call_info();
         if (vm->has_error()) {
             cout << "Runtime error: " << vm->last_error() << "\n";
+            emit_runtime_error_json(vm->last_error());
             vm->clear_last_error();
         }
         if (last_watch_hit_) {
@@ -1634,6 +1672,7 @@ void lpc_debugger_t::run()
         }
         if (!cur_ci) {
             cout << "Program exited.\n";
+            emit_json_event("terminated", "{}");
             break;
         }
 
@@ -1663,6 +1702,125 @@ void lpc_debugger_t::print_frame_info()
         }
         cout << " depth=" << get_call_depth(vm) << "\n";
     }
+    emit_current_frame_json("stopped");
+}
+
+void lpc_debugger_t::emit_json_event(const std::string &event, const std::string &body)
+{
+    if (!json_protocol_) {
+        return;
+    }
+    cout << "{\"type\":\"event\",\"event\":\"" << json_escape(event) << "\",\"body\":"
+         << body << "}\n";
+}
+
+void lpc_debugger_t::emit_current_frame_json(const std::string &reason)
+{
+    if (!json_protocol_) {
+        return;
+    }
+    call_info_t *ci = active_frame();
+    if (!ci) {
+        emit_json_event("stopped", "{\"reason\":\"" + json_escape(reason) + "\",\"frames\":[]}");
+        return;
+    }
+
+    vm_frame_info_t frame;
+    if (!vm->get_frame_info(ci, &frame)) {
+        emit_json_event("stopped", "{\"reason\":\"" + json_escape(reason) + "\",\"frames\":[]}");
+        return;
+    }
+
+    int fi = frame_index_of(vm->get_base_call(), ci);
+    std::string object_name = frame.object_name ? frame.object_name : "<unknown>";
+    std::string function_name = frame.function_name ? frame.function_name : "<unknown>";
+    std::ostringstream body;
+    body << "{\"reason\":\"" << json_escape(reason) << "\",\"frames\":[{"
+         << "\"id\":" << (fi >= 0 ? fi + 1 : 1)
+         << ",\"index\":" << (fi >= 0 ? fi : 0)
+         << ",\"object\":\"" << json_escape(object_name) << "\""
+         << ",\"function\":\"" << json_escape(function_name) << "\""
+         << ",\"line\":" << (frame.has_line ? frame.line : 1)
+         << ",\"pc\":" << frame.pc_offset
+         << "}]}";
+    emit_json_event("stopped", body.str());
+}
+
+void lpc_debugger_t::emit_variables_json(const std::string &scope)
+{
+    if (!json_protocol_) {
+        return;
+    }
+
+    call_info_t *ci = active_frame();
+    const function_proto_t *func = ci ? vm->get_frame_function(ci) : nullptr;
+    std::ostringstream body;
+    body << "{\"scope\":\"" << json_escape(scope) << "\",\"variables\":[";
+    if (ci && func) {
+        int from = 0;
+        int to = func->nlocal;
+        if (scope == "args") {
+            to = func->nargs;
+        }
+        bool first = true;
+        for (int i = from; i < to; ++i) {
+            lpc_value_t *val = ci->base + i;
+            std::string name;
+            if (func->vprotos && func->vprotos[i].name) {
+                name = func->vprotos[i].name;
+            } else if (i < func->nargs) {
+                name = "arg" + to_string(i);
+            } else {
+                name = "local" + to_string(i - func->nargs);
+            }
+            if (!first) {
+                body << ",";
+            }
+            first = false;
+            body << "{\"index\":" << i
+                 << ",\"name\":\"" << json_escape(name) << "\""
+                 << ",\"value\":\"" << json_escape(value_to_string(*val)) << "\"}";
+        }
+    }
+    body << "]}";
+    emit_json_event("variables", body.str());
+}
+
+void lpc_debugger_t::emit_breakpoint_json(const std::string &action, const std::string &file, lint32_t line, bool verified, const std::string &message)
+{
+    if (!json_protocol_) {
+        return;
+    }
+    std::ostringstream body;
+    body << "{\"action\":\"" << json_escape(action) << "\""
+         << ",\"file\":\"" << json_escape(file) << "\""
+         << ",\"line\":" << line
+         << ",\"verified\":" << (verified ? "true" : "false");
+    if (!message.empty()) {
+        body << ",\"message\":\"" << json_escape(message) << "\"";
+    }
+    body << "}";
+    emit_json_event("breakpoint", body.str());
+}
+
+void lpc_debugger_t::emit_evaluate_json(const std::string &expr, bool success, const std::string &result)
+{
+    if (!json_protocol_) {
+        return;
+    }
+    std::ostringstream body;
+    body << "{\"expression\":\"" << json_escape(expr) << "\""
+         << ",\"success\":" << (success ? "true" : "false")
+         << ",\"result\":\"" << json_escape(result) << "\"}";
+    emit_json_event("evaluate", body.str());
+}
+
+void lpc_debugger_t::emit_runtime_error_json(const std::string &message)
+{
+    if (!json_protocol_) {
+        return;
+    }
+    emit_json_event("runtimeError", "{\"message\":\"" + json_escape(message) + "\"}");
 }
 
 void lpc_debugger_t::print_backtrace()
@@ -1749,12 +1907,14 @@ void lpc_debugger_t::print_locals()
     call_info_t *ci = active_frame();
     if (!ci) {
         cout << "No current frame.\n";
+        emit_variables_json("locals");
         return;
     }
 
     const function_proto_t *func = vm->get_frame_function(ci);
     if (!func) {
         cout << "No function info for current frame.\n";
+        emit_variables_json("locals");
         return;
     }
 
@@ -1771,6 +1931,7 @@ void lpc_debugger_t::print_locals()
         }
         cout << "  [" << i << "] " << name << " = " << value_to_string(*val) << "\n";
     }
+    emit_variables_json("locals");
 }
 
 void lpc_debugger_t::print_args()
@@ -1778,17 +1939,20 @@ void lpc_debugger_t::print_args()
     call_info_t *ci = active_frame();
     if (!ci) {
         cout << "No current frame.\n";
+        emit_variables_json("args");
         return;
     }
 
     const function_proto_t *func = vm->get_frame_function(ci);
     if (!func) {
         cout << "No function info for current frame.\n";
+        emit_variables_json("args");
         return;
     }
 
     if (func->nargs <= 0) {
         cout << "No arguments.\n";
+        emit_variables_json("args");
         return;
     }
 
@@ -1803,6 +1967,7 @@ void lpc_debugger_t::print_args()
         }
         cout << "  [" << i << "] " << name << " = " << value_to_string(*val) << "\n";
     }
+    emit_variables_json("args");
 }
 
 void lpc_debugger_t::print_upvalues()
@@ -1841,12 +2006,14 @@ void lpc_debugger_t::print_variable(const std::string &name)
     call_info_t *ci = active_frame();
     if (!ci) {
         cout << "No current frame.\n";
+        emit_evaluate_json(name, false, "No current frame.");
         return;
     }
 
     const function_proto_t *func = vm->get_frame_function(ci);
     if (!func) {
         cout << "No function info.\n";
+        emit_evaluate_json(name, false, "No function info.");
         return;
     }
 
@@ -1854,7 +2021,9 @@ void lpc_debugger_t::print_variable(const std::string &name)
         for (int i = 0; i < func->nlocal; ++i) {
             if (func->vprotos[i].name && name == func->vprotos[i].name) {
                 lpc_value_t *val = ci->base + i;
-                cout << name << " = " << value_to_string(*val) << "\n";
+                std::string result = value_to_string(*val);
+                cout << name << " = " << result << "\n";
+                emit_evaluate_json(name, true, result);
                 return;
             }
         }
@@ -1863,11 +2032,14 @@ void lpc_debugger_t::print_variable(const std::string &name)
     int idx = atoi(name.c_str());
     if (idx >= 0 && idx < func->nlocal) {
         lpc_value_t *val = ci->base + idx;
-        cout << "[" << idx << "] = " << value_to_string(*val) << "\n";
+        std::string result = value_to_string(*val);
+        cout << "[" << idx << "] = " << result << "\n";
+        emit_evaluate_json(name, true, result);
         return;
     }
 
     cout << "Variable not found: " << name << "\n";
+    emit_evaluate_json(name, false, "Variable not found: " + name);
 }
 
 lint32_t lpc_debugger_t::get_current_line()

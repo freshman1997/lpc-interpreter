@@ -1,1 +1,1 @@
-vm/tests/stress_alloc_gc
+compiler/tests/golden/sample_nextvm_compare_logic_call

@@ -1,6 +1,6 @@
 # Breaking Migration: Legacy Compiler Removed
 
-The legacy compiler pipeline was removed and replaced by frontend2 as default.
+The legacy compiler pipeline was removed and replaced by Frontend as default.
 
 ## Removed components
 

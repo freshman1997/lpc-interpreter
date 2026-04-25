@@ -434,9 +434,8 @@ void lpc_vm_t::bootstrap()
     }
 
     if (strcmp(entry, "1") == 0) {
-        namespace fs = std::filesystem;
         std::string p = get_cwd() + "/bin/entry.txt";
-        if (fs::exists(fs::path(p))) {
+        if (std::filesystem::exists(std::filesystem::path(p))) {
             std::ifstream in(p.c_str(), std::ios::binary);
             std::string m;
             if (in.is_open()) {
@@ -655,7 +654,9 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init, lp
     nci->callee = callee;
     nci->pre = cur_ci;
     nci->base = stack->top() - (f->nargs > 0 ? f->nargs - 1 : 0);
-    nci->top = f->retType > 1 ? stack->top() + f->nlocal + 1 : stack->top() + f->nlocal;
+    nci->base_index = stack->index_of(nci->base);
+    nci->top = stack->top();
+    nci->top_index = stack->index_of(nci->top);
 
     if (cur_ci) {
         cur_ci->next = nci;
@@ -676,6 +677,8 @@ call_info_t * lpc_vm_t::new_frame(lpc_object_t *obj, lint16_t idx, bool init, lp
     }
 
     stack->set_local_size(f->nlocal - f->nargs);
+    nci->top_index = stack->get_idx() > 0 ? stack->get_idx() - 1 : nci->base_index;
+    nci->top = stack->at_index(nci->top_index);
 
     ++ncall;
 

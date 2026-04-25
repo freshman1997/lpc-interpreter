@@ -1,4 +1,4 @@
-﻿#ifndef __GC_H__
+#ifndef __GC_H__
 #define __GC_H__
 #include "mark_sweep.h"
 
@@ -10,6 +10,11 @@ class lpc_gc_t
 {
 public:
     void gc();
+    void collect_minor()
+    {
+        msg->collect_minor();
+    }
+
     void * allocate(luint32_t sz, bool check = true) 
     {
         return msg->allocate(NULL, sz, check);

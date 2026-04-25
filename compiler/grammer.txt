@@ -1,9 +1,9 @@
-LPC 语法规则（用于 frontend2 对齐）
+LPC 语法规则（用�?Frontend 对齐�?
 
 说明:
-1) 本文件以通用 LPC 语法为目标，作为编译器实现基线。
-2) 若实现与本文件冲突，以本文件为准。
-3) 预处理指令属于编译前阶段，不计入普通 statement。
+1) 本文件以通用 LPC 语法为目标，作为编译器实现基线�?
+2) 若实现与本文件冲突，以本文件为准�?
+3) 预处理指令属于编译前阶段，不计入普�?statement�?
 
 ------------------------------------------------------------
 词法与预处理
@@ -25,7 +25,7 @@ include_directive := '#include' (string_lit | '<' identifier '>' )
 define_directive  := '#define' identifier ...
 
 ------------------------------------------------------------
-类型与声明
+类型与声�?
 ------------------------------------------------------------
 
 decl_type       := 'void' | 'int' | 'float' | 'string' | 'object'
@@ -128,17 +128,17 @@ new_expr        := 'new' identifier ['(' [arg_list] ')']
 lambda_expr     := 'fun' '(' [param_list] ')' (block | '->' expr)
 
 ------------------------------------------------------------
-frontend2 当前实现状态（简表）
+Frontend 当前实现状态（简表）
 ------------------------------------------------------------
 
-已实现:
+已实�?
 - inherit/class/new
 - if/while/for/foreach/switch
 - break/continue/return
-- 基本表达式与赋值
+- 基本表达式与赋�?
 
-未完成:
+未完�?
 - 完整 preprocessor (#include/#define/#if...) 实现
-- 语法中全部 typed declaration 与 decorator 语义收口
-- class/object 运行时行为完整对齐
+- 语法中全�?typed declaration �?decorator 语义收口
+- class/object 运行时行为完整对�?
 

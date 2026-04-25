@@ -1,4 +1,4 @@
-﻿#include "os/os.h"
+#include "os/os.h"
 #include "os/os_windows.h"
 
 #ifdef WIN32

@@ -1,0 +1,234 @@
+{
+  "name": "lpc-language-tools",
+  "displayName": "LPC Language Tools",
+  "description": "Language support, build tasks, and debugger integration for this LPC compiler and VM.",
+  "version": "0.1.0",
+  "publisher": "lpc-interpreter",
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Debuggers"
+  ],
+  "activationEvents": [
+    "onLanguage:lpc",
+    "onDebug:lpc",
+    "onCommand:lpc.compileCurrent",
+    "onCommand:lpc.runCurrent",
+    "onCommand:lpc.debugCurrent"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "lpc",
+        "aliases": [
+          "LPC",
+          "lpc"
+        ],
+        "extensions": [
+          ".lpc"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lpc",
+        "scopeName": "source.lpc",
+        "path": "./syntaxes/lpc.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "lpc",
+        "path": "./snippets/lpc.json"
+      }
+    ],
+    "configuration": {
+      "title": "LPC",
+      "properties": {
+        "lpc.compilerPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/build/compiler/lpc_compiler",
+          "description": "Path to the LPC compiler executable."
+        },
+        "lpc.vmPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/build/vm/lpc_vm",
+          "description": "Path to the LPC VM executable."
+        },
+        "lpc.outRoot": {
+          "type": "string",
+          "default": "${workspaceFolder}/bin",
+          "description": "Directory where compiled bytecode is written."
+        },
+        "lpc.includeDirs": {
+          "type": "array",
+          "default": [
+            "${workspaceFolder}"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Include directories passed to the LPC compiler."
+        },
+        "lpc.vmEngine": {
+          "type": "string",
+          "default": "legacy",
+          "enum": [
+            "legacy",
+            "next"
+          ],
+          "description": "VM engine used by the run command."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "lpc.compileCurrent",
+        "title": "LPC: Compile Current File"
+      },
+      {
+        "command": "lpc.runCurrent",
+        "title": "LPC: Run Current File"
+      },
+      {
+        "command": "lpc.debugCurrent",
+        "title": "LPC: Debug Current File"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "lpc",
+        "label": "LPC VM",
+        "languages": [
+          "lpc"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "LPC source file to compile before debugging.",
+                "default": "${file}"
+              },
+              "entryModule": {
+                "type": "string",
+                "description": "Optional module path passed to lpc_vm debug."
+              },
+              "compilerPath": {
+                "type": "string",
+                "description": "Compiler executable override."
+              },
+              "vmPath": {
+                "type": "string",
+                "description": "VM executable override."
+              },
+              "outRoot": {
+                "type": "string",
+                "description": "Bytecode output directory override."
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "default": true,
+                "description": "Stop at VM debugger entry before continuing."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "lpc",
+            "request": "launch",
+            "name": "Debug LPC file",
+            "program": "${file}",
+            "stopOnEntry": true
+          }
+        ]
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "lpc-compiler",
+        "owner": "lpc",
+        "fileLocation": [
+          "absolute"
+        ],
+        "pattern": {
+          "regexp": "^(.*?):(error|warning|note)\\((\\d+):(\\d+)\\):\\s+(.*)$",
+          "file": 1,
+          "severity": 2,
+          "line": 3,
+          "column": 4,
+          "message": 5
+        }
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "lpc",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "program": {
+            "type": "string"
+          }
+        }
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "lpc.compileCurrent",
+          "when": "resourceLangId == lpc",
+          "group": "navigation"
+        },
+        {
+          "command": "lpc.debugCurrent",
+          "when": "resourceLangId == lpc",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "lpc.compileCurrent",
+          "when": "resourceLangId == lpc",
+          "group": "lpc"
+        },
+        {
+          "command": "lpc.runCurrent",
+          "when": "resourceLangId == lpc",
+          "group": "lpc"
+        },
+        {
+          "command": "lpc.debugCurrent",
+          "when": "resourceLangId == lpc",
+          "group": "lpc"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "lpc.compileCurrent",
+        "key": "ctrl+alt+b",
+        "mac": "cmd+alt+b",
+        "when": "editorLangId == lpc"
+      },
+      {
+        "command": "lpc.debugCurrent",
+        "key": "ctrl+alt+d",
+        "mac": "cmd+alt+d",
+        "when": "editorLangId == lpc"
+      }
+    ]
+  }
+}
