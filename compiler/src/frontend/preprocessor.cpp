@@ -12,8 +12,11 @@ namespace frontend {
 struct PreprocessContext {
     std::unordered_map<std::string, std::string> defines;
     std::unordered_set<std::string> include_guard;
+    std::unordered_set<std::string> inherit_stack;
     std::vector<std::filesystem::path> include_dirs;
     DiagnosticSink *diag = nullptr;
+    std::vector<SourceMapEntry> *source_map = nullptr;
+    int output_line_counter = 0;
 };
 
 static std::string TrimLeft(const std::string &s) {
@@ -253,6 +256,94 @@ static std::string HandleInclude(const std::string &line, const std::filesystem:
     return ProcessRecursive(norm, body, ctx);
 }
 
+static std::string HandleInherit(const std::string &line, const std::filesystem::path &current, PreprocessContext &ctx, int line_no) {
+    size_t pos = line.find("inherit");
+    if (pos == std::string::npos) return "";
+    std::string rest = TrimLeft(line.substr(pos + 7));
+
+    std::string rel;
+    if (!rest.empty() && rest[0] == '"') {
+        size_t q2 = rest.find('"', 1);
+        if (q2 == std::string::npos || q2 <= 1) {
+            if (ctx.diag) {
+                SourceSpan sp;
+                sp.line = line_no;
+                sp.column = 1;
+                sp.length = static_cast<int>(line.size());
+                ctx.diag->Add(DiagnosticLevel::Error, sp, "invalid inherit format, expected inherit \"path\";");
+            }
+            return "";
+        }
+        rel = rest.substr(1, q2 - 1);
+    } else {
+        size_t end = rest.find(';');
+        if (end == std::string::npos) end = rest.size();
+        rel = Trim(rest.substr(0, end));
+    }
+
+    if (rel.empty()) {
+        if (ctx.diag) {
+            SourceSpan sp;
+            sp.line = line_no;
+            sp.column = 1;
+            sp.length = static_cast<int>(line.size());
+            ctx.diag->Add(DiagnosticLevel::Error, sp, "inherit: empty path");
+        }
+        return "";
+    }
+
+    std::string rel_with_ext = rel;
+    if (rel_with_ext.find('.') == std::string::npos) {
+        rel_with_ext += ".lpc";
+    }
+
+    std::filesystem::path resolved;
+    if (!ResolveIncludePath(rel_with_ext, true, current, ctx, &resolved)) {
+        if (!ResolveIncludePath(rel, true, current, ctx, &resolved)) {
+            if (ctx.diag) {
+                SourceSpan sp;
+                sp.line = line_no;
+                sp.column = 1;
+                sp.length = static_cast<int>(line.size());
+                ctx.diag->Add(DiagnosticLevel::Error, sp, "inherit file not found: " + rel);
+            }
+            return "";
+        }
+    }
+
+    std::string norm = resolved.string();
+    if (ctx.inherit_stack.count(norm)) {
+        if (ctx.diag) {
+            SourceSpan sp;
+            sp.line = line_no;
+            sp.column = 1;
+            sp.length = static_cast<int>(line.size());
+            ctx.diag->Add(DiagnosticLevel::Error, sp, "circular inherit detected: " + rel);
+        }
+        return "";
+    }
+    if (ctx.include_guard.count(norm)) {
+        return "";
+    }
+    std::string body = ReadFileAll(norm);
+    if (body.empty()) {
+        if (ctx.diag) {
+            SourceSpan sp;
+            sp.line = line_no;
+            sp.column = 1;
+            sp.length = static_cast<int>(line.size());
+            ctx.diag->Add(DiagnosticLevel::Error, sp, "inherit file not found: " + rel);
+        }
+        return "";
+    }
+
+    ctx.include_guard.insert(norm);
+    ctx.inherit_stack.insert(norm);
+    std::string result = ProcessRecursive(norm, body, ctx);
+    ctx.inherit_stack.erase(norm);
+    return result;
+}
+
 static std::string ProcessRecursive(const std::string &path, const std::string &text, PreprocessContext &ctx) {
     namespace fs = std::filesystem;
 
@@ -330,6 +421,15 @@ static std::string ProcessRecursive(const std::string &path, const std::string &
             continue;
         }
 
+        if (t.rfind("inherit", 0) == 0 && (t.size() == 7 || !IsIdentChar(t[7]))) {
+            std::string body = HandleInherit(line, current, ctx, line_no);
+            out << body;
+            if (!body.empty() && body.back() != '\n') {
+                out << '\n';
+            }
+            continue;
+        }
+
         if (t.rfind("#define", 0) == 0) {
             std::string rest = Trim(t.substr(7));
             size_t sp = rest.find_first_of(" \t");
@@ -352,6 +452,10 @@ static std::string ProcessRecursive(const std::string &path, const std::string &
         std::unordered_set<std::string> expand_stack;
         std::string expanded = ExpandMacrosInText(line, ctx, &expand_stack, 0);
         out << expanded << '\n';
+        if (ctx.source_map) {
+            ++ctx.output_line_counter;
+            ctx.source_map->push_back({ctx.output_line_counter, line_no, path});
+        }
     }
 
     return out.str();
@@ -372,7 +476,10 @@ PreprocessResult PreprocessSource(
             ctx.include_dirs.push_back(std::filesystem::weakly_canonical(p));
         }
     }
-    ctx.include_guard.insert(std::filesystem::weakly_canonical(std::filesystem::path(path)).string());
+    std::string norm_entry = std::filesystem::weakly_canonical(std::filesystem::path(path)).string();
+    ctx.include_guard.insert(norm_entry);
+    ctx.inherit_stack.insert(norm_entry);
+    ctx.source_map = &r.source_map;
     r.text = ProcessRecursive(path, text, ctx);
     r.defines = ctx.defines;
     return r;

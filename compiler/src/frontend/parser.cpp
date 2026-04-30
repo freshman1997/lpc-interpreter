@@ -84,6 +84,13 @@ std::unique_ptr<Stmt> Parser::ParseClassDecl() {
     cl->name = Previous().lexeme;
     cl->span = Previous().span;
 
+    if (Match(TokenKind::Colon)) {
+        if (!Expect(TokenKind::Identifier, "expect parent class name after ':'")) {
+            return nullptr;
+        }
+        cl->parent_name = Previous().lexeme;
+    }
+
     if (!Expect(TokenKind::LBrace, "expect '{' after class name")) {
         return nullptr;
     }
@@ -154,7 +161,7 @@ std::unique_ptr<Stmt> Parser::ParseFunctionDecl(bool lambda) {
                 return nullptr;
             }
             fn->params.push_back(Previous().lexeme);
-            fn->param_types.push_back(param_type);
+            fn->param_types.push_back(param_ptr ? (param_type + "*") : param_type);
             fn->param_is_pointer.push_back(param_ptr);
         } while (Match(TokenKind::Comma));
     }
@@ -555,7 +562,7 @@ std::unique_ptr<Stmt> Parser::ParseTypedVarDeclWithPrefix(
     }
     std::unique_ptr<VarDeclStmt> st(new VarDeclStmt());
     st->name = Previous().lexeme;
-    st->declared_type = decl_type;
+    st->declared_type = is_pointer ? (decl_type + "*") : decl_type;
     st->is_pointer = is_pointer;
     st->decorators = decorators;
     st->span = Previous().span;
@@ -578,7 +585,7 @@ std::unique_ptr<Stmt> Parser::ParseTypedFunctionDeclWithPrefix(
 
     std::unique_ptr<FunctionDecl> fn(new FunctionDecl());
     fn->name = Previous().lexeme;
-    fn->return_type = ret_type;
+    fn->return_type = ret_is_pointer ? (ret_type + "*") : ret_type;
     fn->return_is_pointer = ret_is_pointer;
     fn->decorators = decorators;
     fn->span = Previous().span;
@@ -595,7 +602,7 @@ std::unique_ptr<Stmt> Parser::ParseTypedFunctionDeclWithPrefix(
                 return nullptr;
             }
             fn->params.push_back(Previous().lexeme);
-            fn->param_types.push_back(param_type);
+            fn->param_types.push_back(param_ptr ? (param_type + "*") : param_type);
             fn->param_is_pointer.push_back(param_ptr);
         } while (Match(TokenKind::Comma));
     }

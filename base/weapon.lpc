@@ -1,0 +1,19 @@
+class Weapon {
+    var name;
+    var damage;
+}
+
+fun create_weapon(string n, int d) {
+    Weapon w = new Weapon();
+    w->name = n;
+    w->damage = d;
+    return w;
+}
+
+fun weapon_name(Weapon w) {
+    return w->name;
+}
+
+fun weapon_damage(Weapon w) {
+    return w->damage;
+}

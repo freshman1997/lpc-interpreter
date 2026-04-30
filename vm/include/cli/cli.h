@@ -5,6 +5,7 @@ namespace lpc {
 namespace cli {
 
 int Run(int argc, char **argv);
+int Debug(int argc, char **argv);
 
 } // namespace cli
 } // namespace lpc

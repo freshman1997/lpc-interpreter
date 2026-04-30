@@ -10,9 +10,16 @@
 namespace lpc {
 namespace frontend {
 
+struct SourceMapEntry {
+    int output_line;
+    int source_line;
+    std::string source_path;
+};
+
 struct PreprocessResult {
     std::string text;
     std::unordered_map<std::string, std::string> defines;
+    std::vector<SourceMapEntry> source_map;
 };
 
 PreprocessResult PreprocessSource(

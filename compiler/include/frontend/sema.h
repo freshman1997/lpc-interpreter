@@ -27,6 +27,7 @@ struct SemanticModel {
     std::vector<std::string> global_variables;
     std::vector<std::string> class_order;
     std::unordered_map<std::string, std::vector<std::string>> class_fields;
+    std::unordered_map<std::string, std::string> class_parent;
     std::unordered_map<const Expr *, std::string> expr_type;
     std::unordered_map<const Expr *, int> member_field_index;
 };
@@ -66,6 +67,7 @@ private:
     DiagnosticSink *diag_ = nullptr;
     SemanticModel model_;
     const FunctionDecl *current_function_ = nullptr;
+    bool in_lambda_ = false;
 };
 
 } // namespace frontend

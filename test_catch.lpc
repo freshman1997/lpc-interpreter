@@ -1,0 +1,8 @@
+int main() {
+    int result = 0;
+    catch {
+        result = 1;
+    }
+    print(result);
+    return 0;
+}

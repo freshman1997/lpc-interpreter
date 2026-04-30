@@ -1,0 +1,24 @@
+class Animal {
+    var name;
+    var age;
+}
+
+class Dog : Animal {
+    var breed;
+}
+
+int main() {
+    Dog d = new Dog();
+    d->name = "Rex";
+    d->age = 3;
+    d->breed = "Labrador";
+
+    puts(d->name);
+    puts(d->age);
+    puts(d->breed);
+
+    if (d->name == "Rex" && d->age == 3 && d->breed == "Labrador") {
+        return 0;
+    }
+    return 1;
+}

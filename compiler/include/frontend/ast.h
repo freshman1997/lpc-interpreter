@@ -239,6 +239,7 @@ struct FunctionDecl : public Stmt {
 struct ClassDecl : public Stmt {
     ClassDecl() : Stmt(NodeKind::ClassDecl) {}
     std::string name;
+    std::string parent_name;
     std::vector<std::string> fields;
 };
 

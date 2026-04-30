@@ -1,0 +1,19 @@
+void main() {
+    mapping m = ([ "x" : 10, "y" : 20 ]);
+
+    print(to_string(m["x"]) + "\n");
+    print(to_string(m["y"]) + "\n");
+
+    m["z"] = 30;
+    print(to_string(m["z"]) + "\n");
+
+    m["x"] = 99;
+    print(to_string(m["x"]) + "\n");
+
+    print(to_string(m["missing"]) + "\n");
+
+    mapping m2 = ([ 1 : 100, 2 : 200 ]);
+    print(to_string(m2[1]) + "\n");
+    m2[3] = 300;
+    print(to_string(m2[3]) + "\n");
+}

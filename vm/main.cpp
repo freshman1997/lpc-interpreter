@@ -1,5 +1,6 @@
 #include <iostream>
 #include <ctime>
+#include <cstdint>
 #if WIN32
 #include <direct.h>
 #else
@@ -7,10 +8,8 @@
 #endif
 
 #include "os/os.h"
-#include "runtime/vm.h"
-#include "runtime/interpreter.h"
-#include "runtime/self_check.h"
-#include "type/lpc_mapping.h"
+#include "vm/runtime/self_check.h"
+#include "vm/runtime/entry.h"
 #include "cli/cli.h"
 
 #ifdef _POSIX_PATH_MAX
@@ -19,13 +18,9 @@
 #define PATHNAME_MAX		1000
 #endif
 
-extern void debug_message(const char *fmt, ...);
-extern unsigned int luaS_hash (const char *str, size_t l, unsigned int seed);
-
 using namespace std;
 
 static string cwd;
-static string parent;
 
 string get_cwd()
 {
@@ -59,34 +54,29 @@ int main(int argc, char **argv)
 
 	if (argc > 1) {
 		if (argc == 2 && std::string(argv[1]) == "--self-check") {
-			return lpc::vmtest::RunSelfChecks();
+			return lpc::vm::RunSelfChecks();
+		}
+		if (argc == 2 && std::string(argv[1]) == "--perf") {
+			return lpc::vm::RunPerfBenchmarks();
+		}
+		if (argc == 2 && std::string(argv[1]) == "--self-check-perf") {
+			int r = lpc::vm::RunSelfChecks();
+			if (r != 0) return r;
+			return lpc::vm::RunPerfBenchmarks();
 		}
 		return lpc::cli::Run(argc, argv);
 	}
-    lint64_t seed = time(NULL);
-	srand(seed);
-	//debug_message("xxxxxxxxxxxxxxxxxxxxx %d:%d,%d,%d\n", 100, _abs(-1), hash_("hello"), luaS_hash("hello", 5, (unsigned int)(seed)));
+    int64_t seed = time(NULL);
+	srand(static_cast<unsigned>(seed));
 	os::init_seed(seed);
 	cout << "random value: " << os::random() << endl;
 
 	time_t start = clock();
-    lpc_vm_t *vm = lpc_vm_t::create_vm();
-    vm->bootstrap();
 
-	//vm->on_debug_mode();
-	//vm->start_debug();
-	vm->run_main();
-
-	cout << "[gc] major=" << vm->gc_major_collect_count()
-	     << " minor=" << vm->gc_minor_collect_count()
-	     << " allocated=" << vm->allocated_bytes()
-	     << " nursery=" << vm->gc_nursery_bytes() << "/" << vm->gc_nursery_limit_bytes()
-	     << " remembered=" << vm->gc_remembered_set_size()
-	     << " wb=" << vm->gc_write_barrier_count() << endl;
-	cout << "[gc] major_freed=" << vm->gc_major_total_freed_bytes()
-	     << " minor_freed=" << vm->gc_minor_total_freed_bytes()
-	     << " major_us=" << vm->gc_major_total_elapsed_us()
-	     << " minor_us=" << vm->gc_minor_total_elapsed_us() << endl;
+	lpc::vm::RuntimeError s = lpc::vm::RunEntryModule("");
+	if (!s.ok()) {
+		cerr << "run failed: " << s.message << endl;
+	}
 
 	cout << "Exited normally.\n";
 	time_t end = clock();

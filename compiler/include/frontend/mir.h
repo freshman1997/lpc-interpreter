@@ -1,6 +1,7 @@
 #ifndef LPC_FRONTEND_MIR_H
 #define LPC_FRONTEND_MIR_H
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -49,7 +50,6 @@ enum class MirOp {
     CallEfun,
     ForeachInit,
     ForeachNext,
-    Switch,
     JumpIfFalse,
     JumpIfTrue,
     Jump,
@@ -60,6 +60,7 @@ enum class MirOp {
     Catch,
     LoadGlobal,
     StoreGlobal,
+    Upset,
 };
 
 struct MirInstr {
@@ -76,8 +77,8 @@ struct MirFunction {
     std::vector<std::string> upvalues;
     std::vector<int> upvalue_source_kind;
     std::vector<int> upvalue_source_index;
-    std::vector<int> iconsts;
-    std::vector<float> fconsts;
+    std::vector<std::int64_t> iconsts;
+    std::vector<double> fconsts;
     std::vector<std::string> sconsts;
     std::vector<MirInstr> code;
     int max_stack = 0;
@@ -89,6 +90,7 @@ struct MirModule {
     MirFunction init_function;
     std::vector<std::string> class_order;
     std::unordered_map<std::string, std::vector<std::string>> class_fields;
+    std::unordered_map<std::string, std::string> class_parent;
 };
 
 } // namespace frontend

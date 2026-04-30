@@ -1,0 +1,27 @@
+class Base {
+    var x;
+}
+
+class Middle : Base {
+    var y;
+}
+
+class Child : Middle {
+    var z;
+}
+
+int main() {
+    Child c = new Child();
+    c->x = 10;
+    c->y = 20;
+    c->z = 30;
+
+    puts(c->x);
+    puts(c->y);
+    puts(c->z);
+
+    if (c->x == 10 && c->y == 20 && c->z == 30) {
+        return 0;
+    }
+    return 1;
+}

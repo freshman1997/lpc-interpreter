@@ -33,15 +33,15 @@ void main() {
     print("c=" + to_string(c) + " d=" + to_string(d) + "\n");
 
     print("=== && operand values ===\n");
-    string r1 = 1 && "hello";
+    var r1 = 1 && "hello";
     print(r1 + "\n");
-    string r2 = 0 && "hello";
+    var r2 = 0 && "hello";
     print(to_string(r2 == "") + "\n");
 
     print("=== || operand values ===\n");
-    string r3 = 0 || "world";
+    var r3 = 0 || "world";
     print(r3 + "\n");
-    string r4 = "yes" || "no";
+    var r4 = "yes" || "no";
     print(r4 + "\n");
 
     print("=== Mapping literal ===\n");

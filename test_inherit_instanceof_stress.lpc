@@ -1,0 +1,33 @@
+class Root {
+    var a;
+}
+
+class Mid : Root {
+    var b;
+}
+
+class Leaf : Mid {
+    var c;
+}
+
+int main() {
+    int i = 0;
+    while (i < 3000) {
+        Leaf x = new Leaf();
+        x->a = i;
+        x->b = i + 1;
+        x->c = i + 2;
+
+        if (!instanceof(x, "Leaf")) return 1;
+        if (!instanceof(x, "Mid")) return 2;
+        if (!instanceof(x, "Root")) return 3;
+        if (instanceof(x, "Nope")) return 4;
+
+        if (x->a != i) return 5;
+        if (x->b != i + 1) return 6;
+        if (x->c != i + 2) return 7;
+        i = i + 1;
+    }
+    puts("inherit instanceof stress OK");
+    return 0;
+}

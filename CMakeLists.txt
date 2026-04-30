@@ -9,3 +9,4 @@ endif ()
 
 add_subdirectory(compiler)
 add_subdirectory(vm)
+add_subdirectory(lsp)

@@ -1,0 +1,5 @@
+inherit "base/cycle_a";
+
+class CycleB {
+    var y;
+}

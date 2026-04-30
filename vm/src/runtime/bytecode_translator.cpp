@@ -1,32 +1,23 @@
-#include "runtime/bytecode_translator.h"
+#include "vm/runtime/entry.h"
 
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <iostream>
-#include <new>
-#include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
-#include "opcode.h"
-#include "runtime/vm.h"
-#include "nextvm/bytecode/opcode.h"
-#include "nextvm/runtime/vm.h"
-#include "nextvm/value/value.h"
+#include "vm/bytecode/binary_format.h"
+#include "lpc/bytecode/opcode.h"
+#include "vm/runtime/vm.h"
+#include "vm/runtime/debugger.h"
+#include "vm/value/value.h"
+#include "cli/debug_repl.h"
+#include "cli/dap_server.h"
 
 extern std::string get_cwd();
 
 namespace {
-
-struct V1FuncMeta {
-    std::string name;
-    std::uint16_t nargs = 0;
-    std::uint16_t nlocals = 0;
-    std::uint32_t from = 0;
-    std::uint32_t to = 0;
-};
 
 static bool ReadU8(std::ifstream &in, std::uint8_t *v) {
     char b = 0;
@@ -89,22 +80,7 @@ static bool ReadU64(std::ifstream &in, std::uint64_t *v) {
     return true;
 }
 
-static std::string ResolveModuleBytecodePath(const std::string &entry_module) {
-    const std::string cwd = get_cwd();
-    const std::string p1 = cwd + "/bin/" + entry_module + ".b";
-    const std::string p2 = cwd + "/build/compiler/" + entry_module + ".b";
-    const std::string p3 = cwd + "/../build/compiler/" + entry_module + ".b";
-
-    std::ifstream in1(p1.c_str(), std::ios::binary);
-    if (in1.good()) return p1;
-    std::ifstream in2(p2.c_str(), std::ios::binary);
-    if (in2.good()) return p2;
-    std::ifstream in3(p3.c_str(), std::ios::binary);
-    if (in3.good()) return p3;
-    return "";
-}
-
-static std::string ResolveModuleNextVmPath(const std::string &entry_module) {
+static std::string ResolveModulePath(const std::string &entry_module) {
     const std::string cwd = get_cwd();
     const std::string p1 = cwd + "/bin/" + entry_module + ".nb";
     const std::string p2 = cwd + "/build/compiler/" + entry_module + ".nb";
@@ -119,43 +95,37 @@ static std::string ResolveModuleNextVmPath(const std::string &entry_module) {
     return "";
 }
 
-static lpc::core::Status LoadNextVmChunk(const std::string &path, lpc::nextvm::Chunk *chunk) {
-    std::ifstream in(path.c_str(), std::ios::binary);
-    if (!in.good()) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::NotFound, "nextvm bytecode file not found");
-    }
-
-    char magic[8] = {};
-    in.read(magic, 8);
-    if (!in.good() || std::memcmp(magic, "LPCNVM1", 7) != 0 || magic[7] != 0) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm bytecode magic");
-    }
-
-    lpc::nextvm::Chunk out;
+static lpc::vm::RuntimeError ParseHeaderSection(std::ifstream &in, std::uint32_t /*payload_size*/, lpc::vm::Chunk &out) {
     if (!ReadString(in, &out.module_name)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm module name");
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid header module name");
     }
+    if (!ReadU32(in, &out.flags)) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid header flags");
+    }
+    return lpc::vm::RuntimeError::Ok();
+}
 
+static lpc::vm::RuntimeError ParseConstantsSection(std::ifstream &in, std::uint32_t /*payload_size*/, lpc::vm::Chunk &out) {
     std::uint32_t count = 0;
     if (!ReadU32(in, &count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm int const header");
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid int const count");
     }
     out.iconst.reserve(count);
     for (std::uint32_t i = 0; i < count; ++i) {
         std::uint64_t bits = 0;
         if (!ReadU64(in, &bits)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm int const");
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid int const");
         }
         out.iconst.push_back(static_cast<std::int64_t>(bits));
     }
 
     if (!ReadU32(in, &count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm float const header");
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid float const count");
     }
     for (std::uint32_t i = 0; i < count; ++i) {
         std::uint64_t bits = 0;
         if (!ReadU64(in, &bits)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm float const");
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid float const");
         }
         double v = 0.0;
         static_assert(sizeof(double) == sizeof(std::uint64_t), "double must be 64 bits");
@@ -164,740 +134,514 @@ static lpc::core::Status LoadNextVmChunk(const std::string &path, lpc::nextvm::C
     }
 
     if (!ReadU32(in, &count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm string const header");
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid string const count");
     }
     for (std::uint32_t i = 0; i < count; ++i) {
         std::string s;
         if (!ReadString(in, &s)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm string const");
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid string const");
         }
         out.sconst.push_back(s);
     }
+    return lpc::vm::RuntimeError::Ok();
+}
 
+static lpc::vm::RuntimeError ParseClassesSection(std::ifstream &in, std::uint32_t /*payload_size*/, lpc::vm::Chunk &out) {
+    std::uint32_t count = 0;
     if (!ReadU32(in, &count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm class header");
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class count");
     }
     for (std::uint32_t i = 0; i < count; ++i) {
-        std::uint16_t nfields = 0;
-        if (!ReadU16(in, &nfields)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm class field count");
+        lpc::vm::ClassInfo ci;
+        if (!ReadString(in, &ci.name)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class name");
         }
-        out.class_field_counts.push_back(nfields);
+        if (!ReadU16(in, &ci.nfields)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class field count");
+        }
+        if (!ReadU16(in, &ci.parent_class_idx)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class parent index");
+        }
+        for (std::uint16_t f = 0; f < ci.nfields; ++f) {
+            std::string fname;
+            if (!ReadString(in, &fname)) {
+                return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class field name");
+            }
+            ci.field_names.push_back(fname);
+        }
+        out.classes.push_back(std::move(ci));
     }
+    return lpc::vm::RuntimeError::Ok();
+}
 
+static lpc::vm::RuntimeError ParseFunctionsSection(std::ifstream &in, std::uint32_t /*payload_size*/, lpc::vm::Chunk &out) {
+    std::uint32_t count = 0;
     if (!ReadU32(in, &count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm function header");
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid function count");
     }
     for (std::uint32_t i = 0; i < count; ++i) {
-        lpc::nextvm::FunctionProto f;
+        lpc::vm::FunctionProto f;
         if (!ReadString(in, &f.name) ||
             !ReadU16(in, &f.arity) ||
             !ReadU16(in, &f.nlocals) ||
             !ReadU16(in, &f.max_stack) ||
             !ReadU32(in, &f.code_start) ||
             !ReadU32(in, &f.code_end)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm function entry");
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid function entry");
+        }
+        std::uint16_t nupvalues = 0;
+        if (!ReadU16(in, &nupvalues)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid upvalue count");
+        }
+        for (std::uint16_t ui = 0; ui < nupvalues; ++ui) {
+            lpc::vm::UpvalueProto up;
+            if (!ReadU16(in, &up.source_kind) || !ReadU16(in, &up.source_index)) {
+                return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid upvalue entry");
+            }
+            f.upvalues.push_back(up);
         }
         out.functions.push_back(f);
     }
+    return lpc::vm::RuntimeError::Ok();
+}
 
+static lpc::vm::RuntimeError ParseLineTableSection(std::ifstream &in, std::uint32_t /*payload_size*/, lpc::vm::Chunk &out) {
+    std::uint32_t count = 0;
     if (!ReadU32(in, &count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm line header");
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid line table count");
     }
     for (std::uint32_t i = 0; i < count; ++i) {
-        lpc::nextvm::LineEntry e;
+        lpc::vm::LineEntry e;
         if (!ReadU32(in, &e.line) || !ReadU32(in, &e.pc)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm line entry");
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid line entry");
         }
         out.line_table.push_back(e);
     }
-
-    if (!ReadU32(in, &count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm code header");
-    }
-    out.code.assign(count, 0);
-    if (count > 0) {
-        in.read(reinterpret_cast<char *>(out.code.data()), static_cast<std::streamsize>(count));
-        if (!in.good()) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid nextvm code payload");
-        }
-    }
-
-    *chunk = std::move(out);
-    return lpc::core::Status::OkStatus();
+    return lpc::vm::RuntimeError::Ok();
 }
 
-static lpc::core::Status LoadV1Minimal(
-    const std::string &path,
-    std::string *module_name,
-    std::vector<V1FuncMeta> *funcs,
-    std::vector<std::int64_t> *iconst,
-    std::vector<std::uint8_t> *instructions) {
-    std::ifstream in(path.c_str(), std::ios::binary);
-    if (!in.good()) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::NotFound, "bytecode file not found");
+static lpc::vm::RuntimeError ParseCodeSection(std::ifstream &in, std::uint32_t /*payload_size*/, lpc::vm::Chunk &out) {
+    std::uint32_t code_size = 0;
+    if (!ReadU32(in, &code_size)) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid code size");
     }
-
-    if (!ReadString(in, module_name)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid module name header");
-    }
-
-    std::uint32_t class_count = 0;
-    if (!ReadU32(in, &class_count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid class section header");
-    }
-    for (std::uint32_t i = 0; i < class_count; ++i) {
-        std::string cname;
-        if (!ReadString(in, &cname)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid class name");
-        }
-        std::uint8_t is_static = 0;
-        std::uint16_t nfield = 0;
-        if (!ReadU8(in, &is_static) || !ReadU16(in, &nfield)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid class header");
-        }
-    }
-
-    std::uint16_t tmp16 = 0;
-    if (!ReadU16(in, &tmp16) || !ReadU16(in, &tmp16) || !ReadU16(in, &tmp16)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid hook section");
-    }
-
-    std::uint32_t line_count = 0;
-    if (!ReadU32(in, &line_count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid line map header");
-    }
-    for (std::uint32_t i = 0; i < line_count; ++i) {
-        std::uint32_t a = 0, b = 0;
-        if (!ReadU32(in, &a) || !ReadU32(in, &b)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid line map entry");
-        }
-    }
-
-    std::uint32_t func_count = 0;
-    if (!ReadU32(in, &func_count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid function table header");
-    }
-
-    funcs->clear();
-    funcs->reserve(func_count);
-    for (std::uint32_t i = 0; i < func_count; ++i) {
-        V1FuncMeta f;
-        if (!ReadString(in, &f.name)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid function name");
-        }
-        std::uint8_t ret = 0;
-        std::uint8_t st = 0;
-        std::uint16_t nup = 0;
-        if (!ReadU8(in, &ret) || !ReadU8(in, &st) || !ReadU16(in, &f.nargs) || !ReadU16(in, &f.nlocals) || !ReadU16(in, &nup)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid function header");
-        }
-        for (std::uint16_t ui = 0; ui < nup; ++ui) {
-            if (!ReadU16(in, &tmp16) || !ReadU16(in, &tmp16)) {
-                return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid upvalue header");
-            }
-        }
-        if (!ReadU32(in, &f.from) || !ReadU32(in, &f.to)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid function pc range");
-        }
-        funcs->push_back(f);
-    }
-
-    std::uint32_t nvar = 0;
-    if (!ReadU32(in, &nvar)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid var header");
-    }
-    if (nvar > 0) {
-        std::vector<char> flags(static_cast<std::size_t>(nvar));
-        in.read(flags.data(), static_cast<std::streamsize>(nvar));
+    out.code.assign(code_size, 0);
+    if (code_size > 0) {
+        in.read(reinterpret_cast<char *>(out.code.data()), static_cast<std::streamsize>(code_size));
         if (!in.good()) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid var flags");
-        }
-    }
-
-    std::uint32_t iconst_count = 0;
-    if (!ReadU32(in, &iconst_count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid iconst header");
-    }
-    iconst->clear();
-    iconst->reserve(iconst_count);
-    for (std::uint32_t i = 0; i < iconst_count; ++i) {
-        std::uint32_t v = 0;
-        if (!ReadU32(in, &v)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid iconst entry");
-        }
-        iconst->push_back(static_cast<std::int32_t>(v));
-    }
-
-    std::uint32_t fconst_count = 0;
-    if (!ReadU32(in, &fconst_count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid fconst header");
-    }
-    if (fconst_count > 0) {
-        in.seekg(static_cast<std::streamoff>(fconst_count * 4), std::ios::cur);
-        if (!in.good()) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid fconst body");
-        }
-    }
-
-    std::uint32_t sconst_count = 0;
-    if (!ReadU32(in, &sconst_count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid sconst header");
-    }
-    for (std::uint32_t i = 0; i < sconst_count; ++i) {
-        std::string s;
-        if (!ReadString(in, &s)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid sconst entry");
-        }
-    }
-
-    std::uint8_t has_clazz = 0;
-    if (!ReadU8(in, &has_clazz)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid class flag");
-    }
-    if (has_clazz == 0) {
-        std::uint32_t cc = 0;
-        if (!ReadU32(in, &cc)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid class table header");
-        }
-        for (std::uint32_t i = 0; i < cc; ++i) {
-            std::uint8_t b = 0;
-            if (!ReadU8(in, &b) || !ReadU16(in, &tmp16)) {
-                return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid class table entry");
-            }
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid code payload");
         }
     }
 
     std::uint32_t init_size = 0;
     if (!ReadU32(in, &init_size)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid init code header");
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid init code size");
     }
+    out.init_code.assign(init_size, 0);
     if (init_size > 0) {
-        in.seekg(static_cast<std::streamoff>(init_size), std::ios::cur);
+        in.read(reinterpret_cast<char *>(out.init_code.data()), static_cast<std::streamsize>(init_size));
         if (!in.good()) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid init code body");
+            out.init_code.clear();
         }
     }
-
-    std::uint32_t init_line_count = 0;
-    if (!ReadU32(in, &init_line_count)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid init line header");
-    }
-    for (std::uint32_t i = 0; i < init_line_count; ++i) {
-        std::uint32_t a = 0, b = 0;
-        if (!ReadU32(in, &a) || !ReadU32(in, &b)) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid init line entry");
-        }
-    }
-
-    std::uint32_t code_size = 0;
-    if (!ReadU32(in, &code_size)) {
-        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid instruction header");
-    }
-    instructions->assign(code_size, 0);
-    if (code_size > 0) {
-        in.read(reinterpret_cast<char *>(instructions->data()), static_cast<std::streamsize>(code_size));
-        if (!in.good()) {
-            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "invalid instruction body");
-        }
-    }
-
-    return lpc::core::Status::OkStatus();
+    return lpc::vm::RuntimeError::Ok();
 }
 
-static int EnsureIConst(std::vector<std::int64_t> *iconst, std::int64_t v) {
-    for (int i = 0; i < static_cast<int>(iconst->size()); ++i) {
-        if ((*iconst)[i] == v) {
-            return i;
-        }
+static lpc::vm::RuntimeError ParseDebugSection(std::ifstream &in, std::uint32_t /*payload_size*/, lpc::vm::Chunk &out) {
+    if (!ReadString(in, &out.debug_info.source_file)) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid debug source file");
     }
-    iconst->push_back(v);
-    return static_cast<int>(iconst->size() - 1);
+
+    std::uint32_t n_globals = 0;
+    if (!ReadU32(in, &n_globals)) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid debug global count");
+    }
+    for (std::uint32_t i = 0; i < n_globals; ++i) {
+        std::string name;
+        if (!ReadString(in, &name)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid debug global name");
+        }
+        out.debug_info.global_names.push_back(name);
+        out.global_names.push_back(name);
+    }
+
+    std::uint32_t n_func_debug = 0;
+    if (!ReadU32(in, &n_func_debug)) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid debug function count");
+    }
+    for (std::uint32_t i = 0; i < n_func_debug; ++i) {
+        lpc::vm::FunctionDebugInfo fdi;
+        std::uint16_t n_param = 0;
+        if (!ReadU16(in, &n_param)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid debug param count");
+        }
+        for (std::uint16_t p = 0; p < n_param; ++p) {
+            std::string name;
+            if (!ReadString(in, &name)) {
+                return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid debug param name");
+            }
+            fdi.param_names.push_back(name);
+        }
+        std::uint16_t n_local = 0;
+        if (!ReadU16(in, &n_local)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid debug local count");
+        }
+        for (std::uint16_t l = 0; l < n_local; ++l) {
+            std::string name;
+            if (!ReadString(in, &name)) {
+                return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid debug local name");
+            }
+            fdi.local_names.push_back(name);
+        }
+        std::uint16_t n_upval = 0;
+        if (!ReadU16(in, &n_upval)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid debug upvalue count");
+        }
+        for (std::uint16_t u = 0; u < n_upval; ++u) {
+            std::string name;
+            if (!ReadString(in, &name)) {
+                return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid debug upvalue name");
+            }
+            fdi.upvalue_names.push_back(name);
+        }
+        out.debug_info.function_debug.push_back(std::move(fdi));
+    }
+
+    std::uint32_t n_source_map = 0;
+    if (!ReadU32(in, &n_source_map)) {
+        return lpc::vm::RuntimeError::Ok();
+    }
+    for (std::uint32_t i = 0; i < n_source_map; ++i) {
+        lpc::vm::SourceMapEntry sme;
+        std::uint32_t out_line = 0, src_line = 0;
+        if (!ReadU32(in, &out_line) || !ReadU32(in, &src_line)) break;
+        sme.output_line = static_cast<int>(out_line);
+        sme.source_line = static_cast<int>(src_line);
+        if (!ReadString(in, &sme.source_path)) break;
+        out.debug_info.source_map.push_back(std::move(sme));
+    }
+
+    return lpc::vm::RuntimeError::Ok();
 }
 
-static void EmitU16(std::vector<std::uint8_t> *code, std::uint16_t v) {
-    code->push_back(static_cast<std::uint8_t>(v & 0xff));
-    code->push_back(static_cast<std::uint8_t>((v >> 8) & 0xff));
-}
-
-static lpc::core::Status TranslateV1ToNextVM(
-    const std::string &module_name,
-    const std::vector<V1FuncMeta> &v1_funcs,
-    const std::vector<std::int64_t> &v1_iconst,
-    const std::vector<std::uint8_t> &v1_code,
-    lpc::nextvm::Chunk *out) {
-    out->module_name = module_name;
-    out->code.clear();
-    out->iconst = v1_iconst;
-    out->functions.clear();
-    out->class_field_counts.clear();
-
-    std::unordered_map<std::string, std::uint16_t> func_name_to_nextvm;
-    for (std::uint16_t i = 0; i < static_cast<std::uint16_t>(v1_funcs.size()); ++i) {
-        func_name_to_nextvm[v1_funcs[i].name] = i;
+static lpc::vm::RuntimeError LoadChunk(const std::string &path, lpc::vm::Chunk *chunk) {
+    std::ifstream in(path.c_str(), std::ios::binary);
+    if (!in.good()) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::NotFound, "bytecode file not found");
     }
 
-    std::unordered_map<std::uint32_t, std::uint16_t> from_pc_to_v1_index;
-    for (std::uint16_t i = 0; i < static_cast<std::uint16_t>(v1_funcs.size()); ++i) {
-        from_pc_to_v1_index[v1_funcs[i].from] = i;
+    char magic[4] = {};
+    in.read(magic, 4);
+    if (!in.good() || std::memcmp(magic, "LPC\0", 4) != 0) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid bytecode magic");
     }
 
-    for (int fi = 0; fi < static_cast<int>(v1_funcs.size()); ++fi) {
-        const V1FuncMeta &vf = v1_funcs[fi];
-        lpc::nextvm::FunctionProto nf;
-        nf.name = vf.name;
-        nf.arity = vf.nargs;
-        nf.nlocals = vf.nlocals;
-        nf.code_start = static_cast<std::uint32_t>(out->code.size());
-
-        std::unordered_map<std::uint32_t, std::uint32_t> old_to_new;
-        struct Patch {
-            std::uint32_t pos = 0;
-            std::uint32_t target_old = 0;
-        };
-        std::vector<Patch> patches;
-
-        std::uint32_t ip = vf.from;
-        bool has_return = false;
-        while (ip < vf.to) {
-            const std::uint32_t old_pc = ip;
-            old_to_new[old_pc] = static_cast<std::uint32_t>(out->code.size());
-            std::uint8_t op = v1_code[ip++];
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_load_iconst)) {
-                if (ip + 2 > vf.to) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated op_load_iconst");
-                }
-                std::uint16_t idx = static_cast<std::uint16_t>(v1_code[ip]) |
-                    static_cast<std::uint16_t>(v1_code[ip + 1] << 8);
-                ip += 2;
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::LoadIConst));
-                EmitU16(&out->code, idx);
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_load_0) || op == static_cast<std::uint8_t>(OpCode::op_load_1)) {
-                const int idx = EnsureIConst(&out->iconst, op == static_cast<std::uint8_t>(OpCode::op_load_0) ? 0 : 1);
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::LoadIConst));
-                EmitU16(&out->code, static_cast<std::uint16_t>(idx));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_load_local) || op == static_cast<std::uint8_t>(OpCode::op_store_local)) {
-                if (ip + 2 > vf.to) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated local op");
-                }
-                std::uint16_t idx = static_cast<std::uint16_t>(v1_code[ip]) |
-                    static_cast<std::uint16_t>(v1_code[ip + 1] << 8);
-                ip += 2;
-                out->code.push_back(static_cast<std::uint8_t>(
-                    op == static_cast<std::uint8_t>(OpCode::op_load_local)
-                        ? lpc::nextvm::Op::LoadLocal
-                        : lpc::nextvm::Op::StoreLocal));
-                EmitU16(&out->code, idx);
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_load_func)) {
-                if (ip + 2 > vf.to) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated load_func op");
-                }
-                std::uint16_t idx = static_cast<std::uint16_t>(v1_code[ip]) |
-                    static_cast<std::uint16_t>(v1_code[ip + 1] << 8);
-                ip += 2;
-                if (idx >= v1_funcs.size()) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, "load_func index out of range");
-                }
-                std::uint16_t mapped_idx = idx;
-                const int cidx = EnsureIConst(&out->iconst, static_cast<std::int64_t>(mapped_idx));
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::LoadIConst));
-                EmitU16(&out->code, static_cast<std::uint16_t>(cidx));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_add)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Add));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_sub)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Sub));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_mul)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Mul));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_div)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Div));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_mod)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Mod));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_cmp_eq)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Eq));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_cmp_neq)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Neq));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_cmp_gt)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Gt));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_cmp_gte)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Gte));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_cmp_lt)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Lt));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_cmp_lte)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Lte));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_cmp_and)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::LogicAnd));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_cmp_or)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::LogicOr));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_cmp_not)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::LogicNot));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_new_class)) {
-                if (ip + 2 > vf.to) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated new_class op");
-                }
-                std::uint16_t class_idx = static_cast<std::uint16_t>(v1_code[ip]) |
-                    static_cast<std::uint16_t>(v1_code[ip + 1] << 8);
-                ip += 2;
-                while (out->class_field_counts.size() <= class_idx) {
-                    out->class_field_counts.push_back(0);
-                }
-                if (out->class_field_counts[class_idx] == 0) {
-                    out->class_field_counts[class_idx] = 16;
-                }
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::NewClass));
-                EmitU16(&out->code, class_idx);
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_set_class_field)) {
-                if (ip + 2 > vf.to) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated set_class_field op");
-                }
-                std::uint16_t field_idx = static_cast<std::uint16_t>(v1_code[ip]) |
-                    static_cast<std::uint16_t>(v1_code[ip + 1] << 8);
-                ip += 2;
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::SetClassField));
-                EmitU16(&out->code, field_idx);
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_load_class_field)) {
-                if (ip + 2 > vf.to) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated load_class_field op");
-                }
-                std::uint16_t field_idx = static_cast<std::uint16_t>(v1_code[ip]) |
-                    static_cast<std::uint16_t>(v1_code[ip + 1] << 8);
-                ip += 2;
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::LoadClassField));
-                EmitU16(&out->code, field_idx);
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_new_array)) {
-                if (ip + 4 > vf.to) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated new_array op");
-                }
-                std::uint32_t n = static_cast<std::uint32_t>(v1_code[ip]) |
-                    static_cast<std::uint32_t>(v1_code[ip + 1] << 8) |
-                    static_cast<std::uint32_t>(v1_code[ip + 2] << 16) |
-                    static_cast<std::uint32_t>(v1_code[ip + 3] << 24);
-                ip += 4;
-                if (n > 0xffff) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, "new_array too large for NextVM operand");
-                }
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::NewArray));
-                EmitU16(&out->code, static_cast<std::uint16_t>(n));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_index)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Index));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_return)) {
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Return));
-                has_return = true;
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_call)) {
-                if (ip + 1 > vf.to) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated call op type");
-                }
-                std::uint8_t type = v1_code[ip++];
-                if (type != 0) {
-                    if (ip + 2 > vf.to) {
-                        return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated call op index");
-                    }
-                    ip += 2;
-                    if (type == 1) {
-                        if (ip + 1 > vf.to) {
-                            return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated efun argc");
-                        }
-                        ip += 1;
-                    }
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, "NextVM translator only supports local call type=0");
-                }
-
-                if (out->code.size() < 3 || out->code[out->code.size() - 3] != static_cast<std::uint8_t>(lpc::nextvm::Op::LoadIConst)) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, "call without preceding callee const in translator");
-                }
-                std::uint16_t cidx = static_cast<std::uint16_t>(out->code[out->code.size() - 2]) |
-                    static_cast<std::uint16_t>(out->code[out->code.size() - 1] << 8);
-                if (cidx >= out->iconst.size()) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, "call callee const index out of range");
-                }
-                std::int64_t callee_idx = out->iconst[cidx];
-                if (callee_idx < 0 || callee_idx >= static_cast<std::int64_t>(v1_funcs.size())) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, "call callee function index out of range");
-                }
-
-                const std::string &callee_name = v1_funcs[static_cast<std::size_t>(callee_idx)].name;
-                if (!func_name_to_nextvm.count(callee_name)) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, "call callee function name not found in NextVM map");
-                }
-                std::uint16_t mapped_callee = func_name_to_nextvm[callee_name];
-
-                if (mapped_callee == static_cast<std::uint16_t>(fi)) {
-                    std::string msg = "self-recursive call is not supported in NextVM translator yet: caller=" +
-                        v1_funcs[fi].name + " callee=" + callee_name;
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, msg);
-                }
-
-                out->code.erase(out->code.end() - 3, out->code.end());
-                out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::CallValue));
-                EmitU16(&out->code, mapped_callee);
-                EmitU16(&out->code, static_cast<std::uint16_t>(v1_funcs[static_cast<std::size_t>(callee_idx)].nargs));
-                continue;
-            }
-
-            if (op == static_cast<std::uint8_t>(OpCode::op_goto) || op == static_cast<std::uint8_t>(OpCode::op_test)) {
-                if (ip + 4 > vf.to) {
-                    return lpc::core::Status::Error(lpc::core::ErrorCode::ParseError, "truncated jump op");
-                }
-                std::uint32_t target = static_cast<std::uint32_t>(v1_code[ip]) |
-                    static_cast<std::uint32_t>(v1_code[ip + 1] << 8) |
-                    static_cast<std::uint32_t>(v1_code[ip + 2] << 16) |
-                    static_cast<std::uint32_t>(v1_code[ip + 3] << 24);
-                ip += 4;
-                out->code.push_back(static_cast<std::uint8_t>(
-                    op == static_cast<std::uint8_t>(OpCode::op_goto)
-                        ? lpc::nextvm::Op::Jump
-                        : lpc::nextvm::Op::JumpIfFalse));
-                std::uint32_t patch_pos = static_cast<std::uint32_t>(out->code.size());
-                EmitU16(&out->code, 0);
-                patches.push_back({patch_pos, target});
-                continue;
-            }
-
-            std::string msg = "unsupported v1 opcode in NextVM translator: " + std::to_string(static_cast<int>(op));
-            return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, msg);
-        }
-
-        old_to_new[vf.to] = static_cast<std::uint32_t>(out->code.size());
-        if (!has_return) {
-            old_to_new[vf.to] = static_cast<std::uint32_t>(out->code.size());
-            out->code.push_back(static_cast<std::uint8_t>(lpc::nextvm::Op::Return));
-        }
-
-        for (const Patch &p : patches) {
-            if (!old_to_new.count(p.target_old)) {
-                return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, "jump target not aligned in translator");
-            }
-            const std::int64_t target_new = static_cast<std::int64_t>(old_to_new[p.target_old]);
-            const std::int64_t base = static_cast<std::int64_t>(p.pos + 2);
-            const std::int64_t rel = target_new - base;
-            if (rel < -32768 || rel > 32767) {
-                return lpc::core::Status::Error(lpc::core::ErrorCode::VmError, "jump target too far for NextVM rel16");
-            }
-            std::uint16_t bits = static_cast<std::uint16_t>(static_cast<std::int16_t>(rel));
-            out->code[p.pos + 0] = static_cast<std::uint8_t>(bits & 0xff);
-            out->code[p.pos + 1] = static_cast<std::uint8_t>((bits >> 8) & 0xff);
-        }
-
-        nf.code_end = static_cast<std::uint32_t>(out->code.size());
-        out->functions.push_back(nf);
+    std::uint32_t version = 0;
+    if (!ReadU32(in, &version)) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid bytecode version");
+    }
+    if (version != 2) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "unsupported bytecode version");
     }
 
-    return lpc::core::Status::OkStatus();
+    lpc::vm::Chunk out;
+    out.format_version = version;
+
+    std::uint64_t file_pos = 8;
+
+    while (in.good()) {
+        std::uint8_t sec_id = 0;
+        std::uint32_t sec_size = 0;
+        if (!ReadU8(in, &sec_id)) break;
+        if (!ReadU32(in, &sec_size)) break;
+        file_pos += 5;
+
+        if (sec_size == 0 && sec_id == 0) break;
+
+        lpc::vm::RuntimeError e = lpc::vm::RuntimeError::Ok();
+
+        switch (sec_id) {
+        case lpc::vm::kSecHeader:
+            e = ParseHeaderSection(in, sec_size, out);
+            break;
+        case lpc::vm::kSecConstants:
+            e = ParseConstantsSection(in, sec_size, out);
+            break;
+        case lpc::vm::kSecClasses:
+            e = ParseClassesSection(in, sec_size, out);
+            break;
+        case lpc::vm::kSecFunctions:
+            e = ParseFunctionsSection(in, sec_size, out);
+            break;
+        case lpc::vm::kSecLineTable:
+            e = ParseLineTableSection(in, sec_size, out);
+            break;
+        case lpc::vm::kSecCode:
+            e = ParseCodeSection(in, sec_size, out);
+            break;
+        case lpc::vm::kSecDebug:
+            e = ParseDebugSection(in, sec_size, out);
+            break;
+        default:
+            break;
+        }
+
+        if (!e.ok()) return e;
+
+        file_pos += sec_size;
+        in.clear();
+        in.seekg(static_cast<std::streamoff>(file_pos), std::ios::beg);
+    }
+
+    *chunk = std::move(out);
+    return lpc::vm::RuntimeError::Ok();
 }
 
 } // namespace
 
 namespace lpc {
-namespace runtime {
+namespace vm {
 
-core::Status RunEntryModuleNextVM(const std::string &entry_module) {
-    nextvm::Chunk ch;
-    const std::string next_path = ResolveModuleNextVmPath(entry_module);
-    if (!next_path.empty()) {
-        core::Status direct = LoadNextVmChunk(next_path, &ch);
-        if (!direct.ok()) {
-            return direct;
-        }
-    } else {
-    const std::string path = ResolveModuleBytecodePath(entry_module);
-    if (path.empty()) {
-        return core::Status::Error(core::ErrorCode::NotFound, "NextVM could not find module bytecode");
+static vm::Vm &LiveHotReloadVm() {
+    static vm::Vm live_vm;
+    return live_vm;
+}
+
+RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile) {
+    const std::string next_path = ResolveModulePath(entry_module);
+    if (next_path.empty()) {
+        return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
     }
 
-    std::string module_name;
-    std::vector<V1FuncMeta> funcs;
-    std::vector<std::int64_t> iconst;
-    std::vector<std::uint8_t> code;
-    core::Status s = LoadV1Minimal(path, &module_name, &funcs, &iconst, &code);
+    vm::Chunk ch;
+    RuntimeError s = LoadChunk(next_path, &ch);
     if (!s.ok()) {
         return s;
     }
 
-    s = TranslateV1ToNextVM(module_name, funcs, iconst, code, &ch);
-    if (!s.ok()) {
-        return s;
-    }
-    }
-
-    nextvm::Vm nextvm_engine;
-    nextvm::RuntimeError e = nextvm_engine.LoadChunk(ch);
+    vm::Vm nextvm_engine;
+    nextvm_engine.set_profile_enabled(enable_profile);
+    vm::RuntimeError e = nextvm_engine.LoadChunk(ch);
     if (!e.ok()) {
-        return core::Status::Error(core::ErrorCode::VmError, "NextVM load chunk failed: " + e.message);
+        return e;
     }
     e = nextvm_engine.RunEntry("main");
     if (!e.ok()) {
-        return core::Status::Error(core::ErrorCode::VmError, "NextVM run failed: " + e.message);
+        return e;
     }
 
-    nextvm::Value out = nextvm_engine.last_result();
-    if (out.tag == nextvm::ValueTag::Int64) {
-        std::cout << "NextVM result: " << out.as.i64 << std::endl;
+    vm::Value out = nextvm_engine.last_result();
+    if (out.IsInt64()) {
+        std::cout << "NextVM result: " << out.AsI64() << std::endl;
     }
-    return core::Status::OkStatus();
+    if (enable_profile) {
+        nextvm_engine.PrintProfile(std::cout);
+    }
+    return RuntimeError::Ok();
 }
 
-core::Status RunEntryModuleCompare(const std::string &entry_module) {
-    std::cout << "[compare] protocol: NextVM-first, legacy-inprocess-best-effort" << std::endl;
-
-    const std::string path = ResolveModuleBytecodePath(entry_module);
-    if (path.empty()) {
-        return core::Status::Error(core::ErrorCode::NotFound, "NextVM could not find module bytecode");
+RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_json, bool protocol_dap, bool enable_profile) {
+    const std::string next_path = ResolveModulePath(entry_module);
+    if (next_path.empty()) {
+        return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
     }
 
-    std::string module_name;
-    std::vector<V1FuncMeta> funcs;
-    std::vector<std::int64_t> iconst;
-    std::vector<std::uint8_t> code;
-    core::Status s = LoadV1Minimal(path, &module_name, &funcs, &iconst, &code);
+    vm::Chunk ch;
+    RuntimeError s = LoadChunk(next_path, &ch);
     if (!s.ok()) {
         return s;
     }
 
-    nextvm::Chunk ch;
-    s = TranslateV1ToNextVM(module_name, funcs, iconst, code, &ch);
-    if (!s.ok()) {
-        return s;
-    }
-
-    nextvm::Vm nextvm_engine;
-    nextvm::RuntimeError e = nextvm_engine.LoadChunk(ch);
+    vm::Vm nextvm_engine;
+    nextvm_engine.set_profile_enabled(enable_profile);
+    vm::RuntimeError e = nextvm_engine.LoadChunk(ch);
     if (!e.ok()) {
-        std::cout << "[compare] NextVM_status=error" << std::endl;
-        return core::Status::Error(core::ErrorCode::VmError, "NextVM load chunk failed: " + e.message);
+        return e;
     }
+
+    nextvm_engine.debugger().set_active(true);
+    nextvm_engine.debugger().SetStepMode(StepMode::StepInto, 0);
+
+    if (protocol_dap) {
+        RunDapServer(nextvm_engine);
+        return RuntimeError::Ok();
+    }
+
+    if (protocol_json) {
+        nextvm_engine.set_debug_hook([&nextvm_engine](std::uint32_t pc) -> RuntimeError {
+            return RunDapServerStep(nextvm_engine, pc);
+        });
+    } else {
+        nextvm_engine.set_debug_hook([&nextvm_engine](std::uint32_t pc) -> RuntimeError {
+            return RunDebugReplStep(nextvm_engine, pc);
+        });
+    }
+
     e = nextvm_engine.RunEntry("main");
     if (!e.ok()) {
-        std::cout << "[compare] NextVM_status=error" << std::endl;
-        return core::Status::Error(core::ErrorCode::VmError, "NextVM run failed: " + e.message);
-    }
-
-    if (!s.ok()) {
-        std::cout << "[compare] NextVM_status=error" << std::endl;
-        return s;
-    }
-    std::cout << "[compare] NextVM_status=ok" << std::endl;
-
-    std::unique_ptr<lpc_vm_t> legacy(lpc_vm_t::create_vm());
-    legacy->set_non_fatal_mode(true);
-    legacy->set_memory_limit_bytes(2ULL * 1024ULL * 1024ULL * 1024ULL);
-    legacy->set_entry(entry_module.c_str());
-    try {
-        legacy->bootstrap();
-    } catch (const std::bad_alloc &) {
-        std::cout << "[compare] legacy_status=error" << std::endl;
-        return core::Status::Error(core::ErrorCode::VmError, "legacy bootstrap failed: bad_alloc");
-    } catch (...) {
-        std::cout << "[compare] legacy_status=error" << std::endl;
-        return core::Status::Error(core::ErrorCode::VmError, "legacy bootstrap failed: unknown exception");
-    }
-    if (legacy->has_error()) {
-        std::cout << "[compare] legacy_status=error" << std::endl;
-        return core::Status::Error(core::ErrorCode::VmError, "legacy bootstrap failed: " + legacy->last_error());
-    }
-
-    try {
-        legacy->run_main();
-    } catch (const std::bad_alloc &) {
-        std::cout << "[compare] legacy_status=error" << std::endl;
-        return core::Status::Error(core::ErrorCode::VmError, "legacy run failed: bad_alloc");
-    } catch (...) {
-        std::cout << "[compare] legacy_status=error" << std::endl;
-        return core::Status::Error(core::ErrorCode::VmError, "legacy run failed: unknown exception");
-    }
-    if (legacy->has_error()) {
-        std::cout << "[compare] legacy_status=error" << std::endl;
-        return core::Status::Error(core::ErrorCode::VmError, "legacy run failed: " + legacy->last_error());
-    }
-
-    std::cout << "[compare] legacy_status=ok" << std::endl;
-
-    nextvm::Value v2 = nextvm_engine.last_result();
-    if (v2.tag == nextvm::ValueTag::Int64 && legacy->has_last_int_result()) {
-        std::cout << "[compare] NextVM_result_int=" << v2.as.i64 << std::endl;
-        std::cout << "[compare] legacy_result_int=" << legacy->last_int_result() << std::endl;
-        if (static_cast<lint64_t>(legacy->last_int_result()) != v2.as.i64) {
-            return core::Status::Error(core::ErrorCode::VmError, "result mismatch between NextVM and legacy");
+        if (protocol_json) {
+            std::cout << "{\"type\":\"event\",\"event\":\"runtimeError\",\"body\":{\"message\":"
+                      << "\"" << e.message << "\"}}" << std::endl;
+        } else {
+            std::cerr << "runtime error: " << e.message << std::endl;
         }
-        std::cout << "[compare] result_match=ok" << std::endl;
-    } else {
-        std::cout << "[compare] result_match=skipped" << std::endl;
+        return e;
     }
 
-    std::cout << "[compare] done" << std::endl;
-    return core::Status::OkStatus();
+    if (protocol_json) {
+        std::cout << "{\"type\":\"event\",\"event\":\"terminated\",\"body\":{}}" << std::endl;
+    } else {
+        std::cerr << "Program exited." << std::endl;
+    }
+
+    vm::Value out = nextvm_engine.last_result();
+    if (out.IsInt64() && !protocol_json) {
+        std::cout << "NextVM result: " << out.AsI64() << std::endl;
+    }
+    if (enable_profile && !protocol_json) {
+        nextvm_engine.PrintProfile(std::cout);
+    }
+    return RuntimeError::Ok();
 }
 
-} // namespace runtime
+RuntimeError LoadModuleChunkForHotReload(const std::string &module_name, Chunk *out_chunk) {
+    if (!out_chunk) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "output chunk pointer is null");
+    }
+    const std::string path = ResolveModulePath(module_name);
+    if (path.empty()) {
+        return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
+    }
+    return LoadChunk(path, out_chunk);
+}
+
+RuntimeError CheckHotReloadModule(const std::string &module_name,
+                                  const Chunk &candidate,
+                                  HotReloadLevel level,
+                                  HotReloadCompatReport *out_report) {
+    if (module_name.empty()) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "hot-reload check requires module name");
+    }
+
+    vm::Vm probe;
+    RuntimeError load_err = probe.LoadChunk(candidate);
+    if (!load_err.ok()) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand,
+                                   std::string("hot-reload check failed during candidate load: ") + load_err.message);
+    }
+
+    HotReloadCompatReport report;
+    std::uint64_t version_id = 0;
+    RuntimeError e = probe.PrepareHotReload(module_name, candidate, level, &version_id, &report);
+    if (out_report) {
+        *out_report = report;
+    }
+    if (!e.ok()) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand,
+                                   std::string("hot-reload compatibility rejected: ") + e.message);
+    }
+    return RuntimeError::Ok();
+}
+
+RuntimeError PrepareHotReloadModule(const std::string &module_name,
+                                    const Chunk &candidate,
+                                    HotReloadLevel level,
+                                    const std::string &smoke_function,
+                                    std::uint64_t *out_candidate_version,
+                                    ModuleHotReloadStatus *out_status,
+                                    const MigrationDescriptor *migration) {
+    if (module_name.empty()) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "hot-reload prepare requires module name");
+    }
+
+    vm::Vm &live_vm = LiveHotReloadVm();
+    HotReloadCompatReport report;
+    std::uint64_t version_id = 0;
+    RuntimeError e = live_vm.PrepareHotReload(module_name, candidate, level, &version_id, &report, migration);
+    if (!e.ok()) {
+        std::string reason = report.issues.empty() ? e.message : (report.issues[0].field + ": " + report.issues[0].detail);
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand,
+                                   std::string("hot-reload prepare failed: ") + reason);
+    }
+
+    if (!smoke_function.empty()) {
+        vm::Vm smoke_vm;
+        RuntimeError load_err = smoke_vm.LoadChunk(candidate);
+        if (!load_err.ok()) {
+            return RuntimeError::Error(RuntimeErrorCode::InternalError,
+                                       std::string("hot-reload smoke load failed: ") + load_err.message);
+        }
+        RuntimeError run_err = smoke_vm.RunEntry(smoke_function.c_str());
+        if (!run_err.ok()) {
+            return RuntimeError::Error(RuntimeErrorCode::InternalError,
+                                       std::string("hot-reload smoke run failed: ") + run_err.message);
+        }
+    }
+
+    if (out_candidate_version) {
+        *out_candidate_version = version_id;
+    }
+    if (out_status) {
+        *out_status = live_vm.GetHotReloadStatus(module_name);
+    }
+    return RuntimeError::Ok();
+}
+
+RuntimeError ActivatePreparedHotReloadModule(const std::string &module_name,
+                                             std::uint64_t prepared_version,
+                                             ModuleHotReloadStatus *out_status) {
+    if (module_name.empty()) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "hot-reload activate requires module name");
+    }
+    if (prepared_version == 0) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "hot-reload activate requires prepared version");
+    }
+
+    vm::Vm &live_vm = LiveHotReloadVm();
+    RuntimeError e = live_vm.ActivateHotReload(module_name, prepared_version, nullptr);
+    if (!e.ok()) {
+        return RuntimeError::Error(RuntimeErrorCode::InternalError,
+                                   std::string("hot-reload activate failed: ") + e.message);
+    }
+    if (out_status) {
+        *out_status = live_vm.GetHotReloadStatus(module_name);
+    }
+    return RuntimeError::Ok();
+}
+
+RuntimeError GetHotReloadModuleStatus(const std::string &module_name,
+                                      ModuleHotReloadStatus *out_status) {
+    if (module_name.empty()) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "hot-reload status requires module name");
+    }
+    if (!out_status) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "hot-reload status requires output pointer");
+    }
+
+    vm::Vm &live_vm = LiveHotReloadVm();
+    *out_status = live_vm.GetHotReloadStatus(module_name);
+    return RuntimeError::Ok();
+}
+
+RuntimeError ApplyHotReloadModule(const std::string &module_name,
+                                  const Chunk &candidate,
+                                  HotReloadLevel level,
+                                  ModuleHotReloadStatus *out_status) {
+    if (module_name.empty()) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "hot-reload apply requires module name");
+    }
+
+    std::uint64_t candidate_version = 0;
+    RuntimeError e = PrepareHotReloadModule(module_name, candidate, level, "", &candidate_version, nullptr);
+    if (!e.ok()) {
+        return e;
+    }
+    return ActivatePreparedHotReloadModule(module_name, candidate_version, out_status);
+}
+
+void SetHotReloadAuditLogPath(const std::string &file_path) {
+    LiveHotReloadVm().audit_log().SetFilePath(file_path);
+}
+
+} // namespace vm
 } // namespace lpc

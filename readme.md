@@ -79,7 +79,21 @@ void main()
 需要在指定的某一目录下运行，后续所有对象都以
 ``"char/user.c"``, ``"module/template/mail.c"`` 这种形式表示
 
-测试请修改 ``vm/src/runtime/vm.cpp`` 下的加载二进制文件路径
+## 测试
+
+执行完整 LPC 回归测试（当前 41 个）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run_lpc_tests.ps1
+```
+
+默认根目录是 `E:\test\lpc-interpreter`，可通过参数覆盖：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run_lpc_tests.ps1 -Root "E:\test\lpc-interpreter"
+```
+
+测试会自动编译每个 `.lpc` 再用 VM 运行，最后输出 `Pass: x / y`。
 
 
 2023.5.30 此项目后续可能不再维护，因为好像不值得。

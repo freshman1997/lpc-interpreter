@@ -1,0 +1,21 @@
+#define ENABLE_WEAPON 1
+
+#if ENABLE_WEAPON
+inherit "base/weapon";
+#endif
+
+inherit "base/room";
+
+int main() {
+    Room r = create_room("Armory", "A dusty armory");
+    puts(room_title(r));
+
+    Weapon w = create_weapon("Sword", 42);
+    puts(weapon_name(w));
+    puts(weapon_damage(w));
+
+    if (room_title(r) == "Armory" && weapon_name(w) == "Sword" && weapon_damage(w) == 42) {
+        return 0;
+    }
+    return 1;
+}

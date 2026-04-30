@@ -1,1 +1,1 @@
-compiler/tests/golden/sample_nextvm_compare_logic_call
+test_call_other2

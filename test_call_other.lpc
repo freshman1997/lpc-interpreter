@@ -1,0 +1,10 @@
+int add(int a, int b) {
+    return a + b;
+}
+
+int main() {
+    object ob = this_object();
+    int result = call_other(ob, "add", 3, 4);
+    print("result=" + to_string(result) + "\n");
+    return result;
+}

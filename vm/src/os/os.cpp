@@ -1,18 +1,18 @@
 #include <cassert>
 #include <ctime>
 #include <cstdio>
+#include <cstdint>
 
 #include "os/os.h"
 
-static lint64_t _rand_seed = 1;
+static int64_t _rand_seed = 1;
 
-// referrence to jvm source code
-void os::init_seed(lint64_t initval)
+void os::init_seed(int64_t initval)
 {
     _rand_seed = initval;
 }
 
-lint64_t os::random()
+int64_t os::random()
 {
     /* standard, well-known linear congruential random generator with
     * next_rand = (16807*seed) mod (2**31-1)

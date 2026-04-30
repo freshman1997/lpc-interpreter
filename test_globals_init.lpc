@@ -1,0 +1,7 @@
+int g_count = 5;
+string g_name = "test";
+
+void main() {
+    print(to_string(g_count));
+    print(g_name);
+}

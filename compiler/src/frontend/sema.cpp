@@ -1,5 +1,6 @@
 #include "frontend/sema.h"
 
+#include <functional>
 #include <set>
 
 namespace lpc {
@@ -14,6 +15,10 @@ static bool IsNumericType(const std::string &t) {
     return t == "int" || t == "float";
 }
 
+static bool IsPointerType(const std::string &t) {
+    return t.size() > 1 && t.back() == '*';
+}
+
 static bool IsTypeAssignable(const std::string &lhs, const std::string &rhs) {
     if (lhs.empty() || rhs.empty()) {
         return true;
@@ -25,6 +30,15 @@ static bool IsTypeAssignable(const std::string &lhs, const std::string &rhs) {
         return true;
     }
     if (IsNumericType(lhs) && IsNumericType(rhs)) {
+        return true;
+    }
+    if (IsPointerType(lhs) && rhs == "array") {
+        return true;
+    }
+    if (lhs == "array" && IsPointerType(rhs)) {
+        return true;
+    }
+    if (IsPointerType(lhs) && IsPointerType(rhs)) {
         return true;
     }
     return false;
@@ -260,6 +274,63 @@ SemanticModel Sema::Analyze(const Module &module) {
             function_arity_[fn->name] = static_cast<int>(fn->params.size());
         }
     }
+
+    for (const auto &decl : module.decls) {
+        if (decl && decl->kind == NodeKind::ClassDecl) {
+            const ClassDecl *cl = static_cast<const ClassDecl *>(decl.get());
+            model_.class_order.push_back(cl->name);
+            model_.class_fields[cl->name] = cl->fields;
+            if (!cl->parent_name.empty()) {
+                model_.class_parent[cl->name] = cl->parent_name;
+            }
+        }
+    }
+
+    {
+        std::unordered_map<std::string, int> visit_state;
+        for (const auto &name : model_.class_order) {
+            visit_state[name] = 0;
+        }
+        std::vector<std::string> topo;
+        bool has_cycle = false;
+        std::function<bool(const std::string &)> topo_visit =
+            [&](const std::string &cls) -> bool {
+            if (visit_state[cls] == 1) { has_cycle = true; return false; }
+            if (visit_state[cls] == 2) return true;
+            visit_state[cls] = 1;
+            auto it = model_.class_parent.find(cls);
+            if (it != model_.class_parent.end()) {
+                if (model_.class_fields.count(it->second)) {
+                    if (!topo_visit(it->second)) return false;
+                } else if (diag_) {
+                    diag_->Add(DiagnosticLevel::Error, {}, "parent class '" + it->second + "' not found");
+                }
+            }
+            visit_state[cls] = 2;
+            topo.push_back(cls);
+            return true;
+        };
+        for (const auto &name : model_.class_order) {
+            if (visit_state[name] == 0) {
+                if (!topo_visit(name)) break;
+            }
+        }
+        if (has_cycle && diag_) {
+            diag_->Add(DiagnosticLevel::Error, {}, "circular class inheritance detected");
+        }
+
+        for (const auto &cls : topo) {
+            auto pit = model_.class_parent.find(cls);
+            if (pit != model_.class_parent.end() && model_.class_fields.count(pit->second)) {
+                std::vector<std::string> flat = model_.class_fields[pit->second];
+                for (const auto &f : model_.class_fields[cls]) {
+                    flat.push_back(f);
+                }
+                model_.class_fields[cls] = std::move(flat);
+            }
+        }
+    }
+
     EnterScope();
 
     for (const auto &decl : module.decls) {
@@ -282,7 +353,7 @@ void Sema::VisitStmt(const Stmt *stmt) {
         Declare(vd->name, declared_type);
         if (current_function_) {
             model_.functions[current_function_].locals.push_back(vd->name);
-        } else {
+        } else if (!in_lambda_) {
             model_.global_variables.push_back(vd->name);
         }
         if (vd->init) {
@@ -311,13 +382,9 @@ void Sema::VisitStmt(const Stmt *stmt) {
     case NodeKind::ClassDecl: {
         const ClassDecl *cl = static_cast<const ClassDecl *>(stmt);
         Declare(cl->name);
-        model_.class_order.push_back(cl->name);
-        model_.class_fields[cl->name] = cl->fields;
         break;
     }
     case NodeKind::InheritDecl: {
-        const InheritDecl *inh = static_cast<const InheritDecl *>(stmt);
-        Declare(inh->parent_name);
         break;
     }
     case NodeKind::Block: {
@@ -716,6 +783,7 @@ static const char *kEfunNames[] = {
     "strsrch",
     "replace_string",
     "sort_array",
+    "instanceof",
 };
 static constexpr int kEfunCount = sizeof(kEfunNames) / sizeof(kEfunNames[0]);
 
@@ -864,6 +932,25 @@ void Sema::AnalyzeLambda(const LambdaExpr *lambda, const FunctionDecl *owner) {
     }
 
     model_.lambdas[lambda] = info;
+
+    const FunctionDecl *saved_func = current_function_;
+    current_function_ = nullptr;
+    in_lambda_ = true;
+
+    EnterScope();
+    for (const auto &param : lambda->params) {
+        Declare(param, "mixed");
+    }
+    for (const auto &local_name : info.locals) {
+        Declare(local_name, "mixed");
+    }
+    for (const auto &st : lambda->body) {
+        VisitStmt(st.get());
+    }
+    ExitScope();
+
+    in_lambda_ = false;
+    current_function_ = saved_func;
 }
 
 } // namespace frontend

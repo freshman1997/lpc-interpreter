@@ -1,0 +1,14 @@
+inherit "base/room";
+
+int main() {
+    Room r = create_room("Hall", "A grand hall");
+    string t = room_title(r);
+
+    puts(t);
+    puts(r->description);
+
+    if (t == "Hall" && r->description == "A grand hall") {
+        return 0;
+    }
+    return 1;
+}

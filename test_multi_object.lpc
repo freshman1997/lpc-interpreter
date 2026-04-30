@@ -1,0 +1,19 @@
+class Item {
+    int weight;
+}
+
+int total_weight(Item a, Item b) {
+    return a->weight + b->weight;
+}
+
+int main() {
+    Item sword = new Item();
+    sword->weight = 5;
+
+    Item shield = new Item();
+    shield->weight = 8;
+
+    int total = total_weight(sword, shield);
+    print(total);
+    return 0;
+}

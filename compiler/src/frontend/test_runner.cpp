@@ -163,7 +163,7 @@ int RunGoldenTests() {
         std::string out_err;
         std::string module;
         if (ok) {
-            ok = WriteMirModuleSetAsV1BytecodeAtPath(r.module, tc.path, ws, out_root, &out_err, &module);
+            ok = WriteMirModuleSetAsNextVmBytecodeAtPath(r.module, tc.path, ws, out_root, &out_err, &module);
             if (!ok) {
                 std::cout << "[FAIL] " << tc.path << " lowering=" << out_err << "\n";
                 ++failed;
@@ -171,7 +171,7 @@ int RunGoldenTests() {
             }
             const std::filesystem::path p = std::filesystem::path(out_root) /
                 std::filesystem::relative(std::filesystem::path(tc.path).parent_path(), std::filesystem::path(ws)) /
-                (std::filesystem::path(tc.path).stem().string() + ".b");
+                (std::filesystem::path(tc.path).stem().string() + ".nb");
             if (!fs::exists(p)) {
                 std::cout << "[FAIL] " << tc.path << " missing output file: " << p.string() << "\n";
                 ++failed;

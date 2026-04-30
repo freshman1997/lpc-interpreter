@@ -1,0 +1,19 @@
+class Counter {
+    int val;
+}
+
+fun main() {
+    Counter obj = new Counter();
+    obj->val = 10;
+    var f = fun() {
+        obj->val = obj->val + 1;
+        return obj->val;
+    };
+    int a = f();
+    int b = f();
+    int d = f();
+    puts(a);
+    puts(b);
+    puts(d);
+    return 0;
+}

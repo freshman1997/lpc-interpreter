@@ -7,6 +7,7 @@
 #include "frontend/diagnostic.h"
 #include "frontend/mir.h"
 #include "frontend/mir_opt.h"
+#include "frontend/preprocessor.h"
 
 namespace lpc {
 namespace frontend {
@@ -19,6 +20,7 @@ struct PipelineResult {
     int mir_instr_after_opt = 0;
     MirOptStats mir_opt_stats;
     DiagnosticSink diagnostics;
+    std::vector<SourceMapEntry> source_map;
 };
 
 struct PipelineOptions {

@@ -1,0 +1,15 @@
+class Room {
+    var title;
+    var description;
+}
+
+fun create_room(string t, string d) {
+    Room r = new Room();
+    r->title = t;
+    r->description = d;
+    return r;
+}
+
+fun room_title(Room r) {
+    return r->title;
+}

@@ -57,6 +57,7 @@ public:
         MirModule out;
         out.class_order = sema_.class_order;
         out.class_fields = sema_.class_fields;
+        out.class_parent = sema_.class_parent;
 
         function_index_by_name_.clear();
         lambda_index_by_expr_.clear();
@@ -471,20 +472,20 @@ private:
         case NodeKind::String: {
             if (expr->kind == NodeKind::Float) {
                 const FloatExpr *fe = static_cast<const FloatExpr *>(expr);
-                float v = 0.0f;
+                double v = 0.0;
                 try {
-                    v = std::stof(fe->literal);
+                    v = std::stod(fe->literal);
                 } catch (...) {
-                    v = 0.0f;
+                    v = 0.0;
                 }
                 int idx = static_cast<int>(f.fconsts.size());
                 f.fconsts.push_back(v);
                 f.code.push_back({MirOp::LoadFConst, idx, 0});
             } else if (expr->kind == NodeKind::Number) {
                 const NumberExpr *n = static_cast<const NumberExpr *>(expr);
-                int v = 0;
+                std::int64_t v = 0;
                 try {
-                    v = std::stoi(n->literal, nullptr, 0);
+                    v = std::stoll(n->literal, nullptr, 0);
                 } catch (...) {
                     v = 0;
                 }
@@ -582,21 +583,7 @@ private:
                 const IndexExpr *idx = static_cast<const IndexExpr *>(u->operand.get());
                 EmitExpr(idx->object.get(), f);
                 EmitExpr(idx->index.get(), f);
-                f.code.push_back({MirOp::Index, 0, 0});
-                if (u->is_postfix) {
-                    f.code.push_back({MirOp::Dup, 0, 0});
-                }
-                int one_idx = static_cast<int>(f.iconsts.size());
-                f.iconsts.push_back(1);
-                f.code.push_back({MirOp::LoadConst, one_idx, 0});
-                f.code.push_back({u->op == "++" ? MirOp::Add : MirOp::Sub, 0, 0});
-                if (!u->is_postfix) {
-                    f.code.push_back({MirOp::Dup, 0, 0});
-                }
-                EmitExpr(idx->object.get(), f);
-                EmitExpr(idx->index.get(), f);
-                f.code.push_back({MirOp::StoreIndex, 0, 0});
-                f.code.push_back({MirOp::Pop, 0, 0});
+                f.code.push_back({MirOp::Upset, u->op == "++" ? 1 : 2, u->is_postfix ? 0 : 1});
                 break;
             }
 
@@ -1121,6 +1108,7 @@ PipelineResult CompileSourceToMir(
     source.path = path;
     PreprocessResult pre = PreprocessSource(path, text, &result.diagnostics, include_dirs);
     source.text = pre.text;
+    result.source_map = std::move(pre.source_map);
 
     Lexer lexer(&result.diagnostics);
     std::vector<Token> tokens = lexer.Tokenize(source);

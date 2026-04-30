@@ -1,0 +1,40 @@
+void main() {
+    int a = 5;
+    a++;
+    print(to_string(a) + "\n");
+    ++a;
+    print(to_string(a) + "\n");
+    a--;
+    print(to_string(a) + "\n");
+    --a;
+    print(to_string(a) + "\n");
+
+    int *arr = ({10, 20, 30});
+    arr[1]++;
+    print(to_string(arr[1]) + "\n");
+    ++arr[2];
+    print(to_string(arr[2]) + "\n");
+    arr[0]--;
+    print(to_string(arr[0]) + "\n");
+    --arr[0];
+    print(to_string(arr[0]) + "\n");
+
+    mapping m = ([ "x" : 100, "y" : 200 ]);
+    m["x"]++;
+    print(to_string(m["x"]) + "\n");
+    ++m["y"];
+    print(to_string(m["y"]) + "\n");
+    m["x"]--;
+    print(to_string(m["x"]) + "\n");
+    --m["y"];
+    print(to_string(m["y"]) + "\n");
+
+    int pv = arr[1]++;
+    print(to_string(pv) + "\n");
+    print(to_string(arr[1]) + "\n");
+
+    mapping m2 = ([ 1 : 10 ]);
+    int pm = m2[1]++;
+    print(to_string(pm) + "\n");
+    print(to_string(m2[1]) + "\n");
+}

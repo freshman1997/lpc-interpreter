@@ -1,0 +1,11 @@
+class B : A {
+    var y;
+}
+
+class A : B {
+    var x;
+}
+
+int main() {
+    return 0;
+}

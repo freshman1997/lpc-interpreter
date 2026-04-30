@@ -15,10 +15,12 @@ struct MirOptStats {
     int constfold_changed = 0;
     int peephole_changed = 0;
     int unreachable_changed = 0;
+    int cse_changed = 0;
     int constprop_instr_delta = 0;
     int constfold_instr_delta = 0;
     int peephole_instr_delta = 0;
     int unreachable_instr_delta = 0;
+    int cse_instr_delta = 0;
 };
 
 void OptimizeMirModule(MirModule *module);

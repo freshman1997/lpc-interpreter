@@ -1,0 +1,34 @@
+class Animal {
+    var name;
+}
+
+class Dog : Animal {
+    var breed;
+}
+
+class Cat : Animal {
+    var color;
+}
+
+int main() {
+    Dog d = new Dog();
+    d->name = "Rex";
+    d->breed = "Lab";
+
+    Cat c = new Cat();
+    c->name = "Mittens";
+    c->color = "black";
+
+    if (!instanceof(d, "Dog")) return 1;
+    if (!instanceof(d, "Animal")) return 2;
+    if (instanceof(d, "Cat")) return 3;
+
+    if (!instanceof(c, "Cat")) return 4;
+    if (!instanceof(c, "Animal")) return 5;
+    if (instanceof(c, "Dog")) return 6;
+
+    if (instanceof(d, "NonExistent")) return 7;
+
+    puts("instanceof OK");
+    return 0;
+}

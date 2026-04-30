@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(lpc_compiler)
 
 include_directories(include)
+include_directories(${CMAKE_SOURCE_DIR}/include)
 file(GLOB_RECURSE FRONTEND_SRC ./src/frontend/*.cpp)
 
 add_definitions("-Wall -fpermissive")

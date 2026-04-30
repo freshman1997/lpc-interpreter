@@ -52,12 +52,13 @@ static int EfunResultCount(int efun_index) {
     case 41: return 1; // strsrch
     case 42: return 1; // replace_string
     case 43: return 1; // sort_array
+    case 44: return 1; // instanceof
     default: return 0;
     }
 }
 
 static bool IsKnownEfun(int efun_index) {
-    return efun_index >= 0 && efun_index <= 43;
+    return efun_index >= 0 && efun_index <= 44;
 }
 
 static int StackDelta(MirOp op) {
@@ -118,7 +119,6 @@ static int StackDelta(MirOp op) {
         return -1;
     case MirOp::Jump:
     case MirOp::Return:
-    case MirOp::Switch:
         return 0;
     case MirOp::Pop:
         return -1;
@@ -129,6 +129,8 @@ static int StackDelta(MirOp op) {
         return 0;
     case MirOp::Catch:
         return 0;
+    case MirOp::Upset:
+        return -1;
     default:
         return 0;
     }

@@ -75,15 +75,10 @@ static int compile_one(const std::string &path, const CompileOptions &opt) {
 
     std::string out_err;
     std::string out_module;
-    if (!lpc::frontend::WriteMirModuleSetAsV1BytecodeAtPath(result.module, path, opt.workspace_root, opt.out_root, &out_err, &out_module)) {
+    if (!lpc::frontend::WriteMirModuleSetAsNextVmBytecodeAtPath(result.module, path, opt.workspace_root, opt.out_root, &out_err, &out_module, result.source_map)) {
         std::cout << path << ":error: bytecode lowering failed: " << out_err << "\n";
         return 4;
     }
-
-    std::string next_err;
-    std::string next_module;
-    bool wrote_next = lpc::frontend::WriteMirModuleSetAsNextVmBytecodeAtPath(
-        result.module, path, opt.workspace_root, opt.out_root, &next_err, &next_module);
 
     if (!opt.entry_module_override.empty()) {
         out_module = opt.entry_module_override;
@@ -96,11 +91,7 @@ static int compile_one(const std::string &path, const CompileOptions &opt) {
     }
 
     std::cout << "frontend ok: " << path << ", functions=" << result.module.functions.size() << "\n";
-    if (wrote_next) {
-        std::cout << "  nextvm module " << next_module << "\n";
-    } else if (!next_err.empty()) {
-        std::cout << "  nextvm skipped: " << next_err << "\n";
-    }
+    std::cout << "  nextvm module " << out_module << "\n";
     std::cout << "  mir-opt instr: " << result.mir_instr_before_opt << " -> " << result.mir_instr_after_opt << "\n";
     std::cout << "  mir-opt pass: "
               << "constprop=" << result.mir_opt_stats.constprop_changed

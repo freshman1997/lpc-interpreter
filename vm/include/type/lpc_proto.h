@@ -1,9 +1,27 @@
 #ifndef __LPC_PROTO__
 #define __LPC_PROTO__
+#include <cstdint>
 #include <unordered_map>
 #include <vector>
-#include "lpc.h"
-#include "type/lpc_string.h"
+
+typedef unsigned char           luint8_t;
+typedef char                    lint8_t;
+typedef unsigned short          luint16_t;
+typedef short                   lint16_t;
+typedef unsigned int            luint32_t;
+typedef int                     lint32_t;
+typedef unsigned long long      luint64_t;
+typedef long long               lint64_t;
+typedef const char *            lstring_t;
+
+struct gc_header{
+    void * next = nullptr;
+    void *gclist = nullptr;
+    lint8_t marked = 0;
+    lint8_t type = 0;
+    luint8_t generation = 0;
+    luint8_t age = 0;
+};
 
 class variable_proto_t
 {
@@ -28,7 +46,7 @@ public:
     lint32_t nlocal = 0;
     lint32_t nupvalue = 0;
     lint32_t offset;
-    lint32_t fromPC = 0;                // 在当前对象指令的位置
+    lint32_t fromPC = 0;
     lint32_t toPC = 0;
     lint16_t *upvalue_source_kind = nullptr;
     lint16_t *upvalue_source_index = nullptr;
@@ -45,7 +63,7 @@ public:
 
 union const_t
 {
-    lpc_string_t *str;
+    lstring_t *str;
     lint32_t number;
     float real;
 };

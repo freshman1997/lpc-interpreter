@@ -26,13 +26,14 @@ Output is a typed AST + symbol metadata.
 
 ## 2) IR and Bytecode Pipeline
 
-Typed AST -> IR -> optimized IR -> bytecode.
+Typed AST -> MIR -> optimized MIR -> bytecode.
 
-- IR enables optimizations without tying to parser tree shape.
+- MIR (flat instruction list) enables optimizations without tying to parser tree shape.
+- 16 optimization passes run in a 4-iteration fixed-point pipeline. See [MIR_OPTIMIZATION.md](MIR_OPTIMIZATION.md) for details.
 - Bytecode validator runs before VM execution.
 - Bytecode format includes:
   - version
-  - constant pool
+  - constant pool (integer, float, string, function)
   - function table
   - class metadata
   - debug line map

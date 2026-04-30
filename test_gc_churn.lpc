@@ -1,0 +1,30 @@
+int churn_arrays(int n) {
+    int i = 0;
+    int sum = 0;
+    while (i < n) {
+        var arr = ({i, i + 1, i + 2, i + 3});
+        sum = sum + arr[0];
+        i = i + 1;
+    }
+    return sum;
+}
+
+int churn_mappings(int n) {
+    int i = 0;
+    int sum = 0;
+    while (i < n) {
+        mapping m = ([ i : i + 1, i + 100 : i + 2 ]);
+        sum = sum + m[i];
+        i = i + 1;
+    }
+    return sum;
+}
+
+int main() {
+    int n = 4000;
+    int s1 = churn_arrays(n);
+    int s2 = churn_mappings(n);
+    if (s1 <= 0 || s2 <= 0) return 1;
+    puts("gc churn OK");
+    return 0;
+}

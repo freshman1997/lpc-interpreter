@@ -1,0 +1,9 @@
+inherit "base/cycle_b";
+
+class CycleA {
+    var x;
+}
+
+int main() {
+    return 0;
+}
