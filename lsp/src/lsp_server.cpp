@@ -1,6 +1,15 @@
 #include "lsp/lsp_server.h"
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <set>
 #include <sstream>
+
+#include "frontend/pipeline.h"
+#include "frontend/lexer.h"
+#include "frontend/parser.h"
+#include "frontend/sema.h"
+#include "frontend/source.h"
 
 namespace lpc {
 namespace lsp {
@@ -48,6 +57,56 @@ static bool IsIdentChar(char c) {
          (c >= '0' && c <= '9') || c == '_';
 }
 
+static bool IsIdentStart(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+static std::string ReadFileAll(const std::string &path) {
+  std::ifstream in(path.c_str(), std::ios::binary);
+  if (!in.is_open()) return "";
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  return ss.str();
+}
+
+static std::unordered_map<std::string, JsonNode> RangeToJson(const Range &r) {
+  return {
+      {"start", JsonNode(std::unordered_map<std::string, JsonNode>{
+                    {"line", JsonNode(r.start.line)},
+                    {"character", JsonNode(r.start.character)}})},
+      {"end", JsonNode(std::unordered_map<std::string, JsonNode>{
+                  {"line", JsonNode(r.end.line)},
+                  {"character", JsonNode(r.end.character)}})}};
+}
+
+static Range SpanToRange(const lpc::frontend::SourceSpan &span,
+                         std::size_t fallback_len) {
+  const int line = span.line > 0 ? span.line - 1 : 0;
+  const int character = span.column > 0 ? span.column - 1 : 0;
+  const int len = span.length > 0 ? span.length : static_cast<int>(fallback_len);
+  return {{line, character}, {line, character + std::max(1, len)}};
+}
+
+static bool RangeContains(const Range &r, const Position &p) {
+  if (p.line < r.start.line || p.line > r.end.line) return false;
+  if (p.line == r.start.line && p.character < r.start.character) return false;
+  if (p.line == r.end.line && p.character > r.end.character) return false;
+  return true;
+}
+
+static int CountChar(const std::string &line, char ch) {
+  return static_cast<int>(std::count(line.begin(), line.end(), ch));
+}
+
+static bool IsKeyword(const std::string &name) {
+  static const std::set<std::string> k = {
+      "if", "else", "while", "for", "foreach", "in", "switch", "case", "default",
+      "break", "continue", "return", "catch", "class", "inherit", "new", "var",
+      "fun", "void", "int", "float", "string", "object", "mapping", "mixed",
+      "array", "buffer", "closure", "static", "public", "private", "true", "false"};
+  return k.count(name) != 0;
+}
+
 static std::string WordAtPosition(const std::string &text,
                                   const Position &pos) {
   auto lines = SplitLines(text);
@@ -73,22 +132,115 @@ void SymbolIndex::IndexDocument(const std::string &uri,
 
 void SymbolIndex::RemoveDocument(const std::string &uri) {
   auto it = uri_to_symbols_.find(uri);
-  if (it == uri_to_symbols_.end())
+  if (it != uri_to_symbols_.end()) {
+    for (const auto &sym : it->second) {
+      auto &vec = name_to_symbols_[sym.name];
+      vec.erase(std::remove_if(vec.begin(), vec.end(),
+                               [&](const SymbolInfo &s) { return s.uri == uri; }),
+                vec.end());
+      if (vec.empty())
+        name_to_symbols_.erase(sym.name);
+      auto &id_vec = id_to_symbols_[sym.symbol_id];
+      id_vec.erase(std::remove_if(id_vec.begin(), id_vec.end(),
+                                  [&](const SymbolInfo &s) { return s.uri == uri; }),
+                   id_vec.end());
+      if (id_vec.empty())
+        id_to_symbols_.erase(sym.symbol_id);
+    }
+    uri_to_symbols_.erase(it);
+  }
+
+  auto rit = uri_to_refs_.find(uri);
+  if (rit == uri_to_refs_.end())
     return;
-  for (const auto &sym : it->second) {
-    auto &vec = name_to_symbols_[sym.name];
+  for (const auto &ref : rit->second) {
+    auto &vec = name_to_refs_[ref.name];
     vec.erase(std::remove_if(vec.begin(), vec.end(),
-                             [&](const SymbolInfo &s) { return s.uri == uri; }),
+                             [&](const ReferenceInfo &r) { return r.uri == uri; }),
               vec.end());
     if (vec.empty())
-      name_to_symbols_.erase(sym.name);
+      name_to_refs_.erase(ref.name);
+    auto &id_vec = id_to_refs_[ref.symbol_id];
+    id_vec.erase(std::remove_if(id_vec.begin(), id_vec.end(),
+                                [&](const ReferenceInfo &r) { return r.uri == uri; }),
+                 id_vec.end());
+    if (id_vec.empty())
+      id_to_refs_.erase(ref.symbol_id);
   }
-  uri_to_symbols_.erase(it);
+  uri_to_refs_.erase(rit);
+}
+
+void SymbolIndex::AddSymbol(const SymbolInfo &sym) {
+  name_to_symbols_[sym.name].push_back(sym);
+  id_to_symbols_[sym.symbol_id].push_back(sym);
+  uri_to_symbols_[sym.uri].push_back(sym);
+}
+
+void SymbolIndex::AddReference(const ReferenceInfo &ref) {
+  if (ref.name.empty() || ref.symbol_id.empty() || IsKeyword(ref.name)) return;
+  name_to_refs_[ref.name].push_back(ref);
+  id_to_refs_[ref.symbol_id].push_back(ref);
+  uri_to_refs_[ref.uri].push_back(ref);
 }
 
 void SymbolIndex::ParseDocument(const std::string &uri,
                                 const std::string &text) {
+  lpc::frontend::DiagnosticSink diagnostics;
+  lpc::frontend::SourceFile source;
+  source.path = uri;
+  source.text = text;
+
+  lpc::frontend::Lexer lexer(&diagnostics);
+  std::vector<lpc::frontend::Token> tokens = lexer.Tokenize(source);
+  lpc::frontend::Parser parser(&diagnostics);
+  std::unique_ptr<lpc::frontend::Module> module = parser.Parse(tokens);
+  if (module) {
+    lpc::frontend::Sema sema(&diagnostics);
+    lpc::frontend::SemanticModel model = sema.Analyze(*module);
+
+    for (const auto &record : model.symbols) {
+      if (record.name.empty() || IsKeyword(record.name)) continue;
+      SymbolInfo sym;
+      sym.name = record.name;
+      sym.kind = record.kind;
+      sym.symbol_id = uri + "#" + record.symbol_id;
+      sym.uri = uri;
+      sym.range = SpanToRange(record.span, record.name.size());
+      sym.selection_range = sym.range;
+      sym.container_name = record.container_name;
+      sym.detail = record.detail;
+      AddSymbol(sym);
+
+      ReferenceInfo decl_ref;
+      decl_ref.name = sym.name;
+      decl_ref.symbol_id = sym.symbol_id;
+      decl_ref.uri = uri;
+      decl_ref.range = sym.selection_range;
+      AddReference(decl_ref);
+    }
+
+    for (const auto &record : model.references) {
+      if (record.name.empty() || record.symbol_id.empty() || IsKeyword(record.name)) continue;
+      ReferenceInfo ref;
+      ref.name = record.name;
+      ref.symbol_id = uri + "#" + record.symbol_id;
+      ref.uri = uri;
+      ref.range = SpanToRange(record.span, record.name.size());
+      AddReference(ref);
+    }
+    return;
+  }
+
   auto lines = SplitLines(text);
+  std::unordered_map<std::string, std::string> globals;
+  std::unordered_map<std::string, std::string> functions;
+  std::unordered_map<std::string, std::string> classes;
+  std::vector<std::unordered_map<std::string, std::string>> locals_by_line(lines.size());
+  std::vector<std::string> function_by_line(lines.size());
+  std::vector<std::vector<SymbolInfo>> local_symbols_by_line(lines.size());
+  std::string current_func;
+  int function_depth = 0;
+
   for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
     const std::string &line = lines[i];
     std::string trimmed = TrimIdent(line);
@@ -102,14 +254,15 @@ void SymbolIndex::ParseDocument(const std::string &uri,
       SymbolInfo sym;
       sym.name = name;
       sym.kind = "inherit";
+      sym.symbol_id = uri + "#inherit:" + name;
       sym.uri = uri;
       sym.range.start = {i, 0};
       sym.range.end = {i, static_cast<int>(line.size())};
       sym.selection_range.start = {i, static_cast<int>(line.find(name))};
       sym.selection_range.end = {
           i, static_cast<int>(line.find(name) + name.size())};
-      name_to_symbols_[name].push_back(sym);
-      uri_to_symbols_[uri].push_back(sym);
+      sym.detail = "inherit " + name;
+      AddSymbol(sym);
       continue;
     }
 
@@ -124,14 +277,16 @@ void SymbolIndex::ParseDocument(const std::string &uri,
       SymbolInfo sym;
       sym.name = name;
       sym.kind = "class";
+      sym.symbol_id = uri + "#class:" + name;
       sym.uri = uri;
       sym.range.start = {i, 0};
       sym.range.end = {i, static_cast<int>(line.size())};
       sym.selection_range.start = {i, static_cast<int>(line.find(name))};
       sym.selection_range.end = {
           i, static_cast<int>(line.find(name) + name.size())};
-      name_to_symbols_[name].push_back(sym);
-      uri_to_symbols_[uri].push_back(sym);
+      sym.detail = "class " + name;
+      classes[name] = sym.symbol_id;
+      AddSymbol(sym);
       continue;
     }
 
@@ -160,14 +315,48 @@ void SymbolIndex::ParseDocument(const std::string &uri,
           SymbolInfo sym;
           sym.name = name;
           sym.kind = "function";
+          sym.symbol_id = uri + "#function:" + name;
           sym.uri = uri;
           sym.range.start = {i, 0};
           sym.range.end = {i, static_cast<int>(line.size())};
           sym.selection_range.start = {i, static_cast<int>(line.find(name))};
           sym.selection_range.end = {
               i, static_cast<int>(line.find(name) + name.size())};
-          name_to_symbols_[name].push_back(sym);
-          uri_to_symbols_[uri].push_back(sym);
+          sym.detail = before_paren + "()";
+          functions[name] = sym.symbol_id;
+          current_func = name;
+          function_depth = 0;
+          function_by_line[i] = current_func;
+          std::size_t lp = line.find('(');
+          std::size_t rp = line.find(')', lp == std::string::npos ? 0 : lp);
+          if (lp != std::string::npos && rp != std::string::npos && rp > lp) {
+            std::string params = line.substr(lp + 1, rp - lp - 1);
+            std::stringstream ps(params);
+            std::string one;
+            while (std::getline(ps, one, ',')) {
+              one = TrimIdent(one);
+              if (one.empty()) continue;
+              std::size_t sp = one.find_last_of(" \t*");
+              std::string pname = sp == std::string::npos ? one : one.substr(sp + 1);
+              if (!pname.empty() && IsIdentStart(pname[0])) {
+                std::string sid = uri + "#function:" + current_func + ":local:" + pname;
+                locals_by_line[i][pname] = sid;
+                std::size_t ppos = line.find(pname, lp);
+                SymbolInfo psym;
+                psym.name = pname;
+                psym.kind = "variable";
+                psym.symbol_id = sid;
+                psym.uri = uri;
+                psym.container_name = current_func;
+                psym.detail = "param " + pname;
+                psym.range.start = {i, static_cast<int>(ppos == std::string::npos ? lp : ppos)};
+                psym.range.end = {i, static_cast<int>((ppos == std::string::npos ? lp : ppos) + pname.size())};
+                psym.selection_range = psym.range;
+                local_symbols_by_line[i].push_back(psym);
+              }
+            }
+          }
+          AddSymbol(sym);
         }
       }
     }
@@ -184,16 +373,208 @@ void SymbolIndex::ParseDocument(const std::string &uri,
         SymbolInfo sym;
         sym.name = name;
         sym.kind = "variable";
+        sym.symbol_id = current_func.empty()
+            ? uri + "#global:" + name
+            : uri + "#function:" + current_func + ":local:" + name;
         sym.uri = uri;
         sym.range.start = {i, 0};
         sym.range.end = {i, static_cast<int>(line.size())};
         sym.selection_range.start = {i, static_cast<int>(line.find(name))};
         sym.selection_range.end = {
             i, static_cast<int>(line.find(name) + name.size())};
-        name_to_symbols_[name].push_back(sym);
-        uri_to_symbols_[uri].push_back(sym);
+        sym.container_name = current_func;
+        sym.detail = current_func.empty() ? ("var " + name) : ("local " + name);
+        if (current_func.empty()) {
+          globals[name] = sym.symbol_id;
+        } else {
+          locals_by_line[i][name] = sym.symbol_id;
+          local_symbols_by_line[i].push_back(sym);
+        }
+        if (current_func.empty()) {
+          AddSymbol(sym);
+        }
       }
     }
+
+    if (!current_func.empty()) {
+      function_by_line[i] = current_func;
+      function_depth += CountChar(line, '{') - CountChar(line, '}');
+      if (function_depth <= 0) {
+        current_func.clear();
+        function_depth = 0;
+      }
+    }
+  }
+
+  std::unordered_map<std::string, std::string> active_locals;
+  std::string active_func;
+  for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
+    if (function_by_line[i] != active_func) {
+      active_func = function_by_line[i];
+      active_locals.clear();
+    }
+    for (const auto &p : locals_by_line[i]) {
+      active_locals[p.first] = p.second;
+    }
+    for (const auto &sym : local_symbols_by_line[i]) {
+      AddSymbol(sym);
+    }
+    std::string line = lines[i];
+    bool line_comment = false;
+    bool block_comment = false;
+    bool string_lit = false;
+    for (std::size_t j = 0; j < line.size();) {
+      char c = line[j];
+      char n = j + 1 < line.size() ? line[j + 1] : '\0';
+      if (line_comment) break;
+      if (block_comment) {
+        if (c == '*' && n == '/') {
+          j += 2;
+          block_comment = false;
+        } else {
+          ++j;
+        }
+        continue;
+      }
+      if (string_lit) {
+        if (c == '\\' && n != '\0') {
+          j += 2;
+        } else {
+          if (c == '"') string_lit = false;
+          ++j;
+        }
+        continue;
+      }
+      if (c == '/' && n == '/') {
+        line_comment = true;
+        continue;
+      }
+      if (c == '/' && n == '*') {
+        block_comment = true;
+        j += 2;
+        continue;
+      }
+      if (c == '"') {
+        string_lit = true;
+        ++j;
+        continue;
+      }
+      if (!IsIdentStart(line[j])) { ++j; continue; }
+      std::size_t start = j;
+      while (j < line.size() && IsIdentChar(line[j])) ++j;
+      std::string name = line.substr(start, j - start);
+      if (IsKeyword(name)) continue;
+      std::string sid;
+      if (!active_func.empty()) {
+        auto lit = active_locals.find(name);
+        if (lit != active_locals.end()) sid = lit->second;
+      }
+      if (sid.empty()) {
+        auto git = globals.find(name);
+        if (git != globals.end()) sid = git->second;
+      }
+      if (sid.empty()) {
+        auto fit = functions.find(name);
+        if (fit != functions.end()) sid = fit->second;
+      }
+      if (sid.empty()) {
+        auto cit = classes.find(name);
+        if (cit != classes.end()) sid = cit->second;
+      }
+      if (sid.empty()) sid = uri + "#unresolved:" + name;
+      ReferenceInfo ref;
+      ref.name = name;
+      ref.symbol_id = sid;
+      ref.uri = uri;
+      ref.range.start = {i, static_cast<int>(start)};
+      ref.range.end = {i, static_cast<int>(j)};
+      AddReference(ref);
+    }
+  }
+}
+
+void SymbolIndex::ParseReferences(const std::string &uri,
+                                  const std::string &text) {
+  int line = 0;
+  int character = 0;
+  bool line_comment = false;
+  bool block_comment = false;
+  bool string_lit = false;
+
+  for (std::size_t i = 0; i < text.size();) {
+    char c = text[i];
+    char n = i + 1 < text.size() ? text[i + 1] : '\0';
+    if (c == '\n') {
+      ++line;
+      character = 0;
+      line_comment = false;
+      ++i;
+      continue;
+    }
+    if (line_comment) {
+      ++character;
+      ++i;
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && n == '/') {
+        i += 2;
+        character += 2;
+        block_comment = false;
+      } else {
+        ++i;
+        ++character;
+      }
+      continue;
+    }
+    if (string_lit) {
+      if (c == '\\' && n != '\0') {
+        i += 2;
+        character += 2;
+      } else {
+        if (c == '"') string_lit = false;
+        ++i;
+        ++character;
+      }
+      continue;
+    }
+    if (c == '/' && n == '/') {
+      line_comment = true;
+      i += 2;
+      character += 2;
+      continue;
+    }
+    if (c == '/' && n == '*') {
+      block_comment = true;
+      i += 2;
+      character += 2;
+      continue;
+    }
+    if (c == '"') {
+      string_lit = true;
+      ++i;
+      ++character;
+      continue;
+    }
+    if (IsIdentStart(c)) {
+      int start_char = character;
+      std::size_t start = i;
+      while (i < text.size() && IsIdentChar(text[i])) {
+        ++i;
+        ++character;
+      }
+      std::string name = text.substr(start, i - start);
+      ReferenceInfo ref;
+      ref.name = name;
+      ref.uri = uri;
+      ref.range.start = {line, start_char};
+      ref.range.end = {line, character};
+      ref.symbol_id = uri + "#lex:" + name;
+      AddReference(ref);
+      continue;
+    }
+    ++i;
+    ++character;
   }
 }
 
@@ -215,26 +596,45 @@ SymbolIndex::FindDefinition(const std::string &name) const {
 std::vector<Location>
 SymbolIndex::FindReferences(const std::string &name) const {
   auto it = name_to_symbols_.find(name);
-  if (it == name_to_symbols_.end())
+  auto rit = name_to_refs_.find(name);
+  if (rit == name_to_refs_.end())
     return {};
   std::vector<Location> locs;
-  for (const auto &sym : it->second) {
-    locs.push_back({sym.uri, sym.selection_range});
+  for (const auto &ref : rit->second) {
+    locs.push_back({ref.uri, ref.range});
   }
   return locs;
+}
+
+std::vector<SymbolInfo>
+SymbolIndex::FindDefinitionById(const std::string &symbol_id) const {
+  auto it = id_to_symbols_.find(symbol_id);
+  return it == id_to_symbols_.end() ? std::vector<SymbolInfo>{} : it->second;
 }
 
 std::vector<Location>
 SymbolIndex::FindReferencesInUri(const std::string &name,
                                  const std::string &uri) const {
-  auto it = uri_to_symbols_.find(uri);
-  if (it == uri_to_symbols_.end())
+  auto it = uri_to_refs_.find(uri);
+  if (it == uri_to_refs_.end())
     return {};
   std::vector<Location> locs;
-  for (const auto &sym : it->second) {
-    if (sym.name == name) {
-      locs.push_back({sym.uri, sym.selection_range});
+  for (const auto &ref : it->second) {
+    if (ref.name == name) {
+      locs.push_back({ref.uri, ref.range});
     }
+  }
+  return locs;
+}
+
+std::vector<Location>
+SymbolIndex::FindReferencesById(const std::string &symbol_id) const {
+  auto it = id_to_refs_.find(symbol_id);
+  if (it == id_to_refs_.end())
+    return {};
+  std::vector<Location> locs;
+  for (const auto &ref : it->second) {
+    locs.push_back({ref.uri, ref.range});
   }
   return locs;
 }
@@ -349,7 +749,9 @@ void LspServer::HandleNotification(const std::string &method,
 JsonNode LspServer::Initialize(const JsonNode &params) {
   if (params.Has("rootUri") && params["rootUri"].IsString()) {
     root_uri_ = params["rootUri"].AsString();
+    root_path_ = UriToPath(root_uri_);
   }
+  IndexWorkspace();
 
   std::unordered_map<std::string, JsonNode> caps;
 
@@ -373,9 +775,7 @@ JsonNode LspServer::Initialize(const JsonNode &params) {
   std::unordered_map<std::string, JsonNode> sync;
   sync["openClose"] = JsonNode(true);
   sync["change"] = JsonNode(1);
-  std::unordered_map<std::string, JsonNode> text_doc;
-  text_doc["synchronization"] = JsonNode(std::move(sync));
-  caps["textDocumentSync"] = JsonNode(std::move(text_doc));
+  caps["textDocumentSync"] = JsonNode(std::move(sync));
 
   std::unordered_map<std::string, JsonNode> result;
   result["capabilities"] = JsonNode(std::move(caps));
@@ -383,6 +783,20 @@ JsonNode LspServer::Initialize(const JsonNode &params) {
       {"name", JsonNode(std::string("lpc-lsp"))},
       {"version", JsonNode(std::string("1.0.0"))}});
   return JsonNode(std::move(result));
+}
+
+std::optional<ReferenceInfo>
+SymbolIndex::ReferenceAtPosition(const std::string &uri,
+                                 const Position &pos) const {
+  auto it = uri_to_refs_.find(uri);
+  if (it == uri_to_refs_.end())
+    return std::nullopt;
+  for (const auto &ref : it->second) {
+    if (RangeContains(ref.range, pos)) {
+      return ref;
+    }
+  }
+  return std::nullopt;
 }
 
 JsonNode LspServer::Shutdown() { return JsonNode(); }
@@ -406,7 +820,9 @@ JsonNode LspServer::TextDocumentDefinition(const JsonNode &params) {
   if (word.empty())
     return JsonNode();
 
-  auto defs = symbol_index_.FindDefinition(word);
+  auto ref = symbol_index_.ReferenceAtPosition(uri, {line, character});
+  auto defs = ref ? symbol_index_.FindDefinitionById(ref->symbol_id)
+                  : symbol_index_.FindDefinition(word);
   if (defs.empty())
     return JsonNode();
 
@@ -414,16 +830,7 @@ JsonNode LspServer::TextDocumentDefinition(const JsonNode &params) {
   for (const auto &def : defs) {
     std::unordered_map<std::string, JsonNode> loc;
     loc["uri"] = JsonNode(def.uri);
-    std::unordered_map<std::string, JsonNode> range;
-    std::unordered_map<std::string, JsonNode> start;
-    start["line"] = JsonNode(def.selection_range.start.line);
-    start["character"] = JsonNode(def.selection_range.start.character);
-    std::unordered_map<std::string, JsonNode> end;
-    end["line"] = JsonNode(def.selection_range.end.line);
-    end["character"] = JsonNode(def.selection_range.end.character);
-    range["start"] = JsonNode(std::move(start));
-    range["end"] = JsonNode(std::move(end));
-    loc["range"] = JsonNode(std::move(range));
+    loc["range"] = JsonNode(RangeToJson(def.selection_range));
     locations.push_back(JsonNode(std::move(loc)));
   }
   return JsonNode(std::move(locations));
@@ -448,21 +855,16 @@ JsonNode LspServer::TextDocumentReferences(const JsonNode &params) {
   if (word.empty())
     return JsonNode(std::vector<JsonNode>{});
 
-  auto refs = symbol_index_.FindReferences(word);
+  auto ref_at_pos = symbol_index_.ReferenceAtPosition(uri, {line, character});
+  if (ref_at_pos && ref_at_pos->symbol_id.find("#unresolved:") != std::string::npos)
+    return JsonNode(std::vector<JsonNode>{});
+  auto refs = ref_at_pos ? symbol_index_.FindReferencesById(ref_at_pos->symbol_id)
+                         : symbol_index_.FindReferences(word);
   std::vector<JsonNode> locations;
   for (const auto &ref : refs) {
     std::unordered_map<std::string, JsonNode> loc;
     loc["uri"] = JsonNode(ref.uri);
-    std::unordered_map<std::string, JsonNode> range;
-    std::unordered_map<std::string, JsonNode> start;
-    start["line"] = JsonNode(ref.range.start.line);
-    start["character"] = JsonNode(ref.range.start.character);
-    std::unordered_map<std::string, JsonNode> end;
-    end["line"] = JsonNode(ref.range.end.line);
-    end["character"] = JsonNode(ref.range.end.character);
-    range["start"] = JsonNode(std::move(start));
-    range["end"] = JsonNode(std::move(end));
-    loc["range"] = JsonNode(std::move(range));
+    loc["range"] = JsonNode(RangeToJson(ref.range));
     locations.push_back(JsonNode(std::move(loc)));
   }
   return JsonNode(std::move(locations));
@@ -489,24 +891,18 @@ JsonNode LspServer::TextDocumentRename(const JsonNode &params) {
   if (word.empty())
     return JsonNode();
 
-  auto rename_info = symbol_index_.Rename(word, new_name);
-  if (rename_info.empty())
+  auto ref_at_pos = symbol_index_.ReferenceAtPosition(uri, {line, character});
+  if (ref_at_pos && ref_at_pos->symbol_id.find("#unresolved:") != std::string::npos)
+    return JsonNode();
+  auto refs = ref_at_pos ? symbol_index_.FindReferencesById(ref_at_pos->symbol_id)
+                         : symbol_index_.FindReferences(word);
+  if (refs.empty())
     return JsonNode();
 
   std::unordered_map<std::string, std::vector<JsonNode>> changes_by_uri;
-  auto refs = symbol_index_.FindReferences(word);
   for (const auto &ref : refs) {
     std::unordered_map<std::string, JsonNode> text_edit;
-    std::unordered_map<std::string, JsonNode> range;
-    std::unordered_map<std::string, JsonNode> start;
-    start["line"] = JsonNode(ref.range.start.line);
-    start["character"] = JsonNode(ref.range.start.character);
-    std::unordered_map<std::string, JsonNode> end;
-    end["line"] = JsonNode(ref.range.end.line);
-    end["character"] = JsonNode(ref.range.end.character);
-    range["start"] = JsonNode(std::move(start));
-    range["end"] = JsonNode(std::move(end));
-    text_edit["range"] = JsonNode(std::move(range));
+    text_edit["range"] = JsonNode(RangeToJson(ref.range));
     text_edit["newText"] = JsonNode(new_name);
     changes_by_uri[ref.uri].push_back(JsonNode(std::move(text_edit)));
   }
@@ -540,13 +936,16 @@ JsonNode LspServer::TextDocumentHover(const JsonNode &params) {
   if (word.empty())
     return JsonNode();
 
-  auto defs = symbol_index_.FindDefinition(word);
+  auto ref = symbol_index_.ReferenceAtPosition(uri, {line, character});
+  auto defs = ref ? symbol_index_.FindDefinitionById(ref->symbol_id)
+                  : symbol_index_.FindDefinition(word);
   if (defs.empty())
     return JsonNode();
 
   std::string hover_text;
   for (const auto &def : defs) {
-    hover_text += def.kind + " " + def.name + " (" + def.uri + ")\n";
+    hover_text += (def.detail.empty() ? (def.kind + " " + def.name) : def.detail) +
+                  " (" + def.uri + ")\n";
   }
   if (!hover_text.empty())
     hover_text.pop_back();
@@ -568,6 +967,8 @@ JsonNode LspServer::TextDocumentCompletion(const JsonNode &params) {
     seen.insert(sym.name);
     std::unordered_map<std::string, JsonNode> item;
     item["label"] = JsonNode(sym.name);
+    if (!sym.detail.empty())
+      item["detail"] = JsonNode(sym.detail);
     int kind = 6;
     if (sym.kind == "function")
       kind = 3;
@@ -607,26 +1008,8 @@ JsonNode LspServer::TextDocumentDocumentSymbol(const JsonNode &params) {
     else if (sym.kind == "inherit")
       kind = 8;
     s["kind"] = JsonNode(kind);
-    std::unordered_map<std::string, JsonNode> range;
-    std::unordered_map<std::string, JsonNode> rstart;
-    rstart["line"] = JsonNode(sym.range.start.line);
-    rstart["character"] = JsonNode(sym.range.start.character);
-    std::unordered_map<std::string, JsonNode> rend;
-    rend["line"] = JsonNode(sym.range.end.line);
-    rend["character"] = JsonNode(sym.range.end.character);
-    range["start"] = JsonNode(std::move(rstart));
-    range["end"] = JsonNode(std::move(rend));
-    s["range"] = JsonNode(std::move(range));
-    std::unordered_map<std::string, JsonNode> sel_range;
-    std::unordered_map<std::string, JsonNode> sstart;
-    sstart["line"] = JsonNode(sym.selection_range.start.line);
-    sstart["character"] = JsonNode(sym.selection_range.start.character);
-    std::unordered_map<std::string, JsonNode> send;
-    send["line"] = JsonNode(sym.selection_range.end.line);
-    send["character"] = JsonNode(sym.selection_range.end.character);
-    sel_range["start"] = JsonNode(std::move(sstart));
-    sel_range["end"] = JsonNode(std::move(send));
-    s["selectionRange"] = JsonNode(std::move(sel_range));
+    s["range"] = JsonNode(RangeToJson(sym.range));
+    s["selectionRange"] = JsonNode(RangeToJson(sym.selection_range));
     symbols.push_back(JsonNode(std::move(s)));
   }
   return JsonNode(std::move(symbols));
@@ -679,6 +1062,7 @@ void LspServer::DidOpen(const JsonNode &params) {
                     : 0;
   open_docs_[uri] = {version, text};
   symbol_index_.IndexDocument(uri, text);
+  PublishDiagnostics(uri, text);
 }
 
 void LspServer::DidChange(const JsonNode &params) {
@@ -700,6 +1084,7 @@ void LspServer::DidChange(const JsonNode &params) {
     it->second.version = version;
     it->second.text = text;
     symbol_index_.IndexDocument(uri, text);
+    PublishDiagnostics(uri, text);
   }
 }
 
@@ -708,7 +1093,62 @@ void LspServer::DidClose(const JsonNode &params) {
                         ? params["textDocument"]["uri"].AsString()
                         : "";
   open_docs_.erase(uri);
-  symbol_index_.RemoveDocument(uri);
+  std::string text = ReadFileAll(UriToPath(uri));
+  if (!text.empty()) {
+    symbol_index_.IndexDocument(uri, text);
+  } else {
+    symbol_index_.RemoveDocument(uri);
+  }
+  ClearDiagnostics(uri);
+}
+
+void LspServer::IndexWorkspace() {
+  if (root_path_.empty()) return;
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  fs::path root(root_path_);
+  if (!fs::exists(root, ec) || !fs::is_directory(root, ec)) return;
+  for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end;
+       it != end && !ec; it.increment(ec)) {
+    if (!it->is_regular_file(ec) || it->path().extension() != ".lpc") continue;
+    std::string path = it->path().string();
+    symbol_index_.IndexDocument(PathToUri(path), ReadFileAll(path));
+  }
+}
+
+void LspServer::PublishDiagnostics(const std::string &uri, const std::string &text) {
+  std::string path = UriToPath(uri);
+  std::vector<std::string> include_dirs;
+  if (!root_path_.empty()) include_dirs.push_back(root_path_);
+  auto result = lpc::frontend::CompileSourceToMir(path, text, include_dirs);
+  std::vector<JsonNode> diagnostics;
+  for (const auto &d : result.diagnostics.All()) {
+    int line = d.span.line > 0 ? d.span.line - 1 : 0;
+    int col = d.span.column > 0 ? d.span.column - 1 : 0;
+    int len = d.span.length > 0 ? d.span.length : 1;
+    int severity = d.level == lpc::frontend::DiagnosticLevel::Error
+                       ? 1
+                       : d.level == lpc::frontend::DiagnosticLevel::Warning ? 2 : 3;
+    Range r;
+    r.start = {line, col};
+    r.end = {line, col + len};
+    diagnostics.push_back(JsonNode(std::unordered_map<std::string, JsonNode>{
+        {"range", JsonNode(RangeToJson(r))},
+        {"severity", JsonNode(severity)},
+        {"source", JsonNode(std::string("lpc"))},
+        {"message", JsonNode(d.message)}}));
+  }
+  SendNotification("textDocument/publishDiagnostics",
+                   JsonNode(std::unordered_map<std::string, JsonNode>{
+                       {"uri", JsonNode(uri)},
+                       {"diagnostics", JsonNode(std::move(diagnostics))}}));
+}
+
+void LspServer::ClearDiagnostics(const std::string &uri) {
+  SendNotification("textDocument/publishDiagnostics",
+                   JsonNode(std::unordered_map<std::string, JsonNode>{
+                       {"uri", JsonNode(uri)},
+                       {"diagnostics", JsonNode(std::vector<JsonNode>{})}}));
 }
 
 void LspServer::SendResponse(const JsonNode &id, const JsonNode &result) {
@@ -750,7 +1190,7 @@ std::string LspServer::UriToPath(const std::string &uri) const {
   if (uri.compare(0, 7, "file://") == 0) {
 #ifdef _WIN32
     std::string path = uri.substr(8);
-    if (path.size() >= 2 && path[0] == '/' && path[2] == ':')
+    if (path.size() >= 3 && path[0] == '/' && path[2] == ':')
       path = path.substr(1);
     return path;
 #else

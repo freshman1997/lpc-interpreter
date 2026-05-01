@@ -12,6 +12,7 @@ class Vm;
 
 RuntimeError RunDapServerStep(Vm &vm, std::uint32_t pc);
 void RunDapServer(Vm &vm);
+bool StartDapAttachServer(Vm &vm, int port);
 
 } // namespace vm
 } // namespace lpc

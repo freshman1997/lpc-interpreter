@@ -1,1 +1,1 @@
-test_call_other2
+vm/tests/stress_alloc_gc

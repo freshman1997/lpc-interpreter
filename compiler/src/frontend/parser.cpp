@@ -147,6 +147,7 @@ std::unique_ptr<Stmt> Parser::ParseFunctionDecl(bool lambda) {
             return nullptr;
         }
         fn->name = Previous().lexeme;
+        fn->span = Previous().span;
     }
 
     if (!Expect(TokenKind::LParen, "expect '('") ) {
@@ -161,6 +162,7 @@ std::unique_ptr<Stmt> Parser::ParseFunctionDecl(bool lambda) {
                 return nullptr;
             }
             fn->params.push_back(Previous().lexeme);
+            fn->param_spans.push_back(Previous().span);
             fn->param_types.push_back(param_ptr ? (param_type + "*") : param_type);
             fn->param_is_pointer.push_back(param_ptr);
         } while (Match(TokenKind::Comma));
@@ -602,6 +604,7 @@ std::unique_ptr<Stmt> Parser::ParseTypedFunctionDeclWithPrefix(
                 return nullptr;
             }
             fn->params.push_back(Previous().lexeme);
+            fn->param_spans.push_back(Previous().span);
             fn->param_types.push_back(param_ptr ? (param_type + "*") : param_type);
             fn->param_is_pointer.push_back(param_ptr);
         } while (Match(TokenKind::Comma));
@@ -828,6 +831,7 @@ std::unique_ptr<Expr> Parser::ParsePostfix() {
     while (true) {
         if (Match(TokenKind::LParen)) {
             std::unique_ptr<CallExpr> call(new CallExpr());
+            call->span = expr ? expr->span : Previous().span;
             call->callee = std::move(expr);
             if (!Check(TokenKind::RParen)) {
                 do {

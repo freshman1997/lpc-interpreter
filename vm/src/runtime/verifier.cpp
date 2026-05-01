@@ -40,6 +40,7 @@ static bool IsUnary(Op op) {
 static bool NeedsU16(Op op) {
     return op == Op::LoadIConst || op == Op::LoadFConst || op == Op::LoadSConst ||
            op == Op::LoadLocal || op == Op::StoreLocal ||
+           op == Op::IncLocal || op == Op::DecLocal ||
            op == Op::LoadGlobal || op == Op::StoreGlobal ||
            op == Op::LoadUpvalue || op == Op::StoreUpvalue ||
            op == Op::NewClass || op == Op::SetClassField || op == Op::LoadClassField ||
@@ -49,6 +50,34 @@ static bool NeedsU16(Op op) {
 
 static bool NeedsRel16(Op op) {
     return op == Op::Jump || op == Op::JumpIfFalse || op == Op::JumpIfTrue;
+}
+
+static bool IsLocalCompareJump(Op op) {
+    return op == Op::JumpIfLocalLtFalse || op == Op::JumpIfLocalIConstLteFalse;
+}
+
+// 中文说明：下面这些分类只服务字节码校验器。
+// superinstruction 的栈效果和跳转目标必须在加载阶段验证，避免 VM 热路径重复做昂贵检查。
+static bool IsLocalLocalToLocal(Op op) {
+    return op == Op::AddLocalLocalToLocal ||
+           op == Op::AddLocalIConstToLocal ||
+           op == Op::SubLocalIConstToLocal;
+}
+
+static bool IsLocalJump(Op op) {
+    return op == Op::IncLocalAndJump;
+}
+
+static bool IsLocalExpr(Op op) {
+    return op == Op::LoadLocalDec || op == Op::LoadLocalSubIConst || op == Op::LoadLocalAddIConst;
+}
+
+static bool IsLocalIndexAccum(Op op) {
+    return op == Op::AddLocalIndexIConstToLocal || op == Op::AddLocalIndexLocalToLocal;
+}
+
+static bool IsLocalLoopTail(Op op) {
+    return op == Op::AddLocalLocalIncJumpIfLocalLt;
 }
 
 } // namespace
@@ -117,6 +146,8 @@ static RuntimeError VerifyFunction(const Chunk &chunk, std::uint32_t fid) {
                 ++depth;
             } else if (op == Op::LoadLocal || op == Op::LoadGlobal || op == Op::LoadUpvalue || op == Op::LoadFunc) {
                 ++depth;
+            } else if (op == Op::IncLocal || op == Op::DecLocal) {
+                // stack unchanged
             } else if (op == Op::StoreLocal || op == Op::StoreGlobal || op == Op::StoreUpvalue) {
                 if (depth < 1) {
                     RuntimeError e;
@@ -208,6 +239,195 @@ static RuntimeError VerifyFunction(const Chunk &chunk, std::uint32_t fid) {
                 RuntimeError e;
                 e.code = RuntimeErrorCode::InvalidOperand;
                 e.message = "jump target out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            continue;
+        }
+
+        if (IsLocalCompareJump(op)) {
+            if (ip + 6 > f.code_end) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "truncated local compare jump operands";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            std::uint16_t lhs = ReadU16(chunk.code, &ip);
+            std::uint16_t rhs = ReadU16(chunk.code, &ip);
+            bool rhs_ok = op == Op::JumpIfLocalIConstLteFalse
+                ? rhs < chunk.iconst.size()
+                : rhs < f.nlocals;
+            if (lhs >= f.nlocals || !rhs_ok) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "local compare jump local index out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            std::int16_t rel = ReadI16(chunk.code, &ip);
+            std::int64_t target = static_cast<std::int64_t>(ip) + rel;
+            if (target < static_cast<std::int64_t>(f.code_start) ||
+                target >= static_cast<std::int64_t>(f.code_end)) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "local compare jump target out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            continue;
+        }
+
+        if (IsLocalLocalToLocal(op)) {
+            if (ip + 6 > f.code_end) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "truncated local-local operands";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            std::uint16_t dst = ReadU16(chunk.code, &ip);
+            std::uint16_t lhs = ReadU16(chunk.code, &ip);
+            std::uint16_t rhs = ReadU16(chunk.code, &ip);
+            const bool rhs_ok = (op == Op::AddLocalIConstToLocal || op == Op::SubLocalIConstToLocal)
+                ? rhs < chunk.iconst.size()
+                : rhs < f.nlocals;
+            if (dst >= f.nlocals || lhs >= f.nlocals || !rhs_ok) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "local-local local index out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            continue;
+        }
+
+        if (IsLocalJump(op)) {
+            if (ip + 4 > f.code_end) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "truncated local jump operands";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            std::uint16_t idx = ReadU16(chunk.code, &ip);
+            if (idx >= f.nlocals) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "local jump local index out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            std::int16_t rel = ReadI16(chunk.code, &ip);
+            std::int64_t target = static_cast<std::int64_t>(ip) + rel;
+            if (target < static_cast<std::int64_t>(f.code_start) ||
+                target >= static_cast<std::int64_t>(f.code_end)) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "local jump target out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            continue;
+        }
+
+        if (IsLocalExpr(op)) {
+            const std::uint32_t operand_size = op == Op::LoadLocalDec ? 2 : 4;
+            if (ip + operand_size > f.code_end) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "truncated local expression operands";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            std::uint16_t local = ReadU16(chunk.code, &ip);
+            if (local >= f.nlocals) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "local expression local index out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            if (op == Op::LoadLocalSubIConst || op == Op::LoadLocalAddIConst) {
+                std::uint16_t cidx = ReadU16(chunk.code, &ip);
+                if (cidx >= chunk.iconst.size()) {
+                    RuntimeError e;
+                    e.code = RuntimeErrorCode::InvalidOperand;
+                    e.message = "local expression iconst index out of range";
+                    e.function = f.name;
+                    e.pc = static_cast<int>(op_pc);
+                    return e;
+                }
+            }
+            ++depth;
+            continue;
+        }
+
+        if (IsLocalIndexAccum(op)) {
+            if (ip + 8 > f.code_end) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "truncated local index accumulation operands";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            std::uint16_t dst = ReadU16(chunk.code, &ip);
+            std::uint16_t lhs = ReadU16(chunk.code, &ip);
+            std::uint16_t container = ReadU16(chunk.code, &ip);
+            std::uint16_t key = ReadU16(chunk.code, &ip);
+            const bool key_ok = op == Op::AddLocalIndexIConstToLocal
+                ? key < chunk.iconst.size()
+                : key < f.nlocals;
+            if (dst >= f.nlocals || lhs >= f.nlocals || container >= f.nlocals || !key_ok) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "local index accumulation operand out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            continue;
+        }
+
+        if (IsLocalLoopTail(op)) {
+            if (ip + 14 > f.code_end) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "truncated local loop-tail operands";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            for (int k = 0; k < 6; ++k) {
+                std::uint16_t local = ReadU16(chunk.code, &ip);
+                if (local >= f.nlocals) {
+                    RuntimeError e;
+                    e.code = RuntimeErrorCode::InvalidOperand;
+                    e.message = "local loop-tail operand out of range";
+                    e.function = f.name;
+                    e.pc = static_cast<int>(op_pc);
+                    return e;
+                }
+            }
+            std::int16_t rel = ReadI16(chunk.code, &ip);
+            std::int64_t target = static_cast<std::int64_t>(ip) + rel;
+            if (target < static_cast<std::int64_t>(f.code_start) ||
+                target >= static_cast<std::int64_t>(f.code_end)) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "local loop-tail target out of range";
                 e.function = f.name;
                 e.pc = static_cast<int>(op_pc);
                 return e;

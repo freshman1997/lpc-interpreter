@@ -48,18 +48,22 @@ public:
 private:
     static constexpr double kLoadFactor = 0.7;
     static constexpr std::uint32_t kMinCapacity = 8;
+    static constexpr std::uint32_t kInlineCapacity = 8;
 
     struct Slot {
         Value key;
         Value value;
-        std::uint8_t dist = 0;
+        std::uint16_t dist = 0;
     };
 
     Slot *slots_ = nullptr;
     std::uint32_t capacity_ = 0;
     std::uint32_t size_ = 0;
+    Slot inline_slots_[kInlineCapacity]{};
 
-    void Grow();
+    bool Grow();
+    bool UsingInlineSlots() const { return slots_ == inline_slots_; }
+    void ResetInlineSlots();
     std::uint32_t HomeIndex(const Value &key) const;
 
     static std::uint64_t HashKey(const Value &key) { return lpc::vm::HashValue(key); }

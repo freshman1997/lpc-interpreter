@@ -1,34 +1,61 @@
 #include "vm/value/mapping.h"
 
 #include <cstdlib>
+#include <cstring>
 
 namespace lpc {
 namespace vm {
 
 Mapping::~Mapping() {
-    std::free(slots_);
+    if (slots_ && !UsingInlineSlots()) {
+        std::free(slots_);
+    }
     slots_ = nullptr;
 }
 
 Mapping::Mapping(Mapping &&other) noexcept
-    : slots_(other.slots_), capacity_(other.capacity_),
-      size_(other.size_) {
-    other.slots_ = nullptr;
+    : capacity_(other.capacity_), size_(other.size_) {
+    if (other.UsingInlineSlots()) {
+        slots_ = inline_slots_;
+        for (std::uint32_t i = 0; i < kInlineCapacity; ++i) {
+            inline_slots_[i] = other.inline_slots_[i];
+        }
+        other.ResetInlineSlots();
+    } else {
+        slots_ = other.slots_;
+        other.slots_ = nullptr;
+    }
     other.capacity_ = 0;
     other.size_ = 0;
 }
 
 Mapping &Mapping::operator=(Mapping &&other) noexcept {
     if (this != &other) {
-        std::free(slots_);
-        slots_ = other.slots_;
+        if (slots_ && !UsingInlineSlots()) {
+            std::free(slots_);
+        }
         capacity_ = other.capacity_;
         size_ = other.size_;
-        other.slots_ = nullptr;
+        if (other.UsingInlineSlots()) {
+            slots_ = inline_slots_;
+            for (std::uint32_t i = 0; i < kInlineCapacity; ++i) {
+                inline_slots_[i] = other.inline_slots_[i];
+            }
+            other.ResetInlineSlots();
+        } else {
+            slots_ = other.slots_;
+            other.slots_ = nullptr;
+        }
         other.capacity_ = 0;
         other.size_ = 0;
     }
     return *this;
+}
+
+void Mapping::ResetInlineSlots() {
+    for (std::uint32_t i = 0; i < kInlineCapacity; ++i) {
+        inline_slots_[i] = Slot{};
+    }
 }
 
 std::uint32_t Mapping::HomeIndex(const Value &key) const {
@@ -41,7 +68,7 @@ Value *Mapping::Find(const Value &key) {
     if (capacity_ == 0) return nullptr;
     std::uint32_t idx = HomeIndex(key);
     std::uint32_t mask = capacity_ - 1;
-    std::uint8_t dist = 1;
+    std::uint16_t dist = 1;
     for (std::uint32_t i = 0; i < capacity_; ++i) {
         if (slots_[idx].dist == 0) return nullptr;
         if (slots_[idx].dist >= dist && KeyEqual(slots_[idx].key, key)) {
@@ -58,7 +85,7 @@ const Value *Mapping::Find(const Value &key) const {
     if (capacity_ == 0) return nullptr;
     std::uint32_t idx = HomeIndex(key);
     std::uint32_t mask = capacity_ - 1;
-    std::uint8_t dist = 1;
+    std::uint16_t dist = 1;
     for (std::uint32_t i = 0; i < capacity_; ++i) {
         if (slots_[idx].dist == 0) return nullptr;
         if (slots_[idx].dist >= dist && KeyEqual(slots_[idx].key, key)) {
@@ -73,12 +100,12 @@ const Value *Mapping::Find(const Value &key) const {
 
 void Mapping::Insert(const Value &key, const Value &value) {
     if (capacity_ == 0 || size_ + 1 > static_cast<std::uint32_t>(capacity_ * kLoadFactor)) {
-        Grow();
+        if (!Grow()) return;
     }
 
     std::uint32_t idx = HomeIndex(key);
     std::uint32_t mask = capacity_ - 1;
-    std::uint8_t dist = 1;
+    std::uint16_t dist = 1;
 
     Value cur_key = key;
     Value cur_val = value;
@@ -100,7 +127,7 @@ void Mapping::Insert(const Value &key, const Value &value) {
         if (slots_[idx].dist < dist) {
             Value swap_key = slots_[idx].key;
             Value swap_val = slots_[idx].value;
-            std::uint8_t swap_dist = slots_[idx].dist;
+            std::uint16_t swap_dist = slots_[idx].dist;
 
             slots_[idx].key = cur_key;
             slots_[idx].value = cur_val;
@@ -120,7 +147,7 @@ bool Mapping::Erase(const Value &key) {
     if (capacity_ == 0) return false;
     std::uint32_t idx = HomeIndex(key);
     std::uint32_t mask = capacity_ - 1;
-    std::uint8_t dist = 1;
+    std::uint16_t dist = 1;
 
     for (std::uint32_t i = 0; i < capacity_; ++i) {
         if (slots_[idx].dist == 0) return false;
@@ -148,21 +175,29 @@ bool Mapping::Erase(const Value &key) {
 }
 
 void Mapping::Clear() {
-    if (slots_) {
+    if (slots_ && !UsingInlineSlots()) {
         std::free(slots_);
-        slots_ = nullptr;
     }
+    slots_ = nullptr;
     capacity_ = 0;
     size_ = 0;
+    ResetInlineSlots();
 }
 
-void Mapping::Grow() {
+bool Mapping::Grow() {
     std::uint32_t new_cap = (capacity_ == 0) ? kMinCapacity : capacity_ * 2;
-    Slot *new_slots = static_cast<Slot *>(std::calloc(new_cap, sizeof(Slot)));
-    if (!new_slots) return;
+    Slot *new_slots = nullptr;
+    if (capacity_ == 0 && new_cap <= kInlineCapacity) {
+        ResetInlineSlots();
+        new_slots = inline_slots_;
+    } else {
+        new_slots = static_cast<Slot *>(std::calloc(new_cap, sizeof(Slot)));
+        if (!new_slots) return false;
+    }
 
     Slot *old_slots = slots_;
     std::uint32_t old_cap = capacity_;
+    bool old_inline = UsingInlineSlots();
 
     slots_ = new_slots;
     capacity_ = new_cap;
@@ -174,8 +209,11 @@ void Mapping::Grow() {
                 Insert(old_slots[i].key, old_slots[i].value);
             }
         }
-        std::free(old_slots);
+        if (!old_inline) {
+            std::free(old_slots);
+        }
     }
+    return true;
 }
 
 std::vector<std::pair<Value, Value>> Mapping::ToPairVector() const {

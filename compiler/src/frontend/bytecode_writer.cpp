@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "lpc/bytecode/opcode.h"
@@ -65,12 +66,349 @@ static bool LowerMirToNextVm(
     };
 
     int n = static_cast<int>(fn.code.size());
+    std::unordered_set<int> jump_targets;
+    jump_targets.reserve(static_cast<std::size_t>(n));
+    for (const auto &ins : fn.code) {
+        if (ins.op == MirOp::Jump || ins.op == MirOp::JumpIfFalse ||
+            ins.op == MirOp::JumpIfTrue || ins.op == MirOp::Catch ||
+            ins.op == MirOp::ForeachNext) {
+            jump_targets.insert(ins.op == MirOp::ForeachNext ? ins.b : ins.a);
+        }
+    }
     for (int i = 0; i < n; ++i) {
         pc_map[i] = static_cast<int>(out.size());
         if (mir_pc_to_byte) {
             mir_pc_to_byte->push_back(static_cast<int>(out.size()));
         }
         const MirInstr &mi = fn.code[i];
+        // 中文说明：这里在 MIR 降到 NextVM 字节码时做轻量 peephole。
+        // 只有中间指令不是跳转目标时才合成，避免改变控制流入口和调试断点语义。
+        // 规整 while 循环：先保留一次进入循环的 guard，再把 body + i++ + 回跳条件合成。
+        if (i + 9 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadLocal &&
+            fn.code[i + 2].op == MirOp::Lt &&
+            fn.code[i + 3].op == MirOp::JumpIfFalse &&
+            fn.code[i + 4].op == MirOp::LoadLocal &&
+            fn.code[i + 5].op == MirOp::LoadLocal &&
+            fn.code[i + 6].op == MirOp::Add &&
+            fn.code[i + 7].op == MirOp::StoreLocal &&
+            fn.code[i + 8].op == MirOp::IncLocal &&
+            fn.code[i + 9].op == MirOp::Jump &&
+            fn.code[i + 9].a == i &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            !jump_targets.count(i + 4) &&
+            !jump_targets.count(i + 5) &&
+            !jump_targets.count(i + 6) &&
+            !jump_targets.count(i + 7) &&
+            !jump_targets.count(i + 8) &&
+            !jump_targets.count(i + 9) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 && fn.code[i + 1].a <= 0xffff &&
+            fn.code[i + 4].a >= 0 && fn.code[i + 4].a <= 0xffff &&
+            fn.code[i + 5].a >= 0 && fn.code[i + 5].a <= 0xffff &&
+            fn.code[i + 7].a >= 0 && fn.code[i + 7].a <= 0xffff &&
+            fn.code[i + 8].a >= 0 && fn.code[i + 8].a <= 0xffff) {
+            emit_u8(static_cast<std::uint8_t>(Op::JumpIfLocalLtFalse));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            int guard_patch_pos = static_cast<int>(out.size());
+            emit_u16(0);
+            patches.push_back({guard_patch_pos, fn.code[i + 3].a});
+
+            const int body_byte = static_cast<int>(out.size());
+            emit_u8(static_cast<std::uint8_t>(Op::AddLocalLocalIncJumpIfLocalLt));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 7].a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 4].a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 5].a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 8].a));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            int loop_patch_pos = static_cast<int>(out.size());
+            emit_u16(0);
+            int loop_rel = body_byte - (loop_patch_pos + 2);
+            if (loop_rel < -32768 || loop_rel > 32767) {
+                return fail("nextvm loop-tail target too far");
+            }
+            std::uint16_t loop_bits = static_cast<std::uint16_t>(static_cast<std::int16_t>(loop_rel));
+            out[loop_patch_pos + 0] = static_cast<std::uint8_t>(loop_bits & 0xff);
+            out[loop_patch_pos + 1] = static_cast<std::uint8_t>((loop_bits >> 8) & 0xff);
+
+            for (int s = 1; s <= 9; ++s) {
+                ++i;
+                pc_map[i] = (s >= 4) ? body_byte : static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(pc_map[i]);
+                }
+            }
+            continue;
+        }
+        // while/for 条件的热点形态：LoadLocal, LoadLocal, Lt, JumpIfFalse。
+        if (i + 3 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadLocal &&
+            fn.code[i + 2].op == MirOp::Lt &&
+            fn.code[i + 3].op == MirOp::JumpIfFalse &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 && fn.code[i + 1].a <= 0xffff) {
+            emit_u8(static_cast<std::uint8_t>(Op::JumpIfLocalLtFalse));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            int patch_pos = static_cast<int>(out.size());
+            emit_u16(0);
+            patches.push_back({patch_pos, fn.code[i + 3].a});
+            for (int s = 0; s < 3; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // 递归或边界判断的热点形态：LoadLocal, LoadConst, Lte, JumpIfFalse。
+        if (i + 3 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadConst &&
+            fn.code[i + 2].op == MirOp::Lte &&
+            fn.code[i + 3].op == MirOp::JumpIfFalse &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 &&
+            fn.code[i + 1].a < static_cast<int>(fn.iconsts.size())) {
+            int const_idx = ensure_iconst(fn.iconsts[fn.code[i + 1].a]);
+            if (const_idx > 0xffff) {
+                return fail("nextvm lowering iconst index out of range");
+            }
+            emit_u8(static_cast<std::uint8_t>(Op::JumpIfLocalIConstLteFalse));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(const_idx));
+            int patch_pos = static_cast<int>(out.size());
+            emit_u16(0);
+            patches.push_back({patch_pos, fn.code[i + 3].a});
+            for (int s = 0; s < 3; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // 局部变量加法赋值：LoadLocal, LoadLocal, Add, StoreLocal。
+        if (i + 3 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadLocal &&
+            fn.code[i + 2].op == MirOp::Add &&
+            fn.code[i + 3].op == MirOp::StoreLocal &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 && fn.code[i + 1].a <= 0xffff &&
+            fn.code[i + 3].a >= 0 && fn.code[i + 3].a <= 0xffff) {
+            emit_u8(static_cast<std::uint8_t>(Op::AddLocalLocalToLocal));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 3].a));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            for (int s = 0; s < 3; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        if (i + 3 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadConst &&
+            (fn.code[i + 2].op == MirOp::Add || fn.code[i + 2].op == MirOp::Sub) &&
+            fn.code[i + 3].op == MirOp::StoreLocal &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 &&
+            fn.code[i + 1].a < static_cast<int>(fn.iconsts.size()) &&
+            fn.code[i + 3].a >= 0 && fn.code[i + 3].a <= 0xffff) {
+            int const_idx = ensure_iconst(fn.iconsts[fn.code[i + 1].a]);
+            if (const_idx > 0xffff) {
+                return fail("nextvm lowering iconst index out of range");
+            }
+            emit_u8(static_cast<std::uint8_t>(
+                fn.code[i + 2].op == MirOp::Add ? Op::AddLocalIConstToLocal : Op::SubLocalIConstToLocal));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 3].a));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(const_idx));
+            for (int s = 0; s < 3; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // 局部变量与整数常量的加减赋值：hp = hp + 10 / cd = cd - 1。
+        // 循环尾部：IncLocal 后立刻 Jump。
+        if (i + 5 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadLocal &&
+            fn.code[i + 2].op == MirOp::LoadConst &&
+            fn.code[i + 3].op == MirOp::Index &&
+            fn.code[i + 4].op == MirOp::Add &&
+            fn.code[i + 5].op == MirOp::StoreLocal &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            !jump_targets.count(i + 4) &&
+            !jump_targets.count(i + 5) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 && fn.code[i + 1].a <= 0xffff &&
+            fn.code[i + 2].a >= 0 &&
+            fn.code[i + 2].a < static_cast<int>(fn.iconsts.size()) &&
+            fn.code[i + 5].a >= 0 && fn.code[i + 5].a <= 0xffff) {
+            int const_idx = ensure_iconst(fn.iconsts[fn.code[i + 2].a]);
+            if (const_idx > 0xffff) {
+                return fail("nextvm lowering iconst index out of range");
+            }
+            emit_u8(static_cast<std::uint8_t>(Op::AddLocalIndexIConstToLocal));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 5].a));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            emit_u16(static_cast<std::uint16_t>(const_idx));
+            for (int s = 0; s < 5; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        if (i + 5 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadLocal &&
+            fn.code[i + 2].op == MirOp::LoadLocal &&
+            fn.code[i + 3].op == MirOp::Index &&
+            fn.code[i + 4].op == MirOp::Add &&
+            fn.code[i + 5].op == MirOp::StoreLocal &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            !jump_targets.count(i + 4) &&
+            !jump_targets.count(i + 5) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 && fn.code[i + 1].a <= 0xffff &&
+            fn.code[i + 2].a >= 0 && fn.code[i + 2].a <= 0xffff &&
+            fn.code[i + 5].a >= 0 && fn.code[i + 5].a <= 0xffff) {
+            emit_u8(static_cast<std::uint8_t>(Op::AddLocalIndexLocalToLocal));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 5].a));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 2].a));
+            for (int s = 0; s < 5; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // sum = sum + arr[0] / sum = sum + m[i]：把 Index、Add、StoreLocal 收进单条指令。
+        if (i + 1 < n &&
+            mi.op == MirOp::IncLocal &&
+            fn.code[i + 1].op == MirOp::Jump &&
+            !jump_targets.count(i + 1) &&
+            mi.a >= 0 && mi.a <= 0xffff) {
+            emit_u8(static_cast<std::uint8_t>(Op::IncLocalAndJump));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            int patch_pos = static_cast<int>(out.size());
+            emit_u16(0);
+            patches.push_back({patch_pos, fn.code[i + 1].a});
+            ++i;
+            pc_map[i] = static_cast<int>(out.size());
+            if (mir_pc_to_byte) {
+                mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+            }
+            continue;
+        }
+        // 调用参数 n - 1：前端已经把 x - 1 折成 Dec，这里进一步折为单条 LoadLocalDec。
+        if (i + 1 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::Dec &&
+            !jump_targets.count(i + 1) &&
+            mi.a >= 0 && mi.a <= 0xffff) {
+            emit_u8(static_cast<std::uint8_t>(Op::LoadLocalDec));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            ++i;
+            pc_map[i] = static_cast<int>(out.size());
+            if (mir_pc_to_byte) {
+                mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+            }
+            continue;
+        }
+        // 调用参数 n - 常量：避免 LoadLocal/LoadConst/Sub 三次调度。
+        if (i + 2 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadConst &&
+            fn.code[i + 2].op == MirOp::Add &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 &&
+            fn.code[i + 1].a < static_cast<int>(fn.iconsts.size())) {
+            int const_idx = ensure_iconst(fn.iconsts[fn.code[i + 1].a]);
+            if (const_idx > 0xffff) {
+                return fail("nextvm lowering iconst index out of range");
+            }
+            emit_u8(static_cast<std::uint8_t>(Op::LoadLocalAddIConst));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(const_idx));
+            for (int s = 0; s < 2; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // 调用参数或字面量元素 n + 常量：避免 LoadLocal/LoadConst/Add 三次调度。
+        if (i + 2 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadConst &&
+            fn.code[i + 2].op == MirOp::Sub &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 &&
+            fn.code[i + 1].a < static_cast<int>(fn.iconsts.size())) {
+            int const_idx = ensure_iconst(fn.iconsts[fn.code[i + 1].a]);
+            if (const_idx > 0xffff) {
+                return fail("nextvm lowering iconst index out of range");
+            }
+            emit_u8(static_cast<std::uint8_t>(Op::LoadLocalSubIConst));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(const_idx));
+            for (int s = 0; s < 2; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
         switch (mi.op) {
         case MirOp::LoadConst: {
             std::int64_t literal = 0;
@@ -128,6 +466,14 @@ static bool LowerMirToNextVm(
             emit_u8(static_cast<std::uint8_t>(Op::StoreLocal));
             emit_u16(static_cast<std::uint16_t>(mi.a));
             break;
+        case MirOp::IncLocal:
+            emit_u8(static_cast<std::uint8_t>(Op::IncLocal));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            break;
+        case MirOp::DecLocal:
+            emit_u8(static_cast<std::uint8_t>(Op::DecLocal));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            break;
         case MirOp::LoadUpvalue:
             emit_u8(static_cast<std::uint8_t>(Op::LoadUpvalue));
             emit_u16(static_cast<std::uint16_t>(mi.a));
@@ -179,6 +525,12 @@ static bool LowerMirToNextVm(
             break;
         case MirOp::Neg:
             emit_u8(static_cast<std::uint8_t>(Op::Neg));
+            break;
+        case MirOp::Inc:
+            emit_u8(static_cast<std::uint8_t>(Op::Inc));
+            break;
+        case MirOp::Dec:
+            emit_u8(static_cast<std::uint8_t>(Op::Dec));
             break;
         case MirOp::LogicAnd:
             emit_u8(static_cast<std::uint8_t>(Op::LogicAnd));
@@ -514,8 +866,8 @@ bool WriteMirAsNextVmBytecode(const MirModule &module, const std::string &module
             }
             prev_line = line;
             lf.line_map.push_back({
-                static_cast<std::uint32_t>(line - 1),
-                static_cast<std::uint32_t>(lf.from + mir_pc_to_byte[i]),
+                static_cast<std::uint32_t>(line),
+                static_cast<std::uint32_t>(mir_pc_to_byte[i]),
             });
         }
         lowered.push_back(std::move(lf));
@@ -551,8 +903,8 @@ bool WriteMirAsNextVmBytecode(const MirModule &module, const std::string &module
             }
             prev_line = line;
             lf.line_map.push_back({
-                static_cast<std::uint32_t>(line - 1),
-                static_cast<std::uint32_t>(lf.from + mir_pc_to_byte[i]),
+                static_cast<std::uint32_t>(line),
+                static_cast<std::uint32_t>(mir_pc_to_byte[i]),
             });
         }
         lowered.push_back(std::move(lf));

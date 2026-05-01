@@ -232,6 +232,7 @@ struct FunctionDecl : public Stmt {
     std::vector<std::string> param_types;
     std::vector<bool> param_is_pointer;
     std::vector<std::string> params;
+    std::vector<SourceSpan> param_spans;
     std::vector<std::unique_ptr<Stmt>> body;
     bool is_lambda = false;
 };

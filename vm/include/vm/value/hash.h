@@ -60,9 +60,10 @@ inline std::uint64_t HashValue(const Value &key) {
         break;
     }
 
-    std::uint64_t h = Wyhash64(bits);
-    h ^= static_cast<std::uint64_t>(key.Tag());
-    h = Wyhash64(h);
+    std::uint64_t h = bits ^ (static_cast<std::uint64_t>(key.Tag()) * 0x9e3779b97f4a7c15ULL);
+    h ^= h >> 33;
+    h *= 0xff51afd7ed558ccdULL;
+    h ^= h >> 29;
     return h;
 }
 

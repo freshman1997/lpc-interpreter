@@ -1,0 +1,12 @@
+.vscode/**
+.git/**
+.gitignore
+*.vsix
+*.log
+npm-debug.log*
+package-lock.json
+examples/**
+test/**
+tests/**
+coverage/**
+node_modules/.cache/**

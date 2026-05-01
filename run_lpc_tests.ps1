@@ -1,7 +1,8 @@
 param(
-    [string]$Root = "E:\test\lpc-interpreter"
+    [string]$Root = $PSScriptRoot
 )
 
+$Root = (Resolve-Path $Root).Path
 $compiler = Join-Path $Root "build\compiler\lpc_compiler.exe"
 $vm = Join-Path $Root "build\vm\lpc_vm.exe"
 $outRoot = Join-Path $Root "bin"
@@ -63,8 +64,16 @@ foreach ($t in $tests) {
         continue
     }
 
-    & $compiler $lpc --workspace-root $Root --out-root $outRoot *> $null
-    $runOutput = & $vm run $t --entry-file ($outRoot + "\") 2>&1
+    $compileOutput = & $compiler $lpc --workspace-root $Root --out-root $outRoot 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $fail++
+        Write-Host "FAIL: $t"
+        Write-Host "compile failed:"
+        Write-Host $compileOutput
+        continue
+    }
+
+    $runOutput = & $vm run $t --bytecode-root $outRoot 2>&1
     if ($LASTEXITCODE -eq 0) {
         $pass++
     } else {

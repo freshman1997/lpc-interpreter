@@ -35,17 +35,21 @@ const ClassInfo *Vm::ResolveClassInfoFromHandle(const Value &class_handle) const
 }
 
 Value Vm::AllocateArrayHandle(std::vector<Value> &&elements) {
+    LpcArray arr;
+    arr.InitFromVector(std::move(elements));
+    return AllocateArrayHandle(std::move(arr));
+}
+
+Value Vm::AllocateArrayHandle(LpcArray &&array) {
     ++alloc_count_;
     if (!array_free_.empty()) {
         std::size_t idx = array_free_.back();
         array_free_.pop_back();
-        arrays_[idx].InitFromVector(std::move(elements));
+        arrays_[idx] = std::move(array);
         array_slot_free_[idx] = 0;
         return MakeArrayHandle(idx + 1);
     }
-    LpcArray arr;
-    arr.InitFromVector(std::move(elements));
-    arrays_.push_back(std::move(arr));
+    arrays_.push_back(std::move(array));
     array_slot_free_.push_back(0);
     return MakeArrayHandle(arrays_.size());
 }

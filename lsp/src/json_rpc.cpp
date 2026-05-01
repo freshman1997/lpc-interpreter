@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstring>
 #include <cstdio>
+#include <exception>
 
 namespace lpc {
 namespace lsp {
@@ -283,7 +284,11 @@ bool ReadRpcMessage(std::istream &in, JsonNode &out_msg) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty()) break;
         if (line.compare(0, 16, "Content-Length: ") == 0) {
-            content_length = std::stoul(line.substr(16));
+            try {
+                content_length = std::stoul(line.substr(16));
+            } catch (const std::exception &) {
+                return false;
+            }
         }
     }
     if (content_length == 0) return false;
@@ -297,10 +302,12 @@ bool ReadRpcMessage(std::istream &in, JsonNode &out_msg) {
 JsonNode RequestToJson(const JsonRpcRequest &req) {
     std::unordered_map<std::string, JsonNode> obj;
     obj["jsonrpc"] = JsonNode(std::string("2.0"));
-    if (std::holds_alternative<int>(req.id)) {
-        obj["id"] = JsonNode(std::get<int>(req.id));
-    } else if (std::holds_alternative<std::string>(req.id)) {
-        obj["id"] = JsonNode(std::get<std::string>(req.id));
+    if (!req.is_notification) {
+        if (std::holds_alternative<int>(req.id)) {
+            obj["id"] = JsonNode(std::get<int>(req.id));
+        } else if (std::holds_alternative<std::string>(req.id)) {
+            obj["id"] = JsonNode(std::get<std::string>(req.id));
+        }
     }
     obj["method"] = JsonNode(req.method);
     if (!req.params.IsNull()) {

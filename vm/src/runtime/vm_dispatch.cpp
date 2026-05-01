@@ -97,6 +97,7 @@ RuntimeError Vm::RunEntry(const char *function_name) {
         if (!pin_err.ok()) {
             return pin_err;
         }
+        frame.version_pinned = true;
     }
     frames_.clear();
     frames_.reserve(kMaxCallFrames);
@@ -151,6 +152,7 @@ lpc_cg_label_return:
 
     CatchContext catch_ctx;
     BeginProfile();
+    const bool instruction_debug_checks = debug_checks_enabled_ || debugger_.active();
 
     Value *sp = value_stack_.data() + value_stack_.size();
 
@@ -161,6 +163,7 @@ lpc_cg_label_return:
                           std::uint32_t object_id,
                           std::uint64_t module_version_id,
                           const std::string &module_name,
+                          bool version_pinned_by_caller,
                           std::uint32_t closure_slot) -> RuntimeError {
         Frame next;
         next.func_id = func_id;
@@ -171,12 +174,14 @@ lpc_cg_label_return:
         next.module_version_id = module_version_id;
         next.module_name = module_name;
         next.closure_slot = closure_slot;
-        if (next.module_version_id != 0) {
+        next.version_pinned = false;
+        if (next.module_version_id != 0 && !version_pinned_by_caller) {
             RuntimeError pin_err = hot_reload_manager_.PinVersion(next.module_name, next.module_version_id);
             if (!pin_err.ok()) {
                 if (catch_ctx.active) throw CatchSignal();
                 return pin_err;
             }
+            next.version_pinned = true;
         }
         frames_.push_back(std::move(next));
         return RuntimeError::Ok();
@@ -233,7 +238,7 @@ lpc_cg_label_return:
         current_object_id_ = fp->object_id;
         const FunctionProto &curf = BoundChunk().functions[fp->func_id];
         try {
-        if (LPC_UNLIKELY(fp->ip >= code_size)) {
+        if (LPC_UNLIKELY(instruction_debug_checks && fp->ip >= code_size)) {
             RuntimeError e;
             e.code = RuntimeErrorCode::InvalidOperand;
             e.message = "instruction pointer out of range";
@@ -243,7 +248,7 @@ lpc_cg_label_return:
             return e;
         }
 
-        if (LPC_UNLIKELY(debugger_.active() && debugger_.ShouldBreak(fp->ip, static_cast<std::uint32_t>(frames_.size()), BoundChunk(), frames_, value_stack_))) {
+        if (LPC_UNLIKELY(instruction_debug_checks && debugger_.active() && debugger_.ShouldBreak(fp->ip, static_cast<std::uint32_t>(frames_.size()), BoundChunk(), frames_, value_stack_))) {
             debugger_.ClearStepOnBreak(static_cast<std::uint32_t>(frames_.size()));
             if (debug_hook_) {
                 RuntimeError hook_err = debug_hook_(fp->ip);
@@ -256,24 +261,27 @@ lpc_cg_label_return:
         Op op = static_cast<Op>(code[fp->ip++]);
         RecordOpcode(static_cast<std::uint8_t>(op));
 
+        bool fast_handled = false;
 #if LPC_ENABLE_COMPUTED_GOTO
-        static const std::array<const void *, 256> kComputedGotoDispatch = [] {
-            std::array<const void *, 256> table{};
-            table[static_cast<std::uint8_t>(Op::Pop)] = &&lpc_cg_pop;
-            table[static_cast<std::uint8_t>(Op::Dup)] = &&lpc_cg_dup;
-            table[static_cast<std::uint8_t>(Op::LoadLocal)] = &&lpc_cg_load_local;
-            table[static_cast<std::uint8_t>(Op::StoreLocal)] = &&lpc_cg_store_local;
-            table[static_cast<std::uint8_t>(Op::LoadIConst)] = &&lpc_cg_load_iconst;
-            table[static_cast<std::uint8_t>(Op::LoadFConst)] = &&lpc_cg_load_fconst;
-            table[static_cast<std::uint8_t>(Op::LoadSConst)] = &&lpc_cg_load_sconst;
-            table[static_cast<std::uint8_t>(Op::Add)] = &&lpc_cg_add;
-            table[static_cast<std::uint8_t>(Op::Return)] = &&lpc_cg_return;
-            return table;
-        }();
+        static const void *kComputedGotoDispatch[256] = {};
+        static bool kComputedGotoDispatchInit = false;
+        if (!kComputedGotoDispatchInit) {
+            kComputedGotoDispatch[static_cast<std::uint8_t>(Op::Pop)] = &&lpc_cg_pop;
+            kComputedGotoDispatch[static_cast<std::uint8_t>(Op::Dup)] = &&lpc_cg_dup;
+            kComputedGotoDispatch[static_cast<std::uint8_t>(Op::LoadLocal)] = &&lpc_cg_load_local;
+            kComputedGotoDispatch[static_cast<std::uint8_t>(Op::StoreLocal)] = &&lpc_cg_store_local;
+            kComputedGotoDispatch[static_cast<std::uint8_t>(Op::LoadIConst)] = &&lpc_cg_load_iconst;
+            kComputedGotoDispatch[static_cast<std::uint8_t>(Op::LoadFConst)] = &&lpc_cg_load_fconst;
+            kComputedGotoDispatch[static_cast<std::uint8_t>(Op::LoadSConst)] = &&lpc_cg_load_sconst;
+            kComputedGotoDispatch[static_cast<std::uint8_t>(Op::Add)] = &&lpc_cg_add;
+            kComputedGotoDispatch[static_cast<std::uint8_t>(Op::Return)] = &&lpc_cg_return;
+            kComputedGotoDispatchInit = true;
+        }
         const void *cg_target = kComputedGotoDispatch[static_cast<std::uint8_t>(op)];
         if (cg_target != nullptr) {
             goto *cg_target;
         }
+        goto lpc_dispatch_fallback;
 lpc_cg_pop:
         LPC_DISCARD();
         goto lpc_post_dispatch;
@@ -380,9 +388,10 @@ lpc_cg_return:
 
             std::string returning_module_name = std::move(fp->module_name);
             const std::uint64_t returning_version_id = fp->module_version_id;
+            const bool returning_version_pinned = fp->version_pinned;
             LPC_SYNC_SP();
             frames_.pop_back();
-            if (returning_version_id != 0) {
+            if (returning_version_pinned && returning_version_id != 0) {
                 RuntimeError unpin_err = hot_reload_manager_.UnpinVersion(returning_module_name, returning_version_id);
                 if (!unpin_err.ok()) {
                     if (catch_ctx.active) throw CatchSignal();
@@ -468,7 +477,10 @@ lpc_cg_load_sconst:
         goto lpc_post_dispatch;
 #endif
 
-        bool fast_handled = false;
+lpc_dispatch_fallback:
+        fast_handled = false;
+        // 中文说明：这里是 Windows/Release 当前使用最多的快速分发链。
+        // 优先处理局部变量、整数算术、跳转和 superinstruction；复杂类型仍落回下面的大 switch。
         if (LPC_LIKELY(op == Op::LoadLocal)) {
 #ifdef NDEBUG
             const std::uint8_t *p = code + fp->ip;
@@ -488,6 +500,53 @@ lpc_cg_load_sconst:
             }
             LPC_PUSH(value_stack_[fp->base + idx]);
 #endif
+            fast_handled = true;
+        } else if (LPC_LIKELY(op == Op::LoadLocalDec || op == Op::LoadLocalSubIConst || op == Op::LoadLocalAddIConst)) {
+            const std::uint32_t operand_size = op == Op::LoadLocalDec ? 2u : 4u;
+            if (LPC_UNLIKELY(fp->ip + operand_size > code_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated local expression operands";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            const std::uint8_t *p = code + fp->ip;
+            fp->ip += operand_size;
+            const std::uint16_t local_idx = static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8);
+            const std::uint16_t const_idx = (op == Op::LoadLocalSubIConst || op == Op::LoadLocalAddIConst)
+                ? static_cast<std::uint16_t>(p[2]) | (static_cast<std::uint16_t>(p[3]) << 8)
+                : 0;
+#ifndef NDEBUG
+            if (LPC_UNLIKELY(local_idx >= curf.nlocals ||
+                ((op == Op::LoadLocalSubIConst || op == Op::LoadLocalAddIConst) && const_idx >= iconst_size))) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "local expression operand out of range";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+#endif
+            const Value lhs = value_stack_[fp->base + local_idx];
+            const Value rhs = (op == Op::LoadLocalSubIConst || op == Op::LoadLocalAddIConst) ? iconst_values[const_idx] : MakeI64(1);
+            if (LPC_LIKELY(lhs.Tag() == ValueTag::Int64 && rhs.Tag() == ValueTag::Int64)) {
+                LPC_PUSH(MakeI64(op == Op::LoadLocalAddIConst ? lhs.AsI64() + rhs.AsI64() : lhs.AsI64() - rhs.AsI64()));
+            } else if (op == Op::LoadLocalAddIConst && LPC_UNLIKELY(lhs.IsObjRef() || rhs.IsObjRef())) {
+                LPC_SYNC_SP();
+                std::string buf_a, buf_b;
+                std::string_view sv_a = ResolveStringView(lhs, buf_a);
+                std::string_view sv_b = ResolveStringView(rhs, buf_b);
+                std::string result;
+                result.reserve(sv_a.size() + sv_b.size());
+                result.append(sv_a);
+                result.append(sv_b);
+                LPC_PUSH(InternString(result));
+                LPC_LOAD_SP();
+            } else if (LPC_UNLIKELY(lhs.IsFloat64() || rhs.IsFloat64())) {
+                const double a = lhs.IsFloat64() ? lhs.AsF64() : (lhs.IsNil() ? 0.0 : static_cast<double>(GetI64(lhs)));
+                const double b = rhs.IsFloat64() ? rhs.AsF64() : (rhs.IsNil() ? 0.0 : static_cast<double>(GetI64(rhs)));
+                LPC_PUSH(Value::FromF64(op == Op::LoadLocalAddIConst ? a + b : a - b));
+            } else if (LPC_UNLIKELY(lhs.IsNil() || rhs.IsNil())) {
+                const std::int64_t a = lhs.IsNil() ? 0 : GetI64(lhs);
+                const std::int64_t b = rhs.IsNil() ? 0 : GetI64(rhs);
+                LPC_PUSH(MakeI64(op == Op::LoadLocalAddIConst ? a + b : a - b));
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = op == Op::LoadLocalAddIConst ? "Add unsupported types" : "Sub unsupported types";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
             fast_handled = true;
         } else if (LPC_LIKELY(op == Op::StoreLocal)) {
 #ifdef NDEBUG
@@ -512,6 +571,77 @@ lpc_cg_load_sconst:
             }
             value_stack_[fp->base + idx] = LPC_POP();
 #endif
+            fast_handled = true;
+        } else if (LPC_LIKELY(op == Op::IncLocal || op == Op::DecLocal)) {
+#ifdef NDEBUG
+            const std::uint8_t *p = code + fp->ip;
+            fp->ip += 2;
+            std::uint16_t idx = static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8);
+            Value &slot = value_stack_[fp->base + idx];
+            if (LPC_LIKELY(slot.Tag() == ValueTag::Int64)) {
+                slot = MakeI64(slot.AsI64() + (op == Op::IncLocal ? 1 : -1));
+            } else if (slot.IsNil()) {
+                slot = Value::FromI64(op == Op::IncLocal ? 1 : -1);
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "IncLocal/DecLocal requires Int64";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+#else
+            if (LPC_UNLIKELY(fp->ip + 2 > code_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated IncLocal/DecLocal operand";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            const std::uint8_t *p = code + fp->ip; fp->ip += 2;
+            std::uint16_t idx = static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8);
+            if (LPC_UNLIKELY(idx >= curf.nlocals)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "local index out of range";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            Value &slot = value_stack_[fp->base + idx];
+            if (slot.Tag() == ValueTag::Int64) {
+                slot = MakeI64(GetI64(slot) + (op == Op::IncLocal ? 1 : -1));
+            } else if (slot.IsNil()) {
+                slot = Value::FromI64(op == Op::IncLocal ? 1 : -1);
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "IncLocal/DecLocal requires Int64";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+#endif
+            fast_handled = true;
+        } else if (LPC_LIKELY(op == Op::IncLocalAndJump)) {
+            if (LPC_UNLIKELY(fp->ip + 4 > code_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated IncLocalAndJump operands";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            const std::uint8_t *p = code + fp->ip;
+            fp->ip += 4;
+            const std::uint16_t idx = static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8);
+            const std::int16_t rel = static_cast<std::int16_t>(
+                static_cast<std::uint16_t>(p[2]) | (static_cast<std::uint16_t>(p[3]) << 8));
+#ifndef NDEBUG
+            if (LPC_UNLIKELY(idx >= curf.nlocals)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "local index out of range";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+#endif
+            Value &slot = value_stack_[fp->base + idx];
+            if (LPC_LIKELY(slot.Tag() == ValueTag::Int64)) {
+                slot = MakeI64(slot.AsI64() + 1);
+            } else if (slot.IsNil()) {
+                slot = Value::FromI64(1);
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "IncLocalAndJump requires Int64";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            const std::int64_t next_ip = static_cast<std::int64_t>(fp->ip) + rel;
+#ifndef NDEBUG
+            if (LPC_UNLIKELY(next_ip < static_cast<std::int64_t>(curf.code_start) ||
+                next_ip >= static_cast<std::int64_t>(curf.code_end))) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "jump target out of function range";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+#endif
+            fp->ip = static_cast<std::uint32_t>(next_ip);
             fast_handled = true;
         } else if (LPC_LIKELY(op == Op::LoadIConst)) {
 #ifdef NDEBUG
@@ -590,6 +720,16 @@ lpc_cg_load_sconst:
                     fast_handled = true;
                 }
             }
+        } else if (LPC_LIKELY(op == Op::Lte)) {
+            if (LPC_STACK_SZ() >= fp->stack_top + 2) {
+                const Value rhs = LPC_TOP();
+                Value &lhs = LPC_PEEK(1);
+                if (LPC_LIKELY(lhs.Tag() == ValueTag::Int64 && rhs.Tag() == ValueTag::Int64)) {
+                    lhs = Value::FromI64((lhs.AsI64() <= rhs.AsI64()) ? 1 : 0);
+                    LPC_DISCARD();
+                    fast_handled = true;
+                }
+            }
         } else if (LPC_LIKELY(op == Op::Gt)) {
             if (LPC_STACK_SZ() >= fp->stack_top + 2) {
                 const Value rhs = LPC_TOP();
@@ -600,6 +740,346 @@ lpc_cg_load_sconst:
                     fast_handled = true;
                 }
             }
+        } else if (LPC_LIKELY(op == Op::Gte)) {
+            if (LPC_STACK_SZ() >= fp->stack_top + 2) {
+                const Value rhs = LPC_TOP();
+                Value &lhs = LPC_PEEK(1);
+                if (LPC_LIKELY(lhs.Tag() == ValueTag::Int64 && rhs.Tag() == ValueTag::Int64)) {
+                    lhs = Value::FromI64((lhs.AsI64() >= rhs.AsI64()) ? 1 : 0);
+                    LPC_DISCARD();
+                    fast_handled = true;
+                }
+            }
+        } else if (LPC_LIKELY(op == Op::AddLocalLocalToLocal || op == Op::AddLocalIConstToLocal || op == Op::SubLocalIConstToLocal)) {
+            if (LPC_UNLIKELY(fp->ip + 6 > code_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated local arithmetic operands";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            const std::uint8_t *p = code + fp->ip;
+            fp->ip += 6;
+            const std::uint16_t dst_idx = static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8);
+            const std::uint16_t lhs_idx = static_cast<std::uint16_t>(p[2]) | (static_cast<std::uint16_t>(p[3]) << 8);
+            const std::uint16_t rhs_idx = static_cast<std::uint16_t>(p[4]) | (static_cast<std::uint16_t>(p[5]) << 8);
+#ifndef NDEBUG
+            if (LPC_UNLIKELY(dst_idx >= curf.nlocals || lhs_idx >= curf.nlocals ||
+                (op == Op::AddLocalLocalToLocal ? rhs_idx >= curf.nlocals : rhs_idx >= iconst_size))) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "local index out of range";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+#endif
+            const Value lhs = value_stack_[fp->base + lhs_idx];
+            const Value rhs = op == Op::AddLocalLocalToLocal ? value_stack_[fp->base + rhs_idx] : iconst_values[rhs_idx];
+            const bool is_sub = op == Op::SubLocalIConstToLocal;
+            Value result = Value::Nil();
+            if (LPC_LIKELY(lhs.Tag() == ValueTag::Int64 && rhs.Tag() == ValueTag::Int64)) {
+                result = MakeI64(is_sub ? lhs.AsI64() - rhs.AsI64() : lhs.AsI64() + rhs.AsI64());
+            } else if (!is_sub && LPC_UNLIKELY(lhs.IsObjRef() || rhs.IsObjRef())) {
+                LPC_SYNC_SP();
+                std::string buf_a, buf_b;
+                std::string_view sv_a = ResolveStringView(lhs, buf_a);
+                std::string_view sv_b = ResolveStringView(rhs, buf_b);
+                std::string joined;
+                joined.reserve(sv_a.size() + sv_b.size());
+                joined.append(sv_a);
+                joined.append(sv_b);
+                result = InternString(joined);
+                LPC_LOAD_SP();
+            } else if (LPC_UNLIKELY(lhs.IsFloat64() || rhs.IsFloat64())) {
+                const double a = lhs.IsFloat64() ? lhs.AsF64() : (lhs.IsNil() ? 0.0 : static_cast<double>(GetI64(lhs)));
+                const double b = rhs.IsFloat64() ? rhs.AsF64() : (rhs.IsNil() ? 0.0 : static_cast<double>(GetI64(rhs)));
+                result = Value::FromF64(is_sub ? a - b : a + b);
+            } else if (LPC_UNLIKELY(lhs.IsNil() || rhs.IsNil())) {
+                const std::int64_t a = lhs.IsNil() ? 0 : GetI64(lhs);
+                const std::int64_t b = rhs.IsNil() ? 0 : GetI64(rhs);
+                result = MakeI64(is_sub ? a - b : a + b);
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = is_sub ? "Sub unsupported types" : "Add unsupported types";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            value_stack_[fp->base + dst_idx] = result;
+            fast_handled = true;
+        } else if (LPC_LIKELY(op == Op::AddLocalIndexIConstToLocal || op == Op::AddLocalIndexLocalToLocal)) {
+            if (LPC_UNLIKELY(fp->ip + 8 > code_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated AddLocalIndex operands";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            const std::uint8_t *p = code + fp->ip;
+            fp->ip += 8;
+            const std::uint16_t dst_idx = static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8);
+            const std::uint16_t lhs_idx = static_cast<std::uint16_t>(p[2]) | (static_cast<std::uint16_t>(p[3]) << 8);
+            const std::uint16_t container_idx = static_cast<std::uint16_t>(p[4]) | (static_cast<std::uint16_t>(p[5]) << 8);
+            const std::uint16_t key_idx = static_cast<std::uint16_t>(p[6]) | (static_cast<std::uint16_t>(p[7]) << 8);
+#ifndef NDEBUG
+            if (LPC_UNLIKELY(dst_idx >= curf.nlocals || lhs_idx >= curf.nlocals || container_idx >= curf.nlocals ||
+                (op == Op::AddLocalIndexIConstToLocal ? key_idx >= iconst_size : key_idx >= curf.nlocals))) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "local index accumulation operand out of range";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+#endif
+            const Value lhs = value_stack_[fp->base + lhs_idx];
+            const Value container = value_stack_[fp->base + container_idx];
+            const Value key = op == Op::AddLocalIndexIConstToLocal ? iconst_values[key_idx] : value_stack_[fp->base + key_idx];
+            Value elem = Value::Nil();
+
+            if (container.IsObjRef() && key.Tag() == ValueTag::Int64) {
+                const std::int64_t key_i = GetI64(key);
+                if (IsStringObjRef(container)) {
+                    LPC_SYNC_SP();
+                    std::string s = ResolveObjRefStringOnly(container);
+                    if (key_i < 0 || static_cast<std::size_t>(key_i) >= s.size()) {
+                        RuntimeError e; e.code = RuntimeErrorCode::BoundsError; e.message = "string index out of range";
+                        if (catch_ctx.active) throw CatchSignal(); return e;
+                    }
+                    std::string ch(1, s[static_cast<std::size_t>(key_i)]);
+                    elem = InternString(ch);
+                    LPC_LOAD_SP();
+                } else {
+                    const std::size_t arr_id = DecodeArrayId(container);
+                    if (arr_id > 0 && arr_id <= arrays_.size()) {
+                        LpcArray &arr = arrays_[arr_id - 1];
+                        if (key_i < 0 || static_cast<std::size_t>(key_i) >= arr.Size()) {
+                            RuntimeError e; e.code = RuntimeErrorCode::BoundsError; e.message = "array index out of range";
+                            if (catch_ctx.active) throw CatchSignal(); return e;
+                        }
+                        elem = arr.At(static_cast<std::size_t>(key_i));
+                    } else {
+                        const std::size_t map_id = DecodeMappingId(container);
+                        if (map_id > 0 && map_id <= mappings_.size()) {
+                            const Value *found = mappings_[map_id - 1].Find(key);
+                            elem = found ? *found : Value::Nil();
+                        } else {
+                            RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "array handle out of range";
+                            if (catch_ctx.active) throw CatchSignal(); return e;
+                        }
+                    }
+                }
+            } else if (container.IsObjRef()) {
+                const std::size_t map_id = DecodeMappingId(container);
+                if (map_id > 0 && map_id <= mappings_.size()) {
+                    const Value *found = mappings_[map_id - 1].Find(key);
+                    elem = found ? *found : Value::Nil();
+                } else {
+                    RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "Index: container is not array, string, or mapping";
+                    if (catch_ctx.active) throw CatchSignal(); return e;
+                }
+            } else if (!container.IsNil()) {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "Index expects array/string/mapping + key";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+
+            Value result = Value::Nil();
+            if (LPC_LIKELY(lhs.Tag() == ValueTag::Int64 && elem.Tag() == ValueTag::Int64)) {
+                result = MakeI64(lhs.AsI64() + elem.AsI64());
+            } else if (LPC_UNLIKELY(lhs.IsObjRef() || elem.IsObjRef())) {
+                LPC_SYNC_SP();
+                std::string buf_a, buf_b;
+                std::string_view sv_a = ResolveStringView(lhs, buf_a);
+                std::string_view sv_b = ResolveStringView(elem, buf_b);
+                std::string joined;
+                joined.reserve(sv_a.size() + sv_b.size());
+                joined.append(sv_a);
+                joined.append(sv_b);
+                result = InternString(joined);
+                LPC_LOAD_SP();
+            } else if (LPC_UNLIKELY(lhs.IsFloat64() || elem.IsFloat64())) {
+                const double a = lhs.IsFloat64() ? lhs.AsF64() : (lhs.IsNil() ? 0.0 : static_cast<double>(GetI64(lhs)));
+                const double b = elem.IsFloat64() ? elem.AsF64() : (elem.IsNil() ? 0.0 : static_cast<double>(GetI64(elem)));
+                result = Value::FromF64(a + b);
+            } else if (LPC_UNLIKELY(lhs.IsNil() || elem.IsNil())) {
+                const std::int64_t a = lhs.IsNil() ? 0 : GetI64(lhs);
+                const std::int64_t b = elem.IsNil() ? 0 : GetI64(elem);
+                result = MakeI64(a + b);
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "Add unsupported types";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            value_stack_[fp->base + dst_idx] = result;
+            fast_handled = true;
+        } else if (LPC_LIKELY(op == Op::AddLocalLocalIncJumpIfLocalLt)) {
+            if (LPC_UNLIKELY(fp->ip + 14 > code_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated AddLocalLocalIncJumpIfLocalLt operands";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            const std::uint8_t *p = code + fp->ip;
+            fp->ip += 14;
+            const std::uint16_t dst_idx = static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8);
+            const std::uint16_t lhs_idx = static_cast<std::uint16_t>(p[2]) | (static_cast<std::uint16_t>(p[3]) << 8);
+            const std::uint16_t rhs_idx = static_cast<std::uint16_t>(p[4]) | (static_cast<std::uint16_t>(p[5]) << 8);
+            const std::uint16_t inc_idx = static_cast<std::uint16_t>(p[6]) | (static_cast<std::uint16_t>(p[7]) << 8);
+            const std::uint16_t cmp_lhs_idx = static_cast<std::uint16_t>(p[8]) | (static_cast<std::uint16_t>(p[9]) << 8);
+            const std::uint16_t cmp_rhs_idx = static_cast<std::uint16_t>(p[10]) | (static_cast<std::uint16_t>(p[11]) << 8);
+            const std::int16_t rel = static_cast<std::int16_t>(
+                static_cast<std::uint16_t>(p[12]) | (static_cast<std::uint16_t>(p[13]) << 8));
+#ifndef NDEBUG
+            if (LPC_UNLIKELY(dst_idx >= curf.nlocals || lhs_idx >= curf.nlocals || rhs_idx >= curf.nlocals ||
+                inc_idx >= curf.nlocals || cmp_lhs_idx >= curf.nlocals || cmp_rhs_idx >= curf.nlocals)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "loop-tail local operand out of range";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+#endif
+            const Value lhs = value_stack_[fp->base + lhs_idx];
+            const Value rhs = value_stack_[fp->base + rhs_idx];
+            Value result = Value::Nil();
+            if (LPC_LIKELY(lhs.Tag() == ValueTag::Int64 && rhs.Tag() == ValueTag::Int64)) {
+                result = MakeI64(lhs.AsI64() + rhs.AsI64());
+            } else if (LPC_UNLIKELY(lhs.IsObjRef() || rhs.IsObjRef())) {
+                LPC_SYNC_SP();
+                std::string buf_a, buf_b;
+                std::string_view sv_a = ResolveStringView(lhs, buf_a);
+                std::string_view sv_b = ResolveStringView(rhs, buf_b);
+                std::string joined;
+                joined.reserve(sv_a.size() + sv_b.size());
+                joined.append(sv_a);
+                joined.append(sv_b);
+                result = InternString(joined);
+                LPC_LOAD_SP();
+            } else if (LPC_UNLIKELY(lhs.IsFloat64() || rhs.IsFloat64())) {
+                const double a = lhs.IsFloat64() ? lhs.AsF64() : (lhs.IsNil() ? 0.0 : static_cast<double>(GetI64(lhs)));
+                const double b = rhs.IsFloat64() ? rhs.AsF64() : (rhs.IsNil() ? 0.0 : static_cast<double>(GetI64(rhs)));
+                result = Value::FromF64(a + b);
+            } else if (LPC_UNLIKELY(lhs.IsNil() || rhs.IsNil())) {
+                const std::int64_t a = lhs.IsNil() ? 0 : GetI64(lhs);
+                const std::int64_t b = rhs.IsNil() ? 0 : GetI64(rhs);
+                result = MakeI64(a + b);
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "Add unsupported types";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            value_stack_[fp->base + dst_idx] = result;
+
+            Value &inc_slot = value_stack_[fp->base + inc_idx];
+            if (LPC_LIKELY(inc_slot.Tag() == ValueTag::Int64)) {
+                inc_slot = MakeI64(inc_slot.AsI64() + 1);
+            } else if (inc_slot.IsNil()) {
+                inc_slot = Value::FromI64(1);
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "IncLocal requires Int64";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+
+            const Value cmp_lhs = value_stack_[fp->base + cmp_lhs_idx];
+            const Value cmp_rhs = value_stack_[fp->base + cmp_rhs_idx];
+            bool cond = false;
+            if (LPC_LIKELY(cmp_lhs.Tag() == ValueTag::Int64 && cmp_rhs.Tag() == ValueTag::Int64)) {
+                cond = cmp_lhs.AsI64() < cmp_rhs.AsI64();
+            } else if (LPC_UNLIKELY(cmp_lhs.IsFloat64() || cmp_rhs.IsFloat64())) {
+                if (LPC_UNLIKELY(!(cmp_lhs.IsFloat64() || cmp_lhs.Tag() == ValueTag::Int64) ||
+                                 !(cmp_rhs.IsFloat64() || cmp_rhs.Tag() == ValueTag::Int64))) {
+                    RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "compare op unsupported types";
+                    if (catch_ctx.active) throw CatchSignal(); return e;
+                }
+                const double a = cmp_lhs.IsFloat64() ? cmp_lhs.AsF64() : static_cast<double>(GetI64(cmp_lhs));
+                const double b = cmp_rhs.IsFloat64() ? cmp_rhs.AsF64() : static_cast<double>(GetI64(cmp_rhs));
+                cond = a < b;
+            } else if (LPC_UNLIKELY(cmp_lhs.IsNil() || cmp_rhs.IsNil())) {
+                cond = false;
+            } else if (LPC_UNLIKELY(cmp_lhs.IsObjRef() || cmp_rhs.IsObjRef())) {
+                LPC_SYNC_SP();
+                std::string a = ResolveString(cmp_lhs);
+                std::string b = ResolveString(cmp_rhs);
+                LPC_LOAD_SP();
+                cond = a < b;
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "compare op unsupported types";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            if (cond) {
+                const std::int64_t next_ip = static_cast<std::int64_t>(fp->ip) + rel;
+#ifndef NDEBUG
+                if (LPC_UNLIKELY(next_ip < static_cast<std::int64_t>(curf.code_start) ||
+                    next_ip >= static_cast<std::int64_t>(curf.code_end))) {
+                    RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "jump target out of function range";
+                    if (catch_ctx.active) throw CatchSignal(); return e;
+                }
+#endif
+                fp->ip = static_cast<std::uint32_t>(next_ip);
+            }
+            fast_handled = true;
+        } else if (LPC_LIKELY(op == Op::JumpIfLocalLtFalse || op == Op::JumpIfLocalIConstLteFalse)) {
+            // 合并“取局部变量 -> 比较 -> 条件跳转”，主要服务循环条件和递归边界判断。
+            if (LPC_UNLIKELY(fp->ip + 6 > code_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated local compare jump operands";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            const std::uint8_t *p = code + fp->ip;
+            fp->ip += 6;
+            const std::uint16_t lhs_idx = static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8);
+            const std::uint16_t rhs_idx = static_cast<std::uint16_t>(p[2]) | (static_cast<std::uint16_t>(p[3]) << 8);
+            const std::int16_t rel = static_cast<std::int16_t>(
+                static_cast<std::uint16_t>(p[4]) | (static_cast<std::uint16_t>(p[5]) << 8));
+#ifndef NDEBUG
+            if (LPC_UNLIKELY(lhs_idx >= curf.nlocals ||
+                (op == Op::JumpIfLocalLtFalse ? rhs_idx >= curf.nlocals : rhs_idx >= iconst_size))) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "local index out of range";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+#endif
+            const Value lhs = value_stack_[fp->base + lhs_idx];
+            const Value rhs = op == Op::JumpIfLocalLtFalse
+                ? value_stack_[fp->base + rhs_idx]
+                : iconst_values[rhs_idx];
+            bool cond = false;
+            if (LPC_LIKELY(lhs.Tag() == ValueTag::Int64 && rhs.Tag() == ValueTag::Int64)) {
+                cond = op == Op::JumpIfLocalLtFalse
+                    ? lhs.AsI64() < rhs.AsI64()
+                    : lhs.AsI64() <= rhs.AsI64();
+            } else if (LPC_UNLIKELY(lhs.IsFloat64() || rhs.IsFloat64())) {
+                if (LPC_UNLIKELY(!(lhs.IsFloat64() || lhs.Tag() == ValueTag::Int64) ||
+                                 !(rhs.IsFloat64() || rhs.Tag() == ValueTag::Int64))) {
+                    RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "compare op unsupported types";
+                    if (catch_ctx.active) throw CatchSignal(); return e;
+                }
+                const double a = lhs.IsFloat64() ? lhs.AsF64() : static_cast<double>(GetI64(lhs));
+                const double b = rhs.IsFloat64() ? rhs.AsF64() : static_cast<double>(GetI64(rhs));
+                cond = op == Op::JumpIfLocalLtFalse ? a < b : a <= b;
+            } else if (LPC_UNLIKELY(lhs.IsNil() || rhs.IsNil())) {
+                cond = false;
+            } else if (LPC_UNLIKELY(lhs.IsObjRef() || rhs.IsObjRef())) {
+                LPC_SYNC_SP();
+                std::string a = ResolveString(lhs);
+                std::string b = ResolveString(rhs);
+                LPC_LOAD_SP();
+                cond = op == Op::JumpIfLocalLtFalse ? a < b : a <= b;
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "compare op unsupported types";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            if (!cond) {
+                const std::int64_t next_ip = static_cast<std::int64_t>(fp->ip) + rel;
+#ifndef NDEBUG
+                if (LPC_UNLIKELY(next_ip < static_cast<std::int64_t>(curf.code_start) ||
+                    next_ip >= static_cast<std::int64_t>(curf.code_end))) {
+                    RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "jump target out of function range";
+                    if (catch_ctx.active) throw CatchSignal(); return e;
+                }
+#endif
+                fp->ip = static_cast<std::uint32_t>(next_ip);
+            }
+            fast_handled = true;
+        } else if (LPC_LIKELY(op == Op::Jump)) {
+#ifdef NDEBUG
+            const std::uint8_t *p = code + fp->ip;
+            fp->ip += 2;
+            std::int16_t rel = static_cast<std::int16_t>(
+                static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8));
+            fp->ip = static_cast<std::uint32_t>(static_cast<std::int64_t>(fp->ip) + rel);
+#else
+            if (LPC_UNLIKELY(fp->ip + 2 > code_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated Jump operand";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            const std::uint8_t *p = code + fp->ip; fp->ip += 2;
+            std::int16_t rel = static_cast<std::int16_t>(
+                static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8));
+            std::int64_t next_ip = static_cast<std::int64_t>(fp->ip) + rel;
+            if (LPC_UNLIKELY(next_ip < static_cast<std::int64_t>(curf.code_start) ||
+                next_ip >= static_cast<std::int64_t>(curf.code_end))) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "jump target out of function range";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            fp->ip = static_cast<std::uint32_t>(next_ip);
+#endif
+            fast_handled = true;
         } else if (LPC_LIKELY(op == Op::JumpIfFalse)) {
 #ifdef NDEBUG
             Value cond = LPC_POP();
@@ -624,6 +1104,40 @@ lpc_cg_load_sconst:
             std::int16_t rel = static_cast<std::int16_t>(
                 static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8));
             if (!IsTruthy(cond)) {
+                std::int64_t next_ip = static_cast<std::int64_t>(fp->ip) + rel;
+                if (LPC_UNLIKELY(next_ip < static_cast<std::int64_t>(curf.code_start) ||
+                    next_ip >= static_cast<std::int64_t>(curf.code_end))) {
+                    RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "jump target out of function range";
+                    if (catch_ctx.active) throw CatchSignal(); return e;
+                }
+                fp->ip = static_cast<std::uint32_t>(next_ip);
+            }
+#endif
+            fast_handled = true;
+        } else if (LPC_LIKELY(op == Op::JumpIfTrue)) {
+#ifdef NDEBUG
+            Value cond = LPC_POP();
+            const std::uint8_t *p = code + fp->ip;
+            fp->ip += 2;
+            std::int16_t rel = static_cast<std::int16_t>(
+                static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8));
+            if (IsTruthy(cond)) {
+                fp->ip = static_cast<std::uint32_t>(static_cast<std::int64_t>(fp->ip) + rel);
+            }
+#else
+            if (LPC_UNLIKELY(fp->ip + 2 > code_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated JumpIfTrue operand";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            if (LPC_UNLIKELY(LPC_STACK_SZ() <= fp->stack_top)) {
+                RuntimeError e; e.code = RuntimeErrorCode::StackUnderflow; e.message = "JumpIfTrue requires condition";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            Value cond = LPC_POP();
+            const std::uint8_t *p = code + fp->ip; fp->ip += 2;
+            std::int16_t rel = static_cast<std::int16_t>(
+                static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8));
+            if (IsTruthy(cond)) {
                 std::int64_t next_ip = static_cast<std::int64_t>(fp->ip) + rel;
                 if (LPC_UNLIKELY(next_ip < static_cast<std::int64_t>(curf.code_start) ||
                     next_ip >= static_cast<std::int64_t>(curf.code_end))) {
@@ -1261,9 +1775,10 @@ lpc_cg_fallback:
 
             std::string returning_module_name = std::move(fp->module_name);
             const std::uint64_t returning_version_id = fp->module_version_id;
+            const bool returning_version_pinned = fp->version_pinned;
             LPC_SYNC_SP();
             frames_.pop_back();
-            if (returning_version_id != 0) {
+            if (returning_version_pinned && returning_version_id != 0) {
                 RuntimeError unpin_err = hot_reload_manager_.UnpinVersion(returning_module_name, returning_version_id);
                 if (!unpin_err.ok()) {
                     if (catch_ctx.active) throw CatchSignal();
@@ -1554,6 +2069,7 @@ lpc_cg_fallback:
                 fp->object_id,
                 fp->module_version_id,
                 fp->module_name,
+                true,
                 0);
             if (!call_err.ok()) {
                 return call_err;
@@ -1646,6 +2162,7 @@ lpc_cg_fallback:
                 fp->object_id,
                 callee_version,
                 fp->module_name,
+                callee_version == fp->module_version_id,
                 closure_slot);
             if (!call_err.ok()) {
                 return call_err;
@@ -1757,6 +2274,7 @@ lpc_cg_fallback:
                     static_cast<std::uint32_t>(target_oid),
                     target_version_id,
                     *target_module_name,
+                    target_version_id == fp->module_version_id && *target_module_name == fp->module_name,
                     0);
                 if (!call_err.ok()) {
                     return call_err;
@@ -1824,6 +2342,7 @@ lpc_cg_fallback:
                 fp->object_id,
                 fp->module_version_id,
                 fp->module_name,
+                true,
                 0);
             if (!call_err.ok()) {
                 return call_err;
@@ -2000,12 +2519,12 @@ lpc_cg_fallback:
                 if (catch_ctx.active) throw CatchSignal();
                 return e;
             }
-            std::vector<Value> tmp(n, Value::Nil());
+            LpcArray arr(n, Value::Nil());
             for (int i = static_cast<int>(n) - 1; i >= 0; --i) {
-                tmp[static_cast<std::size_t>(i)] = LPC_POP();
+                arr.Set(static_cast<std::size_t>(i), LPC_POP());
             }
             LPC_SYNC_SP();
-            LPC_PUSH(AllocateArrayHandle(std::move(tmp)));
+            LPC_PUSH(AllocateArrayHandle(std::move(arr)));
             LPC_LOAD_SP();
             break;
         }
@@ -2049,17 +2568,18 @@ lpc_cg_fallback:
             Value key = LPC_POP();
             Value arrv = LPC_POP();
             if (arrv.IsObjRef() && key.Tag() == ValueTag::Int64) {
+                const std::int64_t key_i = GetI64(key);
                 if (IsStringObjRef(arrv)) {
                     LPC_SYNC_SP();
                     std::string s = ResolveObjRefStringOnly(arrv);
-                    if (GetI64(key) < 0 || static_cast<std::size_t>(GetI64(key)) >= s.size()) {
+                    if (key_i < 0 || static_cast<std::size_t>(key_i) >= s.size()) {
                         RuntimeError e;
                         e.code = RuntimeErrorCode::BoundsError;
                         e.message = "string index out of range";
                         if (catch_ctx.active) throw CatchSignal();
                         return e;
                     } else {
-                        std::string ch(1, s[static_cast<std::size_t>(GetI64(key))]);
+                        std::string ch(1, s[static_cast<std::size_t>(key_i)]);
                         LPC_PUSH(InternString(ch));
                     }
                     LPC_LOAD_SP();
@@ -2080,14 +2600,14 @@ lpc_cg_fallback:
                     return e;
                 }
                 LpcArray &arr = arrays_[arr_id - 1];
-                if (GetI64(key) < 0 || static_cast<std::size_t>(GetI64(key)) >= arr.Size()) {
+                if (key_i < 0 || static_cast<std::size_t>(key_i) >= arr.Size()) {
                     RuntimeError e;
                     e.code = RuntimeErrorCode::BoundsError;
                     e.message = "array index out of range";
                     if (catch_ctx.active) throw CatchSignal();
                     return e;
                 }
-                LPC_PUSH(arr.At(static_cast<std::size_t>(GetI64(key))));
+                LPC_PUSH(arr.At(static_cast<std::size_t>(key_i)));
             } else if (arrv.IsObjRef()) {
                 std::size_t map_id = DecodeMappingId(arrv);
                 if (map_id > 0 && map_id <= mappings_.size()) {

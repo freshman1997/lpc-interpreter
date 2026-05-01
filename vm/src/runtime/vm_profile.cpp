@@ -65,6 +65,20 @@ static const char *OpcodeName(std::uint8_t op) {
     case lpc::Op::ForeachStep2: return "ForeachStep2";
     case lpc::Op::Catch:        return "Catch";
     case lpc::Op::Switch:       return "Switch";
+    case lpc::Op::IncLocal:     return "IncLocal";
+    case lpc::Op::DecLocal:     return "DecLocal";
+    case lpc::Op::JumpIfLocalLtFalse:return "JumpIfLocalLtFalse";
+    case lpc::Op::AddLocalLocalToLocal:return "AddLocalLocalToLocal";
+    case lpc::Op::IncLocalAndJump:return "IncLocalAndJump";
+    case lpc::Op::JumpIfLocalIConstLteFalse:return "JumpIfLocalIConstLteFalse";
+    case lpc::Op::LoadLocalDec:return "LoadLocalDec";
+    case lpc::Op::LoadLocalSubIConst:return "LoadLocalSubIConst";
+    case lpc::Op::LoadLocalAddIConst:return "LoadLocalAddIConst";
+    case lpc::Op::AddLocalIndexIConstToLocal:return "AddLocalIndexIConstToLocal";
+    case lpc::Op::AddLocalIndexLocalToLocal:return "AddLocalIndexLocalToLocal";
+    case lpc::Op::AddLocalLocalIncJumpIfLocalLt:return "AddLocalLocalIncJumpIfLocalLt";
+    case lpc::Op::AddLocalIConstToLocal:return "AddLocalIConstToLocal";
+    case lpc::Op::SubLocalIConstToLocal:return "SubLocalIConstToLocal";
     default:                    return "Unknown";
     }
 }

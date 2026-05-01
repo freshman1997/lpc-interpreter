@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -80,18 +81,36 @@ static bool ReadU64(std::ifstream &in, std::uint64_t *v) {
     return true;
 }
 
-static std::string ResolveModulePath(const std::string &entry_module) {
-    const std::string cwd = get_cwd();
-    const std::string p1 = cwd + "/bin/" + entry_module + ".nb";
-    const std::string p2 = cwd + "/build/compiler/" + entry_module + ".nb";
-    const std::string p3 = cwd + "/../build/compiler/" + entry_module + ".nb";
+static bool IsRegularFile(const std::string &path) {
+    std::error_code ec;
+    return std::filesystem::is_regular_file(std::filesystem::path(path), ec);
+}
 
-    std::ifstream in1(p1.c_str(), std::ios::binary);
-    if (in1.good()) return p1;
-    std::ifstream in2(p2.c_str(), std::ios::binary);
-    if (in2.good()) return p2;
-    std::ifstream in3(p3.c_str(), std::ios::binary);
-    if (in3.good()) return p3;
+static std::string ResolveModulePath(const std::string &entry_module, const std::string &bytecode_root = "") {
+    if (entry_module.empty()) return "";
+    std::filesystem::path module_path(entry_module);
+    if (module_path.is_absolute() && IsRegularFile(module_path.string())) {
+        return module_path.string();
+    }
+
+    std::vector<std::filesystem::path> roots;
+    if (!bytecode_root.empty()) {
+        roots.push_back(bytecode_root);
+    }
+    const std::string cwd = get_cwd();
+    roots.push_back(std::filesystem::path(cwd) / "bin");
+    roots.push_back(std::filesystem::path(cwd) / "build" / "compiler");
+    roots.push_back(std::filesystem::path(cwd) / ".." / "build" / "compiler");
+
+    for (const auto &root : roots) {
+        std::filesystem::path candidate = root / entry_module;
+        if (candidate.extension().empty()) {
+            candidate.replace_extension(".nb");
+        }
+        if (IsRegularFile(candidate.string())) {
+            return candidate.string();
+        }
+    }
     return "";
 }
 
@@ -407,8 +426,8 @@ static vm::Vm &LiveHotReloadVm() {
     return live_vm;
 }
 
-RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile) {
-    const std::string next_path = ResolveModulePath(entry_module);
+RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile, const std::string &bytecode_root, bool debug_checks) {
+    const std::string next_path = ResolveModulePath(entry_module, bytecode_root);
     if (next_path.empty()) {
         return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
     }
@@ -421,6 +440,7 @@ RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile
 
     vm::Vm nextvm_engine;
     nextvm_engine.set_profile_enabled(enable_profile);
+    nextvm_engine.set_debug_checks_enabled(debug_checks);
     vm::RuntimeError e = nextvm_engine.LoadChunk(ch);
     if (!e.ok()) {
         return e;
@@ -440,8 +460,47 @@ RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile
     return RuntimeError::Ok();
 }
 
-RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_json, bool protocol_dap, bool enable_profile) {
-    const std::string next_path = ResolveModulePath(entry_module);
+RuntimeError RunEntryModuleAttachable(const std::string &entry_module, int dap_listen_port, bool enable_profile, const std::string &bytecode_root, bool debug_checks) {
+    const std::string next_path = ResolveModulePath(entry_module, bytecode_root);
+    if (next_path.empty()) {
+        return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
+    }
+
+    vm::Chunk ch;
+    RuntimeError s = LoadChunk(next_path, &ch);
+    if (!s.ok()) {
+        return s;
+    }
+
+    vm::Vm nextvm_engine;
+    nextvm_engine.set_profile_enabled(enable_profile);
+    nextvm_engine.set_debug_checks_enabled(debug_checks);
+    vm::RuntimeError e = nextvm_engine.LoadChunk(ch);
+    if (!e.ok()) {
+        return e;
+    }
+
+    if (!StartDapAttachServer(nextvm_engine, dap_listen_port)) {
+        return RuntimeError::Error(RuntimeErrorCode::InternalError, "failed to start DAP attach server");
+    }
+
+    e = nextvm_engine.RunEntry("main");
+    if (!e.ok()) {
+        return e;
+    }
+
+    vm::Value out = nextvm_engine.last_result();
+    if (out.IsInt64()) {
+        std::cout << "NextVM result: " << out.AsI64() << std::endl;
+    }
+    if (enable_profile) {
+        nextvm_engine.PrintProfile(std::cout);
+    }
+    return RuntimeError::Ok();
+}
+
+RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_json, bool protocol_dap, bool enable_profile, const std::string &bytecode_root) {
+    const std::string next_path = ResolveModulePath(entry_module, bytecode_root);
     if (next_path.empty()) {
         return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
     }
@@ -504,11 +563,11 @@ RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_
     return RuntimeError::Ok();
 }
 
-RuntimeError LoadModuleChunkForHotReload(const std::string &module_name, Chunk *out_chunk) {
+RuntimeError LoadModuleChunkForHotReload(const std::string &module_name, Chunk *out_chunk, const std::string &bytecode_root) {
     if (!out_chunk) {
         return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "output chunk pointer is null");
     }
-    const std::string path = ResolveModulePath(module_name);
+    const std::string path = ResolveModulePath(module_name, bytecode_root);
     if (path.empty()) {
         return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
     }

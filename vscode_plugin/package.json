@@ -2,7 +2,7 @@
   "name": "lpc-language-tools",
   "displayName": "LPC Language Tools",
   "description": "Language support, build tasks, and debugger integration for this LPC compiler and VM.",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "publisher": "lpc-interpreter",
   "engines": {
     "vscode": "^1.82.0"
@@ -16,11 +16,8 @@
   ],
   "activationEvents": [
     "onLanguage:lpc",
-    "onDebug:lpc",
-    "onCommand:lpc.compileCurrent",
-    "onCommand:lpc.runCurrent",
-    "onCommand:lpc.debugCurrent",
-    "onCommand:lpc.restartLsp"
+    "onDebugInitialSession",
+    "onDebugResolve:lpc"
   ],
   "main": "./src/extension.js",
   "contributes": {
@@ -48,6 +45,11 @@
       {
         "language": "lpc",
         "path": "./snippets/lpc.json"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "lpc"
       }
     ],
     "configuration": {
@@ -78,15 +80,6 @@
           },
           "description": "Include directories passed to the LPC compiler."
         },
-        "lpc.vmEngine": {
-          "type": "string",
-          "default": "legacy",
-          "enum": [
-            "legacy",
-            "next"
-          ],
-          "description": "VM engine used by the run command."
-        },
         "lpc.format.tabSize": {
           "type": "number",
           "default": 4,
@@ -116,6 +109,10 @@
       {
         "command": "lpc.debugCurrent",
         "title": "LPC: Debug Current File"
+      },
+      {
+        "command": "lpc.attach",
+        "title": "LPC: Attach to VM"
       },
       {
         "command": "lpc.restartLsp",
@@ -158,8 +155,27 @@
               },
               "stopOnEntry": {
                 "type": "boolean",
-                "default": true,
+                "default": false,
                 "description": "Stop at VM debugger entry before continuing."
+              }
+            }
+          },
+          "attach": {
+            "properties": {
+              "host": {
+                "type": "string",
+                "description": "Host where the running LPC VM DAP attach server is listening.",
+                "default": "127.0.0.1"
+              },
+              "port": {
+                "type": "number",
+                "description": "Port passed to lpc_vm run --dap-listen.",
+                "default": 4711
+              },
+              "stopOnAttach": {
+                "type": "boolean",
+                "default": false,
+                "description": "Pause the VM after attaching."
               }
             }
           }
@@ -170,7 +186,15 @@
             "request": "launch",
             "name": "Debug LPC file",
             "program": "${file}",
-            "stopOnEntry": true
+            "stopOnEntry": false
+          },
+          {
+            "type": "lpc",
+            "request": "attach",
+            "name": "Attach to LPC VM",
+            "host": "127.0.0.1",
+            "port": 4711,
+            "stopOnAttach": false
           }
         ]
       }

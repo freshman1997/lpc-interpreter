@@ -44,10 +44,14 @@ public:
     void InitFromVector(std::vector<Value> &&vec);
 
 private:
+    static constexpr std::size_t kInlineCapacity = 8;
     Value *data_ = nullptr;
     std::size_t size_ = 0;
     std::size_t capacity_ = 0;
+    Value inline_data_[kInlineCapacity]{};
 
+    bool UsingInlineData() const { return data_ == inline_data_; }
+    void ResetInlineData();
     void Grow(std::size_t min_cap);
 };
 

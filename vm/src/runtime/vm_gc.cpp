@@ -65,6 +65,11 @@ void Vm::MarkValue(const Value &v) {
                 MarkValue(cl.GetUpvalue(i));
             }
         }
+    } else if (v.IsBoxedInt()) {
+        std::size_t idx = v.BoxedIntIdx();
+        if (idx < boxed_int_marks_.size()) {
+            boxed_int_marks_[idx] = 1;
+        }
     }
 }
 
@@ -75,6 +80,7 @@ void Vm::MarkReachable() {
     string_marks_.assign(string_heap_.size(), 0);
     closure_marks_.assign(closures_.size(), 0);
     object_marks_.assign(objects_.size(), 0);
+    boxed_int_marks_.assign(boxed_ints_.size(), 0);
 
     for (auto &v : value_stack_) {
         MarkValue(v);
@@ -124,7 +130,6 @@ void Vm::Sweep() {
         if (string_marks_[i] == 0 && !string_heap_[i].empty()) {
             string_intern_.erase(string_heap_[i]);
             string_heap_[i].clear();
-            string_heap_[i].shrink_to_fit();
             string_free_.push_back(i);
         }
     }
@@ -138,13 +143,18 @@ void Vm::Sweep() {
     for (std::size_t i = 0; i < objects_.size(); ++i) {
         if (object_marks_[i] == 0 && (i >= object_slot_free_.size() || object_slot_free_[i] == 0)) {
             objects_[i].globals.clear();
-            objects_[i].globals.shrink_to_fit();
             objects_[i].module_name.clear();
-            objects_[i].module_name.shrink_to_fit();
             objects_[i].blueprint = nullptr;
             objects_[i].destroyed = true;
             object_free_.push_back(i);
             if (i < object_slot_free_.size()) object_slot_free_[i] = 1;
+        }
+    }
+    for (std::size_t i = 0; i < boxed_ints_.size(); ++i) {
+        if (boxed_int_marks_[i] == 0 && (i >= boxed_int_slot_free_.size() || boxed_int_slot_free_[i] == 0)) {
+            boxed_ints_[i] = 0;
+            boxed_int_free_.push_back(i);
+            if (i < boxed_int_slot_free_.size()) boxed_int_slot_free_[i] = 1;
         }
     }
 }

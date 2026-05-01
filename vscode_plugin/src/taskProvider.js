@@ -28,7 +28,7 @@ class LpcTaskProvider {
     const cfg = configFor(file);
     const definition = { type: "lpc", command, program: file };
     const commandLine = command === "run"
-      ? `${quoteShell(cfg.vmPath)} run --entry-file ${quoteShell(path.join(cfg.outRoot, "entry.txt"))} --vm ${quoteShell(cfg.vmEngine)}`
+      ? `${quoteShell(cfg.vmPath)} run --entry-file ${quoteShell(path.join(cfg.outRoot, "entry.txt"))} --bytecode-root ${quoteShell(cfg.outRoot)}`
       : `${quoteShell(cfg.compilerPath)} ${buildCompileArgs(file, cfg).map(quoteShell).join(" ")}`;
     const execution = new vscode.ShellExecution(commandLine, { cwd: cfg.workspace });
     const task = new vscode.Task(definition, vscode.TaskScope.Workspace, name, "lpc", execution, command === "compile" ? "$lpc-compiler" : []);

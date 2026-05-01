@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const cp = require("child_process");
 const { publishDiagnostics } = require("./diagnostics");
-const { configFor, resolveToolPath, compileFile, workspaceFolderFor } = require("./utils");
+const { buildCompileArgs, configFor, resolveToolPath, runProcess, workspaceFolderFor } = require("./utils");
 
 class LpcDebugAdapter {
   constructor(diagnostics) {
@@ -25,6 +25,11 @@ class LpcDebugAdapter {
     this.configurationDone = false;
     this.launchConfigured = false;
     this.protocolMode = false;
+    this.debugSession = undefined;
+  }
+
+  setDebugSession(session) {
+    this.debugSession = session;
   }
 
   handleMessage(message) {
@@ -33,9 +38,19 @@ class LpcDebugAdapter {
         this.respond(message, {
           supportsConfigurationDoneRequest: true,
           supportsConditionalBreakpoints: true,
-          supportsEvaluateForHovers: true
+          supportsEvaluateForHovers: true,
+          supportsBreakpointLocationsRequest: true,
+          supportsHitConditionalBreakpoints: true,
+          supportsLogMessageBreakpoints: true,
+          supportsFunctionBreakpoints: false
         });
         this.event("initialized");
+        break;
+      case "breakpointLocations":
+        this.breakpointLocations(message);
+        break;
+      case "source":
+        this.respond(message, { content: "" });
         break;
       case "launch":
         this.launchArgs = message.arguments || {};
@@ -132,14 +147,15 @@ class LpcDebugAdapter {
     if (this.launchArgs.vmPath) cfg.vmPath = resolveToolPath(resolveDebugPath(this.launchArgs.vmPath, cfg.workspace, program), "lpc_vm");
     if (this.launchArgs.outRoot) cfg.outRoot = resolveDebugPath(this.launchArgs.outRoot, cfg.workspace, program);
 
-    const compiled = await compileFile(program, this.diagnostics);
+    const compiled = await runProcess(cfg.compilerPath, buildCompileArgs(program, cfg), cfg.workspace, "LPC Compiler");
+    publishDiagnostics(compiled.stdout + compiled.stderr, this.diagnostics);
     if (compiled.code !== 0) {
       this.event("output", { category: "stderr", output: "LPC compilation failed.\n" });
       this.event("terminated");
       return;
     }
 
-    const args = ["debug", "--protocol", "json", "--entry-file", path.join(cfg.outRoot, "entry.txt")];
+    const args = ["debug", "--protocol", "json", "--entry-file", path.join(cfg.outRoot, "entry.txt"), "--bytecode-root", cfg.outRoot];
     if (this.launchArgs.entryModule) {
       args.splice(1, 0, this.launchArgs.entryModule);
     }
@@ -180,6 +196,27 @@ class LpcDebugAdapter {
       breakpoints: points.map((bp) => ({ verified: true, line: bp.line }))
     });
     this.applyBreakpoints();
+  }
+
+  breakpointLocations(request) {
+    const sourcePath = request.arguments.source.path;
+    if (!sourcePath || !sourcePath.endsWith(".lpc")) {
+      this.respond(request, { breakpoints: [] });
+      return;
+    }
+    try {
+      const content = fs.readFileSync(sourcePath, "utf-8");
+      const lines = content.split(/\r?\n/);
+      const breakpoints = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim().length > 0) {
+          breakpoints.push({ line: i + 1, column: 1 });
+        }
+      }
+      this.respond(request, { breakpoints });
+    } catch (e) {
+      this.respond(request, { breakpoints: [] });
+    }
   }
 
   applyBreakpoints() {

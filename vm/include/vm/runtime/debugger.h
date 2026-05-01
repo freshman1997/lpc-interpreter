@@ -57,9 +57,14 @@ struct DebugVariable {
     int variables_reference = 0;
 };
 
+struct SourceLocation {
+    std::string path;
+    int line = -1;
+};
+
 class Debugger {
 public:
-    Debugger() : active_(false), step_mode_(StepMode::None), step_depth_(0), next_bp_id_(1), break_on_exceptions_(false), last_break_exception_(false) {}
+    Debugger() : active_(false), step_mode_(StepMode::None), step_depth_(0), step_start_line_(-1), step_has_start_(false), next_bp_id_(1), break_on_exceptions_(false), last_break_exception_(false) {}
 
     void set_active(bool a) { active_ = a; }
     bool active() const { return active_; }
@@ -179,6 +184,22 @@ public:
     void SetStepMode(StepMode mode, std::uint32_t depth = 0) {
         step_mode_ = mode;
         step_depth_ = depth;
+        step_has_start_ = false;
+        step_start_path_.clear();
+        step_start_line_ = -1;
+    }
+
+    void SetSourceStepMode(StepMode mode, std::uint32_t depth,
+                           const Chunk &chunk, std::uint32_t pc) {
+        SetStepMode(mode, depth);
+        if (mode == StepMode::StepInto || mode == StepMode::StepOver) {
+            SourceLocation loc = FindSourceLocation(chunk, pc);
+            if (loc.line > 0) {
+                step_start_path_ = loc.path;
+                step_start_line_ = loc.line;
+                step_has_start_ = true;
+            }
+        }
     }
 
     StepMode step_mode() const { return step_mode_; }
@@ -202,9 +223,9 @@ public:
 
         switch (step_mode_) {
         case StepMode::StepInto:
-            return true;
+            return HasSourceLocationChanged(chunk, pc);
         case StepMode::StepOver:
-            return frame_depth <= step_depth_;
+            return frame_depth <= step_depth_ && HasSourceLocationChanged(chunk, pc);
         case StepMode::StepOut:
             return frame_depth < step_depth_;
         case StepMode::None:
@@ -217,10 +238,13 @@ public:
     void ClearStepOnBreak(std::uint32_t frame_depth) {
         if (step_mode_ == StepMode::StepInto) {
             step_mode_ = StepMode::None;
+            step_has_start_ = false;
         } else if (step_mode_ == StepMode::StepOver && frame_depth <= step_depth_) {
             step_mode_ = StepMode::None;
+            step_has_start_ = false;
         } else if (step_mode_ == StepMode::StepOut && frame_depth < step_depth_) {
             step_mode_ = StepMode::None;
+            step_has_start_ = false;
         }
     }
 
@@ -250,6 +274,20 @@ public:
             return chunk.debug_info.source_file;
         }
         return chunk.module_name;
+    }
+
+    SourceLocation FindSourceLocation(const Chunk &chunk, std::uint32_t pc) const {
+        SourceLocation loc;
+        loc.path = SourcePath(chunk);
+        loc.line = FindLine(chunk, pc);
+        for (const auto &sme : chunk.debug_info.source_map) {
+            if (sme.output_line == loc.line) {
+                loc.path = sme.source_path;
+                loc.line = sme.source_line;
+                break;
+            }
+        }
+        return loc;
     }
 
     void PrintLocation(const Chunk &chunk, std::uint32_t pc) const {
@@ -580,6 +618,18 @@ public:
                           const Chunk &chunk,
                           const std::vector<Frame> &frames,
                           const std::vector<Value> &stack) const {
+        Value out;
+        if (TryResolveVariable(name, chunk, frames, stack, &out)) {
+            return out;
+        }
+        return Value::Nil();
+    }
+
+    bool TryResolveVariable(const std::string &name,
+                            const Chunk &chunk,
+                            const std::vector<Frame> &frames,
+                            const std::vector<Value> &stack,
+                            Value *out) const {
         if (!frames.empty()) {
             const Frame &fr = frames.back();
             if (fr.func_id < chunk.functions.size()) {
@@ -593,16 +643,16 @@ public:
                         ? fdi->param_names[i] : ("arg" + std::to_string(i));
                     if (pname == name) {
                         std::uint32_t slot = fr.base + i;
-                        if (slot < stack.size()) return stack[slot];
-                        return Value::Nil();
+                        if (out) *out = slot < stack.size() ? stack[slot] : Value::Nil();
+                        return true;
                     }
                 }
                 if (fdi) {
                     for (int i = 0; i < static_cast<int>(fdi->local_names.size()); ++i) {
                         if (fdi->local_names[i] == name) {
                             std::uint32_t slot = fr.base + fproto.arity + i;
-                            if (slot < stack.size()) return stack[slot];
-                            return Value::Nil();
+                            if (out) *out = slot < stack.size() ? stack[slot] : Value::Nil();
+                            return true;
                         }
                     }
                 }
@@ -610,11 +660,11 @@ public:
         }
         for (std::size_t i = 0; i < chunk.global_names.size(); ++i) {
             if (chunk.global_names[i] == name) {
-                if (i < chunk.globals.size()) return chunk.globals[i];
-                return Value::Nil();
+                if (out) *out = i < chunk.globals.size() ? chunk.globals[i] : Value::Nil();
+                return true;
             }
         }
-        return Value::Nil();
+        return false;
     }
 
     static Value ResolveExpr(const std::string &expr,
@@ -746,9 +796,19 @@ public:
     }
 
 private:
+    bool HasSourceLocationChanged(const Chunk &chunk, std::uint32_t pc) const {
+        if (!step_has_start_) return true;
+        SourceLocation loc = FindSourceLocation(chunk, pc);
+        if (loc.line <= 0) return false;
+        return loc.line != step_start_line_ || loc.path != step_start_path_;
+    }
+
     bool active_;
     StepMode step_mode_;
     std::uint32_t step_depth_;
+    std::string step_start_path_;
+    int step_start_line_;
+    bool step_has_start_;
     int next_bp_id_;
     bool break_on_exceptions_;
     bool last_break_exception_;

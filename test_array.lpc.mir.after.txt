@@ -1,0 +1,49 @@
+module -- after-opt
+functions=1 globals=0
+fn main -- after-opt
+  nargs=0 locals=3 upvalues=0
+  [0] op=0 a=0 b=0 line=2
+  [1] op=0 a=1 b=0 line=2
+  [2] op=0 a=2 b=0 line=2
+  [3] op=0 a=3 b=0 line=2
+  [4] op=0 a=4 b=0 line=2
+  [5] op=35 a=5 b=0 line=2
+  [6] op=5 a=0 b=0 line=2
+  [7] op=4 a=0 b=0 line=3
+  [8] op=40 a=4 b=1 line=3
+  [9] op=40 a=2 b=1 line=3
+  [10] op=4 a=0 b=0 line=4
+  [11] op=0 a=6 b=0 line=4
+  [12] op=33 a=0 b=0 line=4
+  [13] op=40 a=2 b=1 line=4
+  [14] op=4 a=0 b=0 line=5
+  [15] op=0 a=8 b=0 line=5
+  [16] op=33 a=0 b=0 line=5
+  [17] op=40 a=2 b=1 line=5
+  [18] op=4 a=0 b=0 line=6
+  [19] op=0 a=10 b=0 line=6
+  [20] op=33 a=0 b=0 line=6
+  [21] op=40 a=2 b=1 line=6
+  [22] op=0 a=12 b=0 line=7
+  [23] op=5 a=1 b=0 line=7
+  [24] op=0 a=13 b=0 line=8
+  [25] op=5 a=2 b=0 line=8
+  [26] op=4 a=2 b=0 line=9
+  [27] op=4 a=0 b=0 line=9
+  [28] op=40 a=4 b=1 line=9
+  [29] op=27 a=0 b=0 line=9
+  [30] op=43 a=39 b=0 line=9
+  [31] op=4 a=1 b=0 line=10
+  [32] op=4 a=0 b=0 line=10
+  [33] op=4 a=2 b=0 line=10
+  [34] op=33 a=0 b=0 line=10
+  [35] op=8 a=0 b=0 line=10
+  [36] op=5 a=1 b=0 line=10
+  [37] op=25 a=2 b=0 line=11
+  [38] op=45 a=26 b=0 line=9
+  [39] op=4 a=1 b=0 line=13
+  [40] op=40 a=2 b=1 line=13
+  [41] op=46 a=0 b=0 line=0
+fn __init_globals -- init
+  nargs=0 locals=0 upvalues=0
+  [0] op=46 a=0 b=0 line=0

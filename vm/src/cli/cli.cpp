@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <cstdlib>
+#include <filesystem>
 
 #include "cli/cli.h"
 #include "vm/runtime/entry.h"
@@ -18,9 +19,9 @@ namespace cli {
 static void PrintUsage() {
     std::cout << "lpc <command> [args]\n";
     std::cout << "commands: run, debug, hot-reload, lsp\n";
-    std::cout << "run args: [entry-module] [--entry-file path] [--profile]\n";
-    std::cout << "debug args: [entry-module] [--entry-file path] [--protocol dap|json|repl] [--profile]\n";
-    std::cout << "hot-reload args: <module> [--check-only] [--dry-run] [--require-smoke func] [--status] [--allow-level L0|L1|L2] [--audit-log path]\n";
+    std::cout << "run args: [entry-module] [--entry-file path] [--bytecode-root path] [--dap-listen port] [--profile] [--release|--no-debug-checks]\n";
+    std::cout << "debug args: [entry-module] [--entry-file path] [--bytecode-root path] [--protocol dap|json|repl] [--profile]\n";
+    std::cout << "hot-reload args: <module> [--bytecode-root path] [--check-only] [--dry-run] [--require-smoke func] [--status] [--allow-level L0|L1|L2] [--audit-log path]\n";
     std::cout << "lsp: start LSP server on stdin/stdout\n";
 }
 
@@ -80,21 +81,40 @@ int Run(int argc, char **argv) {
 
     const std::string cmd = argv[1];
     std::string entry_file = get_cwd() + "/bin/entry.txt";
+    std::string bytecode_root;
     std::string entry_arg;
     std::string protocol;
+    int dap_listen_port = 0;
     bool enable_profile = false;
+    bool debug_checks = true;
     for (int i = 2; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--entry-file" && i + 1 < argc) {
             entry_file = argv[++i];
             continue;
         }
+        if (a == "--bytecode-root" && i + 1 < argc) {
+            bytecode_root = argv[++i];
+            continue;
+        }
         if (a == "--protocol" && i + 1 < argc) {
             protocol = argv[++i];
             continue;
         }
+        if (a == "--dap-listen" && i + 1 < argc) {
+            dap_listen_port = std::atoi(argv[++i]);
+            continue;
+        }
         if (a == "--profile") {
             enable_profile = true;
+            continue;
+        }
+        if (a == "--release" || a == "--no-debug-checks") {
+            debug_checks = false;
+            continue;
+        }
+        if (a == "--debug-checks") {
+            debug_checks = true;
             continue;
         }
         if (entry_arg.empty()) {
@@ -103,6 +123,9 @@ int Run(int argc, char **argv) {
     }
 
     if (cmd == "run") {
+        if (bytecode_root.empty() && !entry_file.empty()) {
+            bytecode_root = std::filesystem::path(entry_file).parent_path().string();
+        }
         std::string entry_module = entry_arg;
         if (entry_module.empty()) {
             std::string m = ReadEntryFile(entry_file);
@@ -114,7 +137,12 @@ int Run(int argc, char **argv) {
             std::cerr << "run: no entry module specified" << std::endl;
             return 1;
         }
-        lpc::vm::RuntimeError s = lpc::vm::RunEntryModule(entry_module, enable_profile);
+        if (dap_listen_port > 0) {
+            debug_checks = true;
+        }
+        lpc::vm::RuntimeError s = dap_listen_port > 0
+            ? lpc::vm::RunEntryModuleAttachable(entry_module, dap_listen_port, enable_profile, bytecode_root, debug_checks)
+            : lpc::vm::RunEntryModule(entry_module, enable_profile, bytecode_root, debug_checks);
         if (!s.ok()) {
             std::cerr << "run failed: " << s.message << std::endl;
             return 1;
@@ -123,6 +151,9 @@ int Run(int argc, char **argv) {
     }
 
     if (cmd == "debug") {
+        if (bytecode_root.empty() && !entry_file.empty()) {
+            bytecode_root = std::filesystem::path(entry_file).parent_path().string();
+        }
         std::string entry_module = entry_arg;
         if (entry_module.empty()) {
             std::string m = ReadEntryFile(entry_file);
@@ -149,7 +180,7 @@ int Run(int argc, char **argv) {
         if (protocol == "dap") {
             protocol_dap = true;
         }
-        lpc::vm::RuntimeError s = lpc::vm::RunEntryModuleDebug(entry_module, protocol_json, protocol_dap, enable_profile);
+        lpc::vm::RuntimeError s = lpc::vm::RunEntryModuleDebug(entry_module, protocol_json, protocol_dap, enable_profile, bytecode_root);
         if (!s.ok()) {
             if (s.code != lpc::vm::RuntimeErrorCode::InternalError) {
                 std::cerr << "debug failed: " << s.message << std::endl;
@@ -197,6 +228,10 @@ int Run(int argc, char **argv) {
                 audit_log_path = argv[++i];
                 continue;
             }
+            if (a == "--bytecode-root" && i + 1 < argc) {
+                bytecode_root = argv[++i];
+                continue;
+            }
             if (module_name.empty()) {
                 module_name = a;
             }
@@ -223,7 +258,7 @@ int Run(int argc, char **argv) {
         }
 
         lpc::vm::Chunk candidate;
-        lpc::vm::RuntimeError load_err = lpc::vm::LoadModuleChunkForHotReload(module_name, &candidate);
+        lpc::vm::RuntimeError load_err = lpc::vm::LoadModuleChunkForHotReload(module_name, &candidate, bytecode_root);
         if (!load_err.ok()) {
             std::cerr << "hot-reload load failed: " << load_err.message << std::endl;
             return 1;

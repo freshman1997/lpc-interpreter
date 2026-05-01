@@ -15,6 +15,7 @@ struct Frame {
     std::uint32_t closure_slot = 0;
     std::uint32_t object_id = 0;
     std::uint64_t module_version_id = 0;
+    bool version_pinned = false;
     std::string module_name;
 };
 

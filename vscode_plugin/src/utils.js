@@ -30,8 +30,7 @@ function configFor(file) {
     compilerPath: resolveToolPath(expand(cfg.get("compilerPath")), "lpc_compiler"),
     vmPath: resolveToolPath(expand(cfg.get("vmPath")), "lpc_vm"),
     outRoot: expand(cfg.get("outRoot")),
-    includeDirs: (cfg.get("includeDirs") || []).map(expand),
-    vmEngine: cfg.get("vmEngine") || "legacy"
+    includeDirs: (cfg.get("includeDirs") || []).map(expand)
   };
 }
 
@@ -66,13 +65,16 @@ function runVm(file) {
   const entryFile = path.join(cfg.outRoot, "entry.txt");
   const quoted = (value) => `"${String(value).replace(/"/g, '\\"')}"`;
   terminal.show();
-  terminal.sendText(`${quoted(cfg.vmPath)} run --entry-file ${quoted(entryFile)} --vm ${cfg.vmEngine}`);
+  terminal.sendText(`${quoted(cfg.vmPath)} run --entry-file ${quoted(entryFile)} --bytecode-root ${quoted(cfg.outRoot)}`);
 }
 
-function runProcess(command, args, cwd, channelName) {
+function runProcess(command, args, cwd, channelName, options) {
   return new Promise((resolve) => {
+    const showOutput = !options || options.show !== false;
     const output = vscode.window.createOutputChannel(channelName);
-    output.show(true);
+    if (showOutput) {
+      output.show(true);
+    }
     output.appendLine(`> ${command} ${args.join(" ")}`);
 
     const child = cp.spawn(command, args, { cwd, shell: false });

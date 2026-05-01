@@ -1,0 +1,11 @@
+{
+  "lpc.compilerPath": "${workspaceFolder}/build/compiler/lpc_compiler.exe",
+  "lpc.vmPath": "${workspaceFolder}/build/vm/lpc_vm.exe",
+  "lpc.lspPath": "${workspaceFolder}/build/lsp/lpc_lsp.exe",
+  "lpc.outRoot": "${workspaceFolder}/bin",
+  "lpc.includeDirs": [
+    "${workspaceFolder}"
+  ],
+  "lpc.format.tabSize": 4,
+  "lpc.format.insertSpaces": false
+}

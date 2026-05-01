@@ -8,7 +8,7 @@ namespace vm {
 
 static constexpr std::uint32_t kMaxCallFrames       = 4096;
 static constexpr std::uint32_t kMaxStackSize        = 131072;
-static constexpr std::size_t   kGcThresholdInit      = 1024;
+static constexpr std::size_t   kGcThresholdInit      = 8192;
 static constexpr std::size_t   kGcThresholdPadding    = 256;
 static constexpr std::size_t   kGcThresholdMultiplier = 2;
 static constexpr std::size_t   kFormatBufSize         = 64;

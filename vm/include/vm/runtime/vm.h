@@ -8,6 +8,7 @@
 #include <functional>
 #include <unordered_map>
 #include <ostream>
+#include <iostream>
 
 #include "vm/value/value.h"
 #include "vm/value/objref.h"
@@ -64,9 +65,20 @@ public:
 
     using DebugHook = std::function<RuntimeError(std::uint32_t pc)>;
     void set_debug_hook(DebugHook hook) { debug_hook_ = std::move(hook); }
+    using OutputHook = std::function<void(const std::string &)>;
+    void set_output_hook(OutputHook hook) { output_hook_ = std::move(hook); }
+    void EmitOutput(const std::string &text) {
+        if (output_hook_) {
+            output_hook_(text);
+        } else {
+            std::cout << text << std::flush;
+        }
+    }
 
     void set_profile_enabled(bool enabled) { profile_enabled_ = enabled; }
     bool profile_enabled() const { return profile_enabled_; }
+    void set_debug_checks_enabled(bool enabled) { debug_checks_enabled_ = enabled; }
+    bool debug_checks_enabled() const { return debug_checks_enabled_; }
     void BeginProfile() {
         if (!profile_enabled_) return;
         instruction_count_ = 0;
@@ -104,8 +116,16 @@ public:
     Value MakeI64(std::int64_t i) {
         if (i >= Value::kIntMinInline && i <= Value::kIntMaxInline)
             return Value::FromI64(i);
+        if (!boxed_int_free_.empty()) {
+            std::size_t idx = boxed_int_free_.back();
+            boxed_int_free_.pop_back();
+            boxed_ints_[idx] = i;
+            boxed_int_slot_free_[idx] = 0;
+            return Value::FromBoxedInt(idx);
+        }
         std::size_t idx = boxed_ints_.size();
         boxed_ints_.push_back(i);
+        boxed_int_slot_free_.push_back(0);
         return Value::FromBoxedInt(idx);
     }
 
@@ -113,7 +133,10 @@ public:
         if (v.Tag() == ValueTag::Int64) return v.AsI64();
         if (v.Tag() == ValueTag::BoxedInt) {
             auto idx = v.BoxedIntIdx();
-            return idx < boxed_ints_.size() ? boxed_ints_[idx] : 0;
+            return idx < boxed_ints_.size() &&
+                   (idx >= boxed_int_slot_free_.size() || boxed_int_slot_free_[idx] == 0)
+                       ? boxed_ints_[idx]
+                       : 0;
         }
         return 0;
     }
@@ -164,6 +187,7 @@ public:
     int FindGlobalInModule(const std::string &module_name, std::uint64_t version_id, const std::string &global_name) const;
 
     Value AllocateArrayHandle(std::vector<Value> &&elements);
+    Value AllocateArrayHandle(LpcArray &&array);
     Value AllocateMappingHandle(Mapping &&mapping);
     Value AllocateClassHandle(std::uint16_t class_idx);
     Value AllocateClosureHandle(LpcClosure &&closure);
@@ -235,27 +259,32 @@ private:
     std::vector<uint8_t> string_marks_;
     std::vector<uint8_t> closure_marks_;
     std::vector<uint8_t> object_marks_;
+    std::vector<uint8_t> boxed_int_marks_;
     std::vector<std::size_t> array_free_;
     std::vector<std::size_t> mapping_free_;
     std::vector<std::size_t> class_free_;
     std::vector<std::size_t> string_free_;
     std::vector<std::size_t> closure_free_;
     std::vector<std::size_t> object_free_;
+    std::vector<std::size_t> boxed_int_free_;
     std::vector<uint8_t> array_slot_free_;
     std::vector<uint8_t> mapping_slot_free_;
     std::vector<uint8_t> class_slot_free_;
     std::vector<uint8_t> closure_slot_free_;
     std::vector<uint8_t> object_slot_free_;
+    std::vector<uint8_t> boxed_int_slot_free_;
     std::size_t alloc_count_ = 0;
     std::size_t gc_threshold_ = kGcThresholdInit;
     std::unordered_map<std::string, Value> string_intern_;
     bool profile_enabled_ = false;
+    bool debug_checks_enabled_ = true;
     std::uint64_t instruction_count_ = 0;
     std::array<std::uint64_t, 256> opcode_counts_{};
     std::chrono::steady_clock::time_point profile_start_{};
     std::chrono::steady_clock::time_point profile_end_{};
     Debugger debugger_;
     DebugHook debug_hook_;
+    OutputHook output_hook_;
     HotReloadManager hot_reload_manager_;
 
     RuntimeError RunInitCode();

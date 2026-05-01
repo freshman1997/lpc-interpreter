@@ -36,9 +36,10 @@ function startLsp(context) {
     clientOptions
   );
 
-  context.subscriptions.push(client.start());
+  const startPromise = client.start();
+  context.subscriptions.push({ dispose: () => stopLsp() });
 
-  client.onReady().then(() => {
+  startPromise.then(() => {
     vscode.window.setStatusBarMessage("LPC LSP ready", 3000);
   }).catch((err) => {
     vscode.window.showWarningMessage(`LPC LSP failed to start: ${err.message}`);
@@ -47,7 +48,9 @@ function startLsp(context) {
 
 function stopLsp() {
   if (client) {
-    return client.stop();
+    const stopping = client.stop();
+    client = null;
+    return stopping;
   }
   return Promise.resolve();
 }

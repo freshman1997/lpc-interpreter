@@ -40,7 +40,7 @@ int main(int argc, char **argv)
 		cwd = buf;
 		free(buf);
 	}
-	system("chcp 65001");
+	system("chcp 65001 > nul");
 	
 #else
 	char buf[PATHNAME_MAX];
@@ -66,22 +66,8 @@ int main(int argc, char **argv)
 		}
 		return lpc::cli::Run(argc, argv);
 	}
-    int64_t seed = time(NULL);
-	srand(static_cast<unsigned>(seed));
-	os::init_seed(seed);
-	cout << "random value: " << os::random() << endl;
-
-	time_t start = clock();
-
-	lpc::vm::RuntimeError s = lpc::vm::RunEntryModule("");
-	if (!s.ok()) {
-		cerr << "run failed: " << s.message << endl;
-	}
-
+    
 	cout << "Exited normally.\n";
-	time_t end = clock();
-	cout << "spent: " << (end - start) << endl;
-	cout.flush();
 	
 	return 0;
 }

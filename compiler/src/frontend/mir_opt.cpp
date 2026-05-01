@@ -18,7 +18,8 @@ static bool IsBinaryCmp(MirOp op) {
 }
 
 static bool IsUnary(MirOp op) {
-    return op == MirOp::Neg || op == MirOp::BitNot || op == MirOp::LogicNot;
+    return op == MirOp::Neg || op == MirOp::BitNot || op == MirOp::LogicNot ||
+        op == MirOp::Inc || op == MirOp::Dec;
 }
 
 static MirOp InvertCmp(MirOp op) {
@@ -119,6 +120,13 @@ static bool RewriteLoadConst(MirFunction *f, int pc, std::int64_t value) {
     f->code[pc].a = idx;
     f->code[pc].b = 0;
     return true;
+}
+
+static void RewriteNoOpJump(std::vector<MirInstr> &code, int pc) {
+    if (pc < 0 || pc >= static_cast<int>(code.size())) return;
+    code[pc].op = MirOp::Jump;
+    code[pc].a = pc + 1;
+    code[pc].b = 0;
 }
 
 static bool IsPowerOfTwo(std::int64_t v) {
@@ -356,15 +364,17 @@ static bool UnaryConstantFold(MirFunction *f) {
             std::int64_t result = 0;
             if (uop == MirOp::Neg) result = -v;
             else if (uop == MirOp::BitNot) result = ~v;
+            else if (uop == MirOp::Inc) result = v + 1;
+            else if (uop == MirOp::Dec) result = v - 1;
             else result = (v == 0) ? 1 : 0;
             code[i - 1].a = AddIConst(f, result);
-            code[i].op = MirOp::Pop; code[i].a = 0; code[i].b = 0;
+            RewriteNoOpJump(code, i);
             changed = true;
         } else if (code[i - 1].op == MirOp::LoadFConst && uop == MirOp::Neg) {
             const int fi = code[i - 1].a;
             if (fi < 0 || fi >= static_cast<int>(f->fconsts.size())) continue;
             code[i - 1].a = AddFConst(f, -f->fconsts[fi]);
-            code[i].op = MirOp::Pop; code[i].a = 0; code[i].b = 0;
+            RewriteNoOpJump(code, i);
             changed = true;
         }
     }
@@ -458,8 +468,8 @@ static bool DoubleNegationElim(MirFunction *f) {
         if ((prev == MirOp::Neg && cur == MirOp::Neg) ||
             (prev == MirOp::BitNot && cur == MirOp::BitNot) ||
             (prev == MirOp::LogicNot && cur == MirOp::LogicNot)) {
-            code[i - 1].op = MirOp::Pop; code[i - 1].a = 0; code[i - 1].b = 0;
-            code[i].op = MirOp::Pop; code[i].a = 0; code[i].b = 0;
+            RewriteNoOpJump(code, i - 1);
+            RewriteNoOpJump(code, i);
             changed = true;
         }
     }
@@ -483,7 +493,7 @@ static bool CompareLogicNotMerge(MirFunction *f) {
         if (code[i].op != MirOp::LogicNot) continue;
 
         code[i - 1].op = InvertCmp(code[i - 1].op);
-        code[i].op = MirOp::Pop; code[i].a = 0; code[i].b = 0;
+        RewriteNoOpJump(code, i);
         changed = true;
     }
 
@@ -623,7 +633,7 @@ static bool ConditionalJumpMerge(MirFunction *f) {
                 int true_target = b.a;
                 a.op = MirOp::JumpIfTrue;
                 a.a = true_target;
-                b.op = MirOp::Pop; b.a = 0; b.b = 0;
+                b.op = MirOp::Jump; b.a = false_target; b.b = 0;
                 changed = true;
             }
         } else if (a.op == MirOp::JumpIfTrue && b.op == MirOp::Jump) {
@@ -632,7 +642,7 @@ static bool ConditionalJumpMerge(MirFunction *f) {
                 int false_target = b.a;
                 a.op = MirOp::JumpIfFalse;
                 a.a = false_target;
-                b.op = MirOp::Pop; b.a = 0; b.b = 0;
+                b.op = MirOp::Jump; b.a = true_target; b.b = 0;
                 changed = true;
             }
         }
@@ -807,6 +817,77 @@ static bool CompactWithKeepMask(MirFunction *f, const std::vector<unsigned char>
     return true;
 }
 
+static bool IncDecPeephole(MirFunction *f) {
+    if (!f || f->code.size() < 2) return false;
+    auto &code = f->code;
+    const int n = static_cast<int>(code.size());
+    std::vector<unsigned char> keep(static_cast<size_t>(n), 1);
+    std::vector<unsigned char> is_target;
+    BuildTargetMap(code, is_target);
+
+    bool changed = false;
+    for (int i = 0; i + 1 < n; ++i) {
+        if (is_target[i] || is_target[i + 1]) continue;
+        if (code[i].op != MirOp::LoadConst) continue;
+        const int ci = code[i].a;
+        if (ci < 0 || ci >= static_cast<int>(f->iconsts.size())) continue;
+        if (f->iconsts[ci] != 1) continue;
+
+        if (code[i + 1].op == MirOp::Add) {
+            code[i].op = MirOp::Inc;
+            code[i].a = 0;
+            code[i].b = 0;
+            keep[i + 1] = 0;
+            changed = true;
+        } else if (code[i + 1].op == MirOp::Sub) {
+            code[i].op = MirOp::Dec;
+            code[i].a = 0;
+            code[i].b = 0;
+            keep[i + 1] = 0;
+            changed = true;
+        }
+    }
+
+    if (!changed) return false;
+    CompactWithKeepMask(f, keep);
+    return true;
+}
+
+static bool LocalIncDecPeephole(MirFunction *f) {
+    if (!f || f->code.size() < 3) return false;
+    auto &code = f->code;
+    const int n = static_cast<int>(code.size());
+    std::vector<unsigned char> keep(static_cast<size_t>(n), 1);
+    std::vector<unsigned char> is_target;
+    BuildTargetMap(code, is_target);
+
+    bool changed = false;
+    for (int i = 0; i + 2 < n; ++i) {
+        if (is_target[i] || is_target[i + 1] || is_target[i + 2]) continue;
+        if (code[i].op != MirOp::LoadLocal) continue;
+        if (code[i + 2].op != MirOp::StoreLocal) continue;
+        if (code[i].a != code[i + 2].a) continue;
+
+        if (code[i + 1].op == MirOp::Inc) {
+            code[i].op = MirOp::IncLocal;
+            code[i].b = 0;
+            keep[i + 1] = 0;
+            keep[i + 2] = 0;
+            changed = true;
+        } else if (code[i + 1].op == MirOp::Dec) {
+            code[i].op = MirOp::DecLocal;
+            code[i].b = 0;
+            keep[i + 1] = 0;
+            keep[i + 2] = 0;
+            changed = true;
+        }
+    }
+
+    if (!changed) return false;
+    CompactWithKeepMask(f, keep);
+    return true;
+}
+
 static bool PeepholeAndBranchSimplify(MirFunction *f) {
     if (!f || f->code.empty()) return false;
     bool changed = false;
@@ -865,6 +946,19 @@ static bool PeepholeAndBranchSimplify(MirFunction *f) {
         }
     }
 
+    for (int i = 0; i + 2 < n; ++i) {
+        MirInstr &a = f->code[i];
+        MirInstr &b = f->code[i + 1];
+        MirInstr &c = f->code[i + 2];
+        if (is_target[i] || is_target[i + 1] || is_target[i + 2]) continue;
+        if (a.op != MirOp::Dup || c.op != MirOp::Pop) continue;
+        if (b.op == MirOp::StoreLocal || b.op == MirOp::StoreGlobal || b.op == MirOp::StoreUpvalue) {
+            keep[i] = 0;
+            keep[i + 2] = 0;
+            changed = true;
+        }
+    }
+
     if (!changed) return false;
     CompactWithKeepMask(f, keep);
     return true;
@@ -883,6 +977,8 @@ static void OptimizeFunction(MirFunction *f) {
         changed |= StringConstantFold(f);
         changed |= UnaryConstantFold(f);
         changed |= StrengthReduce(f);
+        changed |= IncDecPeephole(f);
+        changed |= LocalIncDecPeephole(f);
         changed |= FloatAlgebraicSimplify(f);
         changed |= DoubleNegationElim(f);
         changed |= CompareLogicNotMerge(f);
@@ -922,6 +1018,8 @@ static void OptimizeFunctionWithStats(MirFunction *f, MirOptStats *st) {
         run(StringConstantFold,         st->constfold_changed,  st->constfold_instr_delta);
         run(UnaryConstantFold,          st->constfold_changed,  st->constfold_instr_delta);
         run(StrengthReduce,             st->constfold_changed,  st->constfold_instr_delta);
+        run(IncDecPeephole,             st->peephole_changed,   st->peephole_instr_delta);
+        run(LocalIncDecPeephole,        st->peephole_changed,   st->peephole_instr_delta);
         run(FloatAlgebraicSimplify,     st->constfold_changed,  st->constfold_instr_delta);
         run(DoubleNegationElim,         st->constfold_changed,  st->constfold_instr_delta);
         run(CompareLogicNotMerge,       st->constfold_changed,  st->constfold_instr_delta);

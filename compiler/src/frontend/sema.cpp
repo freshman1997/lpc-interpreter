@@ -350,7 +350,13 @@ void Sema::VisitStmt(const Stmt *stmt) {
     case NodeKind::VarDecl: {
         const VarDeclStmt *vd = static_cast<const VarDeclStmt *>(stmt);
         const std::string declared_type = vd->declared_type.empty() ? "mixed" : vd->declared_type;
-        Declare(vd->name, declared_type);
+        Declare(
+            vd->name,
+            declared_type,
+            "variable",
+            vd->span,
+            current_function_ ? current_function_->name : "",
+            current_function_ ? ("local " + vd->name) : (declared_type + " " + vd->name));
         if (current_function_) {
             model_.functions[current_function_].locals.push_back(vd->name);
         } else if (!in_lambda_) {
@@ -381,7 +387,7 @@ void Sema::VisitStmt(const Stmt *stmt) {
     }
     case NodeKind::ClassDecl: {
         const ClassDecl *cl = static_cast<const ClassDecl *>(stmt);
-        Declare(cl->name);
+        Declare(cl->name, "mixed", "class", cl->span, "", "class " + cl->name);
         break;
     }
     case NodeKind::InheritDecl: {
@@ -471,12 +477,16 @@ void Sema::VisitStmt(const Stmt *stmt) {
         ++loop_depth_;
         if (!fe->first_name.empty()) {
             Declare(fe->first_name);
+            model_.symbols.back().container_name = current_function_ ? current_function_->name : "";
+            model_.symbols.back().detail = "foreach " + fe->first_name;
             if (current_function_) {
                 model_.functions[current_function_].locals.push_back(fe->first_name);
             }
         }
         if (!fe->second_name.empty()) {
             Declare(fe->second_name);
+            model_.symbols.back().container_name = current_function_ ? current_function_->name : "";
+            model_.symbols.back().detail = "foreach " + fe->second_name;
             if (current_function_) {
                 model_.functions[current_function_].locals.push_back(fe->second_name);
             }
@@ -555,7 +565,11 @@ void Sema::VisitExpr(const Expr *expr) {
         if (!Resolve(id->name)) {
             diag_->Add(DiagnosticLevel::Error, expr->span, "Undefined identifier: " + id->name);
         }
-        model_.resolved_symbol[expr] = id->name;
+        std::string symbol_id = ResolveSymbolId(id->name);
+        model_.resolved_symbol[expr] = symbol_id.empty() ? id->name : symbol_id;
+        if (!symbol_id.empty()) {
+            model_.references.push_back({id->name, symbol_id, expr->span});
+        }
         model_.expr_type[expr] = ResolveType(id->name);
         break;
     }
@@ -717,7 +731,13 @@ void Sema::ExitScope() {
     }
 }
 
-void Sema::Declare(const std::string &name, const std::string &declared_type) {
+std::string Sema::Declare(
+    const std::string &name,
+    const std::string &declared_type,
+    const std::string &kind,
+    const SourceSpan &span,
+    const std::string &container_name,
+    const std::string &detail) {
     if (scopes_.empty()) {
         EnterScope();
     }
@@ -727,15 +747,27 @@ void Sema::Declare(const std::string &name, const std::string &declared_type) {
     scopes_.back().names[name] = true;
     scopes_.back().types[name] = declared_type;
     scopes_.back().local_index[name] = static_cast<int>(scopes_.back().local_index.size());
+    std::string symbol_id = kind + ":" + name + ":" + std::to_string(span.line) + ":" + std::to_string(span.column);
+    if (!container_name.empty()) {
+        symbol_id = container_name + "#" + symbol_id;
+    }
+    scopes_.back().symbol_id[name] = symbol_id;
+    model_.symbols.push_back({name, kind, symbol_id, span, container_name, detail.empty() ? (kind + " " + name) : detail});
+    return symbol_id;
+}
+
+std::string Sema::ResolveSymbolId(const std::string &name) const {
+    for (int i = static_cast<int>(scopes_.size()) - 1; i >= 0; --i) {
+        auto it = scopes_[i].symbol_id.find(name);
+        if (it != scopes_[i].symbol_id.end()) {
+            return it->second;
+        }
+    }
+    return "";
 }
 
 bool Sema::Resolve(const std::string &name) const {
-    for (int i = static_cast<int>(scopes_.size()) - 1; i >= 0; --i) {
-        if (scopes_[i].names.count(name)) {
-            return true;
-        }
-    }
-    return IsEfun(name);
+    return !ResolveSymbolId(name).empty() || IsEfun(name);
 }
 
 static const char *kEfunNames[] = {
@@ -825,7 +857,7 @@ void Sema::AnalyzeFunction(const FunctionDecl *func) {
     info.params = func->params;
     model_.functions[func] = info;
 
-    Declare(func->name);
+    Declare(func->name, "mixed", "function", func->span, "", func->name + "()");
 
     const FunctionDecl *prev = current_function_;
     current_function_ = func;
@@ -839,7 +871,11 @@ void Sema::AnalyzeFunction(const FunctionDecl *func) {
         if (pi >= 0 && pi < static_cast<int>(func->param_types.size()) && !func->param_types[pi].empty()) {
             ptype = func->param_types[pi];
         }
-        Declare(param, ptype);
+        SourceSpan param_span;
+        if (pi >= 0 && pi < static_cast<int>(func->param_spans.size())) {
+            param_span = func->param_spans[pi];
+        }
+        Declare(param, ptype, "variable", param_span, func->name, "param " + param);
     }
     for (const auto &st : func->body) {
         VisitStmt(st.get());
@@ -939,10 +975,10 @@ void Sema::AnalyzeLambda(const LambdaExpr *lambda, const FunctionDecl *owner) {
 
     EnterScope();
     for (const auto &param : lambda->params) {
-        Declare(param, "mixed");
+        Declare(param, "mixed", "variable", SourceSpan(), "<lambda>", "param " + param);
     }
     for (const auto &local_name : info.locals) {
-        Declare(local_name, "mixed");
+        Declare(local_name, "mixed", "variable", SourceSpan(), "<lambda>", "local " + local_name);
     }
     for (const auto &st : lambda->body) {
         VisitStmt(st.get());

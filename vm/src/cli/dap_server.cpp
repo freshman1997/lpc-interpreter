@@ -11,12 +11,45 @@
 #include <thread>
 #include <atomic>
 #include <functional>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <algorithm>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <fcntl.h>
+#include <io.h>
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 #include "vm/runtime/vm.h"
 #include "vm/runtime/debugger.h"
 
 namespace lpc {
 namespace vm {
+
+#ifdef _WIN32
+using DapSocket = SOCKET;
+static constexpr DapSocket kInvalidDapSocket = INVALID_SOCKET;
+static void CloseDapSocket(DapSocket fd) { closesocket(fd); }
+static bool InitDapSockets() {
+    static bool initialized = false;
+    if (initialized) return true;
+    WSADATA wsa;
+    initialized = WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+    return initialized;
+}
+#else
+using DapSocket = int;
+static constexpr DapSocket kInvalidDapSocket = -1;
+static void CloseDapSocket(DapSocket fd) { close(fd); }
+static bool InitDapSockets() { return true; }
+#endif
 
 static std::string EscapeJson(const std::string &s) {
     std::string out;
@@ -40,6 +73,18 @@ static std::string EscapeJson(const std::string &s) {
         }
     }
     return out;
+}
+
+static void DapLog(const std::string &message) {
+    std::error_code ec;
+    std::filesystem::path dir = std::filesystem::current_path(ec) / "log";
+    if (!ec) {
+        std::filesystem::create_directories(dir, ec);
+        std::ofstream out((dir / "lpc_dap_debug.log").string(), std::ios::app);
+        if (out.is_open()) {
+            out << message << std::endl;
+        }
+    }
 }
 
 static std::string ExtractString(const std::string &json, const std::string &key) {
@@ -169,12 +214,28 @@ struct SourceBreakpoints {
 
 struct FrameView {
     DebugFrame frame;
+    std::string source_path;
     std::string normalized_source_path;
     int source_ref = 0;
 };
 
 static std::string NormalizePath(const std::string &p) {
     std::string result = p;
+    if (!result.empty()) {
+        std::error_code ec;
+        std::filesystem::path path(result);
+        if (path.is_relative()) {
+            path = std::filesystem::current_path(ec) / path;
+        }
+        if (!ec) {
+            std::filesystem::path canonical = std::filesystem::weakly_canonical(path, ec);
+            if (!ec) {
+                result = canonical.string();
+            } else {
+                result = path.lexically_normal().string();
+            }
+        }
+    }
     for (auto &c : result) {
         if (c == '\\') c = '/';
     }
@@ -184,9 +245,38 @@ static std::string NormalizePath(const std::string &p) {
     return result;
 }
 
+static std::string ClientSourcePath(const std::string &p) {
+    if (p.empty()) return "";
+
+    std::error_code ec;
+    std::filesystem::path path(p);
+    if (path.is_relative()) {
+        path = std::filesystem::current_path(ec) / path;
+    }
+    if (!ec) {
+        std::filesystem::path canonical = std::filesystem::weakly_canonical(path, ec);
+        if (!ec) {
+            return canonical.string();
+        }
+        return path.lexically_normal().string();
+    }
+    return p;
+}
+
+static std::string ClientSourceName(const std::string &p) {
+    if (p.empty()) return "";
+    std::filesystem::path path(p);
+    std::string name = path.filename().string();
+    return name.empty() ? p : name;
+}
+
 class DapServer {
 public:
-    DapServer() : seq_(1), running_(true), vm_paused_(false), config_done_(false), launched_(false), vm_finished_(false), vm_(nullptr), next_var_ref_(100), break_on_exceptions_(false) {}
+    DapServer() : DapServer(kInvalidDapSocket, false) {}
+    DapServer(DapSocket io_socket, bool attach_mode)
+        : vm_(nullptr), seq_(1), running_(true), vm_paused_(false), config_done_(false),
+          launched_(false), vm_finished_(false), attach_mode_(attach_mode),
+          io_socket_(io_socket), next_var_ref_(100), break_on_exceptions_(false) {}
 
     void Run() {
         while (running_) {
@@ -197,10 +287,20 @@ public:
             }
             HandleMessage(content);
         }
+        vm_paused_ = false;
+        resume_cv_.notify_all();
         if (vm_thread_.joinable()) {
-            vm_paused_ = false;
-            resume_cv_.notify_all();
             vm_thread_.join();
+        }
+        if (attach_mode_ && vm_) {
+            vm_->set_debug_hook({});
+            vm_->debugger().set_active(false);
+        }
+        if (vm_) {
+            vm_->set_output_hook({});
+        }
+        while (active_breaks_.load() > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 
@@ -210,12 +310,15 @@ public:
         vm_thread_ = std::thread([this]() {
             Vm *vm = vm_;
             if (!vm) return;
+            DapLog("[vm] RunEntry(main) begin");
             RuntimeError e = vm->RunEntry("main");
             std::lock_guard<std::mutex> lock(state_mutex_);
             vm_finished_ = true;
             if (e.ok()) {
+                DapLog("[vm] terminated normally");
                 SendEvent("terminated", "{}");
             } else {
+                DapLog("[vm] stopped with error: " + e.message);
                 std::string body = "{\"reason\":\"exception\",\"threadId\":1,\"description\":\"" + EscapeJson(e.message) + "\"}";
                 SendEvent("stopped", body);
             }
@@ -223,6 +326,12 @@ public:
     }
 
     RuntimeError OnVmBreak(std::uint32_t pc) {
+        active_breaks_.fetch_add(1);
+        struct BreakGuard {
+            DapServer *server;
+            ~BreakGuard() { server->active_breaks_.fetch_sub(1); }
+        } break_guard{this};
+
         Debugger &dbg = vm_->debugger();
         const Chunk &chunk = vm_->chunk();
         const std::vector<Frame> &frames = vm_->frames();
@@ -241,8 +350,9 @@ public:
                 FrameView view;
                 view.frame = bt[i];
                 std::string src_path = bt[i].source_path.empty() ? source_path : bt[i].source_path;
+                view.source_path = ClientSourcePath(src_path);
                 view.normalized_source_path = NormalizePath(src_path);
-                if (!view.normalized_source_path.empty()) {
+                if (!view.source_path.empty() && !std::filesystem::exists(view.source_path)) {
                     view.source_ref = static_cast<int>(i) + 100;
                 }
                 cached_frames_.push_back(std::move(view));
@@ -264,13 +374,19 @@ public:
                 + ",\"column\":1"
                 + ",\"moduleName\":\"" + EscapeJson(f.module_name) + "\""
                 + ",\"moduleVersion\":" + std::to_string(f.module_version_id)
-                + ",\"source\":{\"name\":\"" + EscapeJson(view.normalized_source_path) + "\""
-                + ",\"path\":\"" + EscapeJson(view.normalized_source_path) + "\""
+                + ",\"source\":{\"name\":\"" + EscapeJson(ClientSourceName(view.source_path)) + "\""
+                + ",\"path\":\"" + EscapeJson(view.source_path) + "\""
                 + ",\"sourceReference\":" + std::to_string(view.source_ref) + "}}";
         }
         frames_json += "]";
 
         int top_line = bt.empty() ? 1 : bt[0].line;
+        if (!bt.empty()) {
+            DapLog("[stop] source=" + bt[0].source_path
+                + " source_line=" + std::to_string(bt[0].source_line)
+                + " output_line=" + std::to_string(bt[0].line)
+                + " pc=" + std::to_string(bt[0].pc));
+        }
 
         bool is_exception = dbg.last_break_exception();
         if (is_exception) dbg.set_last_break_exception(false);
@@ -319,6 +435,9 @@ private:
     bool config_done_;
     bool launched_;
     bool vm_finished_;
+    bool attach_mode_;
+    DapSocket io_socket_;
+    std::atomic<int> active_breaks_{0};
     std::mutex state_mutex_;
     std::mutex send_mutex_;
     std::mutex resume_mutex_;
@@ -338,10 +457,53 @@ private:
     bool break_on_exceptions_;
     std::uint64_t last_active_version_ = 0;
 
+    bool ReadByte(char *out) {
+        if (io_socket_ == kInvalidDapSocket) {
+            return static_cast<bool>(std::cin.get(*out));
+        }
+        int n = recv(io_socket_, out, 1, 0);
+        return n == 1;
+    }
+
+    bool ReadBytes(char *out, int len) {
+        if (io_socket_ == kInvalidDapSocket) {
+            std::cin.read(out, len);
+            return std::cin.gcount() == len;
+        }
+        int total = 0;
+        while (total < len) {
+            int n = recv(io_socket_, out + total, len - total, 0);
+            if (n <= 0) return false;
+            total += n;
+        }
+        return true;
+    }
+
+    bool WriteBytes(const std::string &data) {
+        if (io_socket_ == kInvalidDapSocket) {
+            std::cout << data << std::flush;
+            return true;
+        }
+        const char *buf = data.data();
+        int total = 0;
+        int len = static_cast<int>(data.size());
+        while (total < len) {
+            int n = send(io_socket_, buf + total, len - total, 0);
+            if (n <= 0) return false;
+            total += n;
+        }
+        return true;
+    }
+
     std::string ReadMessage() {
         int content_length = -1;
         std::string header_line;
-        while (std::getline(std::cin, header_line)) {
+        char ch = '\0';
+        while (ReadByte(&ch)) {
+            if (ch != '\n') {
+                header_line.push_back(ch);
+                continue;
+            }
             while (!header_line.empty() && (header_line.back() == '\r' || header_line.back() == '\n'))
                 header_line.pop_back();
             if (header_line.empty()) {
@@ -356,16 +518,16 @@ private:
                     content_length = std::atoi(header_line.substr(colon + 1).c_str());
                 }
             }
+            header_line.clear();
         }
         if (content_length <= 0) return "";
         std::string content(content_length, '\0');
-        std::cin.read(&content[0], content_length);
-        if (std::cin.gcount() < content_length) return "";
+        if (!ReadBytes(&content[0], content_length)) return "";
         return content;
     }
 
     void SendMessage(const std::string &json) {
-        std::cout << "Content-Length: " << json.size() << "\r\n\r\n" << json << std::flush;
+        WriteBytes("Content-Length: " + std::to_string(json.size()) + "\r\n\r\n" + json);
     }
 
     void SendResponse(int request_seq, const std::string &command, bool success,
@@ -391,12 +553,20 @@ private:
         SendMessage(out.str());
     }
 
+    void SendOutput(const std::string &text) {
+        std::ostringstream body;
+        body << "{\"category\":\"stdout\",\"output\":\"" << EscapeJson(text) << "\"}";
+        std::lock_guard<std::mutex> lock(send_mutex_);
+        SendEvent("output", body.str());
+    }
+
     void HandleMessage(const std::string &content) {
         int seq = ExtractInt(content, "seq", 0);
         std::string type = ExtractString(content, "type");
         std::string command = ExtractString(content, "command");
 
         if (type != "request" || command.empty()) return;
+        DapLog("[request] " + command);
 
         if (command == "initialize") {
             std::string body = "{\"supportsConfigurationDoneRequest\":true"
@@ -412,7 +582,7 @@ private:
             return;
         }
         if (command == "launch") { HandleLaunch(seq, content); return; }
-        if (command == "attach") { SendResponse(seq, command, false, "{}", "attach not supported"); return; }
+        if (command == "attach") { HandleAttach(seq, content); return; }
         if (command == "setBreakpoints") { HandleSetBreakpoints(seq, content); return; }
         if (command == "setFunctionBreakpoints") { SendResponse(seq, command, false, "{}", "not supported"); return; }
         if (command == "setExceptionBreakpoints") {
@@ -424,6 +594,11 @@ private:
         if (command == "configurationDone") {
             config_done_ = true;
             SendResponse(seq, command, true);
+            if (!launched_ && !attach_mode_) {
+                DapLog("[launch] missing launch request; using default launch");
+                PrepareLaunch(false);
+                SendEvent("thread", "{\"reason\":\"started\",\"threadId\":1}");
+            }
             FinishLaunchConfig();
             return;
         }
@@ -473,24 +648,14 @@ private:
     }
 
     void HandleLaunch(int seq, const std::string &content) {
-        launched_ = true;
+        if (attach_mode_) {
+            SendResponse(seq, "launch", false, "{}", "this DAP server is waiting for attach");
+            return;
+        }
         bool stop_on_entry = ExtractBool(content, "stopOnEntry", true);
         ExtractString(content, "entryModule");
-
-        if (vm_) {
-            Debugger &dbg = vm_->debugger();
-            dbg.set_active(true);
-
-            if (stop_on_entry) {
-                dbg.SetStepMode(StepMode::StepInto, 0);
-            } else {
-                dbg.SetStepMode(StepMode::Continue, 0);
-            }
-
-            vm_->set_debug_hook([this](std::uint32_t pc) -> RuntimeError {
-                return this->OnVmBreak(pc);
-            });
-        }
+        DapLog(std::string("[launch] stopOnEntry=") + (stop_on_entry ? "true" : "false"));
+        PrepareLaunch(stop_on_entry);
 
         SendResponse(seq, "launch", true);
         SendEvent("thread", "{\"reason\":\"started\",\"threadId\":1}");
@@ -500,12 +665,45 @@ private:
         }
     }
 
+    void HandleAttach(int seq, const std::string &content) {
+        bool stop_on_attach = ExtractBool(content, "stopOnAttach", false);
+        DapLog(std::string("[attach] stopOnAttach=") + (stop_on_attach ? "true" : "false"));
+        PrepareLaunch(stop_on_attach);
+        SendResponse(seq, "attach", true);
+        SendEvent("thread", "{\"reason\":\"started\",\"threadId\":1}");
+
+        if (config_done_) {
+            FinishLaunchConfig();
+        }
+    }
+
+    void PrepareLaunch(bool stop_on_entry) {
+        launched_ = true;
+        if (!vm_) return;
+
+        Debugger &dbg = vm_->debugger();
+        dbg.set_active(true);
+        vm_->set_output_hook([this](const std::string &text) {
+            SendOutput(text);
+        });
+        if (stop_on_entry) {
+            dbg.SetStepMode(StepMode::StepInto, 0);
+        } else {
+            dbg.SetStepMode(StepMode::Continue, 0);
+        }
+
+        vm_->set_debug_hook([this](std::uint32_t pc) -> RuntimeError {
+            return this->OnVmBreak(pc);
+        });
+    }
+
     void FinishLaunchConfig() {
         if (!launched_ || !config_done_) return;
 
+        DapLog("[launch] configurationDone; applying breakpoints");
         ApplyBreakpoints();
 
-        if (vm_) {
+        if (vm_ && !attach_mode_) {
             StartVmThread();
         }
 
@@ -519,6 +717,7 @@ private:
 
         SourceBreakpoints sbp;
         sbp.path = NormalizePath(source_path);
+        DapLog("[setBreakpoints] source=" + source_path + " normalized=" + sbp.path);
 
         auto bp_items = SplitArrayItems(bp_array);
         for (const auto &item : bp_items) {
@@ -526,9 +725,10 @@ private:
             spec.line = ExtractInt(item, "line", 0);
             spec.condition = ExtractString(item, "condition");
             sbp.specs.push_back(spec);
+            DapLog("[setBreakpoints] requested line=" + std::to_string(spec.line));
         }
 
-        source_breakpoints_[source_path] = sbp;
+        source_breakpoints_[sbp.path] = sbp;
 
         Debugger &dbg = vm_->debugger();
         const Chunk &chunk = vm_->chunk();
@@ -581,6 +781,9 @@ private:
 
             bp_results += "{\"verified\":" + std::string(verified ? "true" : "false")
                 + ",\"line\":" + std::to_string(actual_line) + "}";
+            DapLog(std::string("[setBreakpoints] result line=") + std::to_string(src_line)
+                + " verified=" + (verified ? "true" : "false")
+                + " actual=" + std::to_string(actual_line));
         }
         bp_results += "]";
 
@@ -596,16 +799,19 @@ private:
         Debugger &dbg = vm_->debugger();
         const Chunk &chunk = vm_->chunk();
         dbg.ClearBreakpoints();
+        DapLog("[applyBreakpoints] cleared; source_count=" + std::to_string(source_breakpoints_.size()));
 
         for (const auto &kv : source_breakpoints_) {
             const std::string &bp_path = kv.second.path;
             for (const auto &spec : kv.second.specs) {
+                DapLog("[applyBreakpoints] source=" + bp_path + " line=" + std::to_string(spec.line));
                 std::vector<int> output_lines;
                 for (const auto &sme : chunk.debug_info.source_map) {
                     if (NormalizePath(sme.source_path) == bp_path && sme.source_line == spec.line) {
                         output_lines.push_back(sme.output_line);
                     }
                 }
+                DapLog("[applyBreakpoints] source_map_hits=" + std::to_string(output_lines.size()));
 
                 bool applied = false;
                 for (int oline : output_lines) {
@@ -616,6 +822,9 @@ private:
                                 dbg.SetBreakpointCondition(id, spec.condition);
                             }
                             applied = true;
+                            DapLog("[applyBreakpoints] applied id=" + std::to_string(id)
+                                + " output_line=" + std::to_string(oline)
+                                + " pc=" + std::to_string(le.pc));
                             break;
                         }
                     }
@@ -624,6 +833,22 @@ private:
 
                 if (!applied) {
                     int id = dbg.AddBreakpointByLine(chunk, spec.line);
+                    int pc = -1;
+                    bool verified = false;
+                    int actual_line = spec.line;
+                    for (const auto &bp : dbg.breakpoints()) {
+                        if (bp.id == id) {
+                            pc = static_cast<int>(bp.pc);
+                            verified = bp.verified;
+                            actual_line = bp.line;
+                            break;
+                        }
+                    }
+                    DapLog("[applyBreakpoints] fallback id=" + std::to_string(id)
+                        + " requested_line=" + std::to_string(spec.line)
+                        + " actual_line=" + std::to_string(actual_line)
+                        + " pc=" + std::to_string(pc)
+                        + " verified=" + (verified ? "true" : "false"));
                     if (!spec.condition.empty()) {
                         dbg.SetBreakpointCondition(id, spec.condition);
                     }
@@ -642,7 +867,7 @@ private:
             const DebugFrame &f = view.frame;
             int frame_id = static_cast<int>(i) + 1000;
             if (view.source_ref != 0) {
-                source_refs_[view.source_ref] = view.normalized_source_path;
+                source_refs_[view.source_ref] = view.source_path;
             }
 
             frames_json += "{\"id\":" + std::to_string(frame_id)
@@ -651,8 +876,8 @@ private:
                 + ",\"column\":1"
                 + ",\"moduleName\":\"" + EscapeJson(f.module_name) + "\""
                 + ",\"moduleVersion\":" + std::to_string(f.module_version_id)
-                + ",\"source\":{\"name\":\"" + EscapeJson(view.normalized_source_path) + "\""
-                + ",\"path\":\"" + EscapeJson(view.normalized_source_path) + "\""
+                + ",\"source\":{\"name\":\"" + EscapeJson(ClientSourceName(view.source_path)) + "\""
+                + ",\"path\":\"" + EscapeJson(view.source_path) + "\""
                 + ",\"sourceReference\":" + std::to_string(view.source_ref) + "}}";
         }
         frames_json += "]";
@@ -840,8 +1065,7 @@ private:
         bool found = (result.Tag() != ValueTag::Nil);
 
         if (!found) {
-            result = dbg.ResolveVariable(expr, chunk, frames, stack);
-            found = (result.Tag() != ValueTag::Nil);
+            found = dbg.TryResolveVariable(expr, chunk, frames, stack, &result);
         }
 
         if (!found) {
@@ -891,9 +1115,18 @@ private:
     void ResumeVm(StepMode mode) {
         if (!vm_) return;
         Debugger &dbg = vm_->debugger();
-        dbg.SetStepMode(mode, static_cast<std::uint32_t>(vm_->frames().size()));
+        std::uint32_t depth = static_cast<std::uint32_t>(vm_->frames().size());
+        std::uint32_t pc = 0;
+        if (!vm_->frames().empty()) {
+            pc = vm_->frames().back().ip;
+        }
+        if (mode == StepMode::StepInto || mode == StepMode::StepOver) {
+            dbg.SetSourceStepMode(mode, depth, vm_->chunk(), pc);
+        } else {
+            dbg.SetStepMode(mode, depth);
+        }
         if (mode == StepMode::StepInto) {
-            dbg.SetStepMode(StepMode::StepInto, 0);
+            dbg.SetSourceStepMode(StepMode::StepInto, 0, vm_->chunk(), pc);
         }
 
         {
@@ -962,11 +1195,74 @@ RuntimeError RunDapServerStep(Vm &vm, std::uint32_t pc) {
 }
 
 void RunDapServer(Vm &vm) {
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
+    DapLog("=== LPC DAP session start ===");
     DapServer server;
     server.SetVm(&vm);
     g_dap_server = &server;
     server.Run();
     g_dap_server = nullptr;
+}
+
+static DapSocket CreateListenSocket(int port) {
+    if (!InitDapSockets()) return kInvalidDapSocket;
+
+    DapSocket listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_fd == kInvalidDapSocket) return kInvalidDapSocket;
+
+    int opt = 1;
+    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR,
+               reinterpret_cast<const char *>(&opt), sizeof(opt));
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<std::uint16_t>(port));
+
+    if (bind(listen_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
+        CloseDapSocket(listen_fd);
+        return kInvalidDapSocket;
+    }
+    if (listen(listen_fd, 1) != 0) {
+        CloseDapSocket(listen_fd);
+        return kInvalidDapSocket;
+    }
+    return listen_fd;
+}
+
+static void RunDapAttachServerOnSocket(Vm &vm, DapSocket listen_fd) {
+    DapLog("[attach] waiting for DAP client");
+    sockaddr_in client_addr{};
+    socklen_t client_len = sizeof(client_addr);
+    DapSocket client_fd = accept(listen_fd, reinterpret_cast<sockaddr *>(&client_addr), &client_len);
+    CloseDapSocket(listen_fd);
+    if (client_fd == kInvalidDapSocket) {
+        DapLog("[attach] accept failed");
+        return;
+    }
+
+    DapLog("[attach] DAP client connected");
+    DapServer server(client_fd, true);
+    server.SetVm(&vm);
+    server.Run();
+    CloseDapSocket(client_fd);
+    DapLog("[attach] DAP client disconnected");
+}
+
+bool StartDapAttachServer(Vm &vm, int port) {
+    DapSocket listen_fd = CreateListenSocket(port);
+    if (listen_fd == kInvalidDapSocket) {
+        DapLog("[attach] listen failed on port " + std::to_string(port));
+        return false;
+    }
+    DapLog("[attach] listening on 127.0.0.1:" + std::to_string(port));
+    std::thread([&vm, listen_fd]() {
+        RunDapAttachServerOnSocket(vm, listen_fd);
+    }).detach();
+    return true;
 }
 
 } // namespace vm

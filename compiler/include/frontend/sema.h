@@ -20,6 +20,21 @@ struct FunctionSemanticInfo {
     std::vector<int> capture_source_index;
 };
 
+struct SemanticSymbol {
+    std::string name;
+    std::string kind;
+    std::string symbol_id;
+    SourceSpan span;
+    std::string container_name;
+    std::string detail;
+};
+
+struct SemanticReference {
+    std::string name;
+    std::string symbol_id;
+    SourceSpan span;
+};
+
 struct SemanticModel {
     std::unordered_map<const Node *, std::string> resolved_symbol;
     std::unordered_map<const FunctionDecl *, FunctionSemanticInfo> functions;
@@ -30,6 +45,8 @@ struct SemanticModel {
     std::unordered_map<std::string, std::string> class_parent;
     std::unordered_map<const Expr *, std::string> expr_type;
     std::unordered_map<const Expr *, int> member_field_index;
+    std::vector<SemanticSymbol> symbols;
+    std::vector<SemanticReference> references;
 };
 
 class Sema {
@@ -46,7 +63,14 @@ private:
     void VisitExpr(const Expr *expr);
     void EnterScope();
     void ExitScope();
-    void Declare(const std::string &name, const std::string &declared_type = "mixed");
+    std::string Declare(
+        const std::string &name,
+        const std::string &declared_type = "mixed",
+        const std::string &kind = "variable",
+        const SourceSpan &span = SourceSpan(),
+        const std::string &container_name = "",
+        const std::string &detail = "");
+    std::string ResolveSymbolId(const std::string &name) const;
     bool Resolve(const std::string &name) const;
     std::string ResolveType(const std::string &name) const;
     void AnalyzeFunction(const FunctionDecl *func);
@@ -59,6 +83,7 @@ private:
         std::unordered_map<std::string, bool> names;
         std::unordered_map<std::string, std::string> types;
         std::unordered_map<std::string, int> local_index;
+        std::unordered_map<std::string, std::string> symbol_id;
         bool is_function_scope = false;
         const FunctionDecl *owner = nullptr;
     };

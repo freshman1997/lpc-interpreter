@@ -32,10 +32,19 @@ struct Location {
 struct SymbolInfo {
     std::string name;
     std::string kind;
+    std::string symbol_id;
     std::string uri;
     Range range;
     Range selection_range;
     std::string container_name;
+    std::string detail;
+};
+
+struct ReferenceInfo {
+    std::string name;
+    std::string symbol_id;
+    std::string uri;
+    Range range;
 };
 
 struct DocumentVersion {
@@ -48,16 +57,26 @@ public:
     void IndexDocument(const std::string &uri, const std::string &text);
     void RemoveDocument(const std::string &uri);
     std::vector<SymbolInfo> FindDefinition(const std::string &name) const;
+    std::vector<SymbolInfo> FindDefinitionById(const std::string &symbol_id) const;
     std::vector<Location> FindReferences(const std::string &name) const;
+    std::vector<Location> FindReferencesById(const std::string &symbol_id) const;
     std::vector<Location> FindReferencesInUri(const std::string &name, const std::string &uri) const;
     std::vector<std::pair<std::string, std::string>> Rename(const std::string &old_name, const std::string &new_name) const;
     std::vector<SymbolInfo> AllSymbols() const;
     std::optional<SymbolInfo> SymbolAtPosition(const std::string &uri, const Position &pos) const;
+    std::optional<ReferenceInfo> ReferenceAtPosition(const std::string &uri, const Position &pos) const;
 
 private:
+    void AddSymbol(const SymbolInfo &sym);
+    void AddReference(const ReferenceInfo &ref);
+    void ParseReferences(const std::string &uri, const std::string &text);
     void ParseDocument(const std::string &uri, const std::string &text);
     std::unordered_map<std::string, std::vector<SymbolInfo>> name_to_symbols_;
+    std::unordered_map<std::string, std::vector<SymbolInfo>> id_to_symbols_;
     std::unordered_map<std::string, std::vector<SymbolInfo>> uri_to_symbols_;
+    std::unordered_map<std::string, std::vector<ReferenceInfo>> name_to_refs_;
+    std::unordered_map<std::string, std::vector<ReferenceInfo>> id_to_refs_;
+    std::unordered_map<std::string, std::vector<ReferenceInfo>> uri_to_refs_;
 };
 
 class LspServer {
@@ -86,6 +105,9 @@ private:
     JsonNode TextDocumentDocumentSymbol(const JsonNode &params);
     JsonNode WorkspaceSymbol(const JsonNode &params);
 
+    void IndexWorkspace();
+    void PublishDiagnostics(const std::string &uri, const std::string &text);
+    void ClearDiagnostics(const std::string &uri);
     void DidOpen(const JsonNode &params);
     void DidChange(const JsonNode &params);
     void DidClose(const JsonNode &params);
@@ -103,6 +125,7 @@ private:
     bool initialized_ = false;
     bool shutdown_ = false;
     std::string root_uri_;
+    std::string root_path_;
 };
 
 } // namespace lsp

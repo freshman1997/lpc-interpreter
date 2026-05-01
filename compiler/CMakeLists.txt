@@ -20,5 +20,9 @@ else()
 	message("current platform: unkonw ")
 endif()
 
-add_executable(lpc_compiler ${FRONTEND_SRC} main.cpp)
+add_library(lpc_frontend ${FRONTEND_SRC})
+target_include_directories(lpc_frontend PUBLIC include ${CMAKE_SOURCE_DIR}/include)
+
+add_executable(lpc_compiler main.cpp)
+target_link_libraries(lpc_compiler PRIVATE lpc_frontend)
 

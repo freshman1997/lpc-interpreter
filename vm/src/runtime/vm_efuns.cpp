@@ -18,13 +18,16 @@
 
 using namespace lpc::vm;
 
-static std::string FormatValue(const Value &v, const Chunk &chunk,
-                                const std::vector<std::string> &string_heap) {
+static std::string FormatValue(const Value &v, Vm &vm, bool nested = false, int depth = 0) {
+    const Chunk &chunk = vm.BoundChunk();
+    const std::vector<std::string> &string_heap = vm.string_heap();
+    if (depth > 4) return "...";
+
     switch (v.Tag()) {
     case ValueTag::Nil: return "0";
     case ValueTag::Bool: return v.AsBool() ? "1" : "0";
-    case ValueTag::Int64: return std::to_string(v.AsI64());
-    case ValueTag::BoxedInt: return "<int64>";
+    case ValueTag::Int64: return std::to_string(vm.GetI64(v));
+    case ValueTag::BoxedInt: return std::to_string(vm.GetI64(v));
     case ValueTag::Float64: {
         std::ostringstream oss;
         oss << v.AsF64();
@@ -35,13 +38,51 @@ static std::string FormatValue(const Value &v, const Chunk &chunk,
         if (raw > 0 && raw < kFuncBase) {
             if (raw & 1) {
                 std::uint32_t sidx = static_cast<std::uint32_t>(raw >> 1) - 1;
-                if (sidx < chunk.sconst.size()) return chunk.sconst[sidx];
+                if (sidx < chunk.sconst.size()) {
+                    return nested ? ("\"" + chunk.sconst[sidx] + "\"") : chunk.sconst[sidx];
+                }
             } else {
                 std::uint32_t hidx = static_cast<std::uint32_t>(raw >> 1) - 1;
-                if (hidx < string_heap.size()) return string_heap[hidx];
+                if (hidx < string_heap.size()) {
+                    return nested ? ("\"" + string_heap[hidx] + "\"") : string_heap[hidx];
+                }
             }
         }
-        if (raw >= kObjectBase) return "<object>";
+        if (raw >= kArrayBase && raw < kMappingBase) {
+            std::size_t sz = vm.GetArraySize(v);
+            std::string out = "({";
+            for (std::size_t i = 0; i < sz; ++i) {
+                if (i > 0) out += ", ";
+                out += FormatValue(vm.GetArrayElement(v, static_cast<std::int64_t>(i)), vm, true, depth + 1);
+            }
+            out += "})";
+            return out;
+        }
+        if (raw >= kMappingBase && raw < kClassBase) {
+            auto pairs = vm.GetMappingPairs(v);
+            std::string out = "([";
+            for (std::size_t i = 0; i < pairs.size(); ++i) {
+                if (i > 0) out += ", ";
+                out += FormatValue(pairs[i].first, vm, true, depth + 1);
+                out += ": ";
+                out += FormatValue(pairs[i].second, vm, true, depth + 1);
+            }
+            out += "])";
+            return out;
+        }
+        if (raw >= kClassBase && raw < kObjectBase) {
+            const auto &names = vm.GetObjectFieldNames(v);
+            std::string out = "class {";
+            for (std::size_t i = 0; i < names.size(); ++i) {
+                if (i > 0) out += ", ";
+                out += names[i];
+                out += ": ";
+                out += FormatValue(vm.GetObjectField(v, names[i]), vm, true, depth + 1);
+            }
+            out += "}";
+            return out;
+        }
+        if (raw >= kObjectBase) return "<object:" + std::to_string(DecodeObjectId(v)) + ">";
         return "<ref>";
     }
     case ValueTag::Closure: return "<closure>";
@@ -65,19 +106,21 @@ static std::string FormatCtimeSafe(std::time_t t) {
     return s;
 }
 
-static void IntrinsicPrint(const std::vector<Value> &args, const Chunk &chunk,
+static void IntrinsicPrint(Vm &vm, const std::vector<Value> &args, const Chunk &chunk,
                             const std::vector<std::string> &string_heap) {
+    std::string out;
     for (std::size_t i = 0; i < args.size(); ++i) {
-        if (i > 0) std::cout << " ";
-        std::cout << FormatValue(args[i], chunk, string_heap);
+        if (i > 0) out += " ";
+        out += FormatValue(args[i], vm);
     }
-    std::cout << std::endl;
+    out += "\n";
+    vm.EmitOutput(out);
 }
 
-static void IntrinsicPuts(const std::vector<Value> &args, const Chunk &chunk,
+static void IntrinsicPuts(Vm &vm, const std::vector<Value> &args, const Chunk &chunk,
                            const std::vector<std::string> &string_heap) {
     if (!args.empty()) {
-        std::cout << FormatValue(args[0], chunk, string_heap) << std::endl;
+        vm.EmitOutput(FormatValue(args[0], vm) + "\n");
     }
 }
 
@@ -175,8 +218,8 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
     case Efun::CallOther: {
         return Value::Nil();
     }
-    case Efun::Print: IntrinsicPrint(args, BoundChunk(), string_heap_); break;
-    case Efun::Puts: IntrinsicPuts(args, BoundChunk(), string_heap_); break;
+    case Efun::Print: IntrinsicPrint(*this, args, BoundChunk(), string_heap_); break;
+    case Efun::Puts: IntrinsicPuts(*this, args, BoundChunk(), string_heap_); break;
     case Efun::Sleep: {
         if (!args.empty() && args[0].Tag() == ValueTag::Int64) {
             std::this_thread::sleep_for(std::chrono::milliseconds(GetI64(args[0])));
@@ -337,13 +380,7 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
                     } else buf.append("0");
                     break;
                 case 's':
-                    if (arg.IsObjRef()) {
-                        buf.append(ResolveObjRefStringOnly(arg));
-                    } else if (arg.Tag() == ValueTag::Int64) {
-                        buf.append(std::to_string(GetI64(arg)));
-                    } else if (arg.IsNil()) {
-                        buf.append("0");
-                    }
+                    buf.append(FormatValue(arg, *this));
                     break;
                 default:
                     buf.push_back('%'); buf.push_back(fmt[p]); --arg_idx; break;
@@ -355,13 +392,7 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
     }
     case Efun::Write: {
         if (!args.empty()) {
-            std::string s;
-            if (args[0].IsObjRef()) {
-                s = ResolveObjRefStringOnly(args[0]);
-            } else if (args[0].Tag() == ValueTag::Int64) {
-                s = std::to_string(GetI64(args[0]));
-            }
-            std::cout << s;
+            EmitOutput(FormatValue(args[0], *this));
         }
         return Value::Nil();
     }

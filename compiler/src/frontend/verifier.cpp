@@ -97,6 +97,8 @@ static int StackDelta(MirOp op) {
     case MirOp::LogicNot:
     case MirOp::BitNot:
     case MirOp::Neg:
+    case MirOp::Inc:
+    case MirOp::Dec:
     case MirOp::LoadClassField:
         return 0;
     case MirOp::StoreClassField:
@@ -119,6 +121,8 @@ static int StackDelta(MirOp op) {
         return -1;
     case MirOp::Jump:
     case MirOp::Return:
+    case MirOp::IncLocal:
+    case MirOp::DecLocal:
         return 0;
     case MirOp::Pop:
         return -1;
@@ -191,7 +195,8 @@ static Verify2Result VerifyMirFunction(const MirModule &module, const MirFunctio
         for (int i = pc; i < n; ++i) {
             const MirInstr &ins = fn.code[i];
 
-                if ((ins.op == MirOp::LoadLocal || ins.op == MirOp::StoreLocal) &&
+                if ((ins.op == MirOp::LoadLocal || ins.op == MirOp::StoreLocal ||
+                     ins.op == MirOp::IncLocal || ins.op == MirOp::DecLocal) &&
                     (ins.a < 0 || ins.a >= (fn.nargs + static_cast<int>(fn.locals.size())))) {
                     return fail("invalid local slot index", i);
                 }
@@ -294,7 +299,8 @@ static Verify2Result VerifyMirFunction(const MirModule &module, const MirFunctio
                     return fail("invalid function index operand", i);
                 }
 
-                if ((ins.op == MirOp::LoadLocal || ins.op == MirOp::StoreLocal) &&
+                if ((ins.op == MirOp::LoadLocal || ins.op == MirOp::StoreLocal ||
+                     ins.op == MirOp::IncLocal || ins.op == MirOp::DecLocal) &&
                     (ins.a < 0 || ins.a >= (fn.nargs + static_cast<int>(fn.locals.size())))) {
                     return fail("invalid local slot index operand", i);
                 }

@@ -7,4 +7,6 @@ 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
 *.nb
 bin
 log
-vscode_plugin\node_modules
+vscode_plugin/node_modules/
+dist
+*.vsix

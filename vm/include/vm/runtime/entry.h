@@ -9,9 +9,10 @@
 namespace lpc {
 namespace vm {
 
-RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile = false);
-RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_json, bool protocol_dap = false, bool enable_profile = false);
-RuntimeError LoadModuleChunkForHotReload(const std::string &module_name, Chunk *out_chunk);
+RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile = false, const std::string &bytecode_root = "", bool debug_checks = true);
+RuntimeError RunEntryModuleAttachable(const std::string &entry_module, int dap_listen_port, bool enable_profile = false, const std::string &bytecode_root = "", bool debug_checks = true);
+RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_json, bool protocol_dap = false, bool enable_profile = false, const std::string &bytecode_root = "");
+RuntimeError LoadModuleChunkForHotReload(const std::string &module_name, Chunk *out_chunk, const std::string &bytecode_root = "");
 RuntimeError CheckHotReloadModule(const std::string &module_name,
                                   const Chunk &candidate,
                                   HotReloadLevel level,
