@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdlib>
 #include <filesystem>
+#include <cctype>
 
 #include "cli/cli.h"
 #include "vm/runtime/entry.h"
@@ -19,8 +20,8 @@ namespace cli {
 static void PrintUsage() {
     std::cout << "lpc <command> [args]\n";
     std::cout << "commands: run, debug, hot-reload, lsp\n";
-    std::cout << "run args: [entry-module] [--entry-file path] [--bytecode-root path] [--dap-listen port] [--profile] [--release|--no-debug-checks]\n";
-    std::cout << "debug args: [entry-module] [--entry-file path] [--bytecode-root path] [--protocol dap|json|repl] [--profile]\n";
+    std::cout << "run args: [entry-module] [entry-function] [--module name] [--function name] [--env key=value] [--bytecode-root path] [--dap-listen port] [--profile] [--release|--no-debug-checks]\n";
+    std::cout << "debug args: [entry-module] [entry-function] [--module name] [--function name] [--env key=value] [--bytecode-root path] [--protocol dap|json|repl] [--profile]\n";
     std::cout << "hot-reload args: <module> [--bytecode-root path] [--check-only] [--dry-run] [--require-smoke func] [--status] [--allow-level L0|L1|L2] [--audit-log path]\n";
     std::cout << "lsp: start LSP server on stdin/stdout\n";
 }
@@ -70,7 +71,28 @@ static std::string ReadEntryFile(const std::string &p) {
     std::string m;
     std::getline(in, m);
     in.close();
+    while (!m.empty() && std::isspace(static_cast<unsigned char>(m.back()))) {
+        m.pop_back();
+    }
+    std::size_t start = 0;
+    while (start < m.size() && std::isspace(static_cast<unsigned char>(m[start]))) {
+        ++start;
+    }
+    if (start > 0) {
+        m.erase(0, start);
+    }
     return m;
+}
+
+static void AddEnvParam(std::vector<std::pair<std::string, std::string>> *env_params,
+                        const std::string &text) {
+    if (!env_params) return;
+    std::size_t eq = text.find('=');
+    if (eq == std::string::npos) {
+        env_params->push_back({text, ""});
+        return;
+    }
+    env_params->push_back({text.substr(0, eq), text.substr(eq + 1)});
 }
 
 int Run(int argc, char **argv) {
@@ -80,17 +102,31 @@ int Run(int argc, char **argv) {
     }
 
     const std::string cmd = argv[1];
-    std::string entry_file = get_cwd() + "/bin/entry.txt";
+    std::string entry_file;
     std::string bytecode_root;
     std::string entry_arg;
+    std::string entry_function = "main";
     std::string protocol;
     int dap_listen_port = 0;
     bool enable_profile = false;
     bool debug_checks = true;
+    std::vector<std::pair<std::string, std::string>> env_params;
     for (int i = 2; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--entry-file" && i + 1 < argc) {
             entry_file = argv[++i];
+            continue;
+        }
+        if ((a == "--entry-module" || a == "--module") && i + 1 < argc) {
+            entry_arg = argv[++i];
+            continue;
+        }
+        if ((a == "--entry-function" || a == "--function") && i + 1 < argc) {
+            entry_function = argv[++i];
+            continue;
+        }
+        if ((a == "--env" || a == "--param") && i + 1 < argc) {
+            AddEnvParam(&env_params, argv[++i]);
             continue;
         }
         if (a == "--bytecode-root" && i + 1 < argc) {
@@ -119,6 +155,10 @@ int Run(int argc, char **argv) {
         }
         if (entry_arg.empty()) {
             entry_arg = a;
+            continue;
+        }
+        if (entry_function == "main") {
+            entry_function = a;
         }
     }
 
@@ -141,8 +181,8 @@ int Run(int argc, char **argv) {
             debug_checks = true;
         }
         lpc::vm::RuntimeError s = dap_listen_port > 0
-            ? lpc::vm::RunEntryModuleAttachable(entry_module, dap_listen_port, enable_profile, bytecode_root, debug_checks)
-            : lpc::vm::RunEntryModule(entry_module, enable_profile, bytecode_root, debug_checks);
+            ? lpc::vm::RunEntryModuleAttachable(entry_module, dap_listen_port, enable_profile, bytecode_root, debug_checks, entry_function, env_params)
+            : lpc::vm::RunEntryModule(entry_module, enable_profile, bytecode_root, debug_checks, entry_function, env_params);
         if (!s.ok()) {
             std::cerr << "run failed: " << s.message << std::endl;
             return 1;
@@ -180,7 +220,7 @@ int Run(int argc, char **argv) {
         if (protocol == "dap") {
             protocol_dap = true;
         }
-        lpc::vm::RuntimeError s = lpc::vm::RunEntryModuleDebug(entry_module, protocol_json, protocol_dap, enable_profile, bytecode_root);
+        lpc::vm::RuntimeError s = lpc::vm::RunEntryModuleDebug(entry_module, protocol_json, protocol_dap, enable_profile, bytecode_root, entry_function, env_params);
         if (!s.ok()) {
             if (s.code != lpc::vm::RuntimeErrorCode::InternalError) {
                 std::cerr << "debug failed: " << s.message << std::endl;

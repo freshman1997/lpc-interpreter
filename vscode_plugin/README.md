@@ -37,6 +37,37 @@ On Windows, the extension also searches `.exe`, `Debug`, and `Release` variants 
 
 The adapter intentionally reuses the current VM debugger command set for run control and breakpoints. It enables `LPC_DEBUG_PROTOCOL=json` and reads structured stopped, terminated, locals, args, breakpoint, evaluate, and runtime-error events when the VM supports them.
 
+`LPC: Debug Current File` compiles the active file, derives the VM module name from its workspace-relative path, and starts the VM with `entryFunction` defaulting to `main`. For example, `base/module/hero/proto.lpc` launches module `base/module/hero/proto`.
+
+If the file has no zero-argument `main`, the VM reports `entry function not found`. Add a small zero-argument debug entry that calls the business function you want to inspect:
+
+```c
+int proto_cs_activate_hero(int hero_id)
+{
+    return "module/hero/main"->activate_hero(hero_id);
+}
+
+int main()
+{
+    return proto_cs_activate_hero(1);
+}
+```
+
+Or set `entryModule` and `entryFunction` in `launch.json`:
+
+```json
+{
+  "type": "lpc",
+  "request": "launch",
+  "name": "Debug hero proto",
+  "program": "${workspaceFolder}/base/module/hero/proto.lpc",
+  "entryModule": "base/module/hero/proto",
+  "entryFunction": "debug"
+}
+```
+
+The VM launch entry is currently called without arguments, so parameterized business functions should be wrapped by a zero-argument `main`, `debug`, or similar helper.
+
 To attach to an already running VM, start the VM with a DAP attach port:
 
 ```powershell

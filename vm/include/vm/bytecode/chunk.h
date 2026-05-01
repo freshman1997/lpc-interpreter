@@ -33,10 +33,28 @@ struct FunctionDebugInfo {
 };
 
 struct ClassInfo {
+    struct FieldDefault {
+        enum class Kind : std::uint8_t {
+            Zero = 0,
+            Int = 1,
+            Float = 2,
+            String = 3,
+            Mapping = 4,
+            Array = 5,
+        };
+        Kind kind = Kind::Zero;
+        std::int64_t int_value = 0;
+        double float_value = 0.0;
+        std::string string_value;
+        std::vector<std::pair<FieldDefault, FieldDefault>> mapping_pairs;
+        std::vector<FieldDefault> array_items;
+    };
+
     std::string name;
     std::uint16_t nfields = 0;
     std::uint16_t parent_class_idx = 0xFFFF;
     std::vector<std::string> field_names;
+    std::vector<FieldDefault> field_defaults;
     std::unordered_map<std::string, std::uint16_t> field_name_index;
     int FindField(const std::string &name) const {
         auto it = field_name_index.find(name);

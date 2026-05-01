@@ -2,6 +2,43 @@
 
 using namespace lpc::vm;
 
+static Value MakeClassFieldDefault(Vm &vm, const ClassInfo::FieldDefault &def) {
+    switch (def.kind) {
+    case ClassInfo::FieldDefault::Kind::Int:
+        return vm.MakeI64(def.int_value);
+    case ClassInfo::FieldDefault::Kind::Float:
+        return Value::FromF64(def.float_value);
+    case ClassInfo::FieldDefault::Kind::String:
+        return vm.InternString(def.string_value);
+    case ClassInfo::FieldDefault::Kind::Mapping: {
+        Mapping map;
+        for (const auto &pair : def.mapping_pairs) {
+            map.Insert(MakeClassFieldDefault(vm, pair.first), MakeClassFieldDefault(vm, pair.second));
+        }
+        return vm.AllocateMappingHandle(std::move(map));
+    }
+    case ClassInfo::FieldDefault::Kind::Array: {
+        std::vector<Value> values;
+        values.reserve(def.array_items.size());
+        for (const auto &item : def.array_items) {
+            values.push_back(MakeClassFieldDefault(vm, item));
+        }
+        return vm.AllocateArrayHandle(std::move(values));
+    }
+    case ClassInfo::FieldDefault::Kind::Zero:
+    default:
+        return vm.MakeI64(0);
+    }
+}
+
+static LpcClass BuildDefaultClassFields(Vm &vm, const ClassInfo &ci) {
+    LpcClass fields(ci.nfields, vm.MakeI64(0));
+    for (std::size_t i = 0; i < ci.field_defaults.size() && i < fields.Size(); ++i) {
+        fields.Set(i, MakeClassFieldDefault(vm, ci.field_defaults[i]));
+    }
+    return fields;
+}
+
 bool Vm::ResolveClassTemplateIndex(const Value &class_handle, std::uint16_t *out_template_idx) const {
     if (!out_template_idx) return false;
     std::size_t cls_id = DecodeClassId(class_handle);
@@ -73,7 +110,7 @@ Value Vm::AllocateClassHandle(std::uint16_t class_idx) {
     if (!class_free_.empty()) {
         std::size_t idx = class_free_.back();
         class_free_.pop_back();
-        class_fields_[idx] = LpcClass(BoundChunk().classes[class_idx].nfields, Value::Nil());
+        class_fields_[idx] = BuildDefaultClassFields(*this, BoundChunk().classes[class_idx]);
         class_template_ids_[idx] = class_idx;
         class_module_version_ids_[idx] = current_module_version_id_;
         class_module_names_[idx] = current_module_name_;
@@ -81,7 +118,7 @@ Value Vm::AllocateClassHandle(std::uint16_t class_idx) {
         module_class_instances_[current_module_name_].push_back(idx);
         return MakeClassHandle(idx + 1);
     }
-    class_fields_.push_back(LpcClass(BoundChunk().classes[class_idx].nfields, Value::Nil()));
+    class_fields_.push_back(BuildDefaultClassFields(*this, BoundChunk().classes[class_idx]));
     class_template_ids_.push_back(class_idx);
     class_module_version_ids_.push_back(current_module_version_id_);
     class_module_names_.push_back(current_module_name_);

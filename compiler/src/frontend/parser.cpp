@@ -101,6 +101,7 @@ std::unique_ptr<Stmt> Parser::ParseClassDecl() {
             if (vd && vd->kind == NodeKind::VarDecl) {
                 VarDeclStmt *v = static_cast<VarDeclStmt *>(vd.get());
                 cl->fields.push_back(v->name);
+                cl->field_decls.push_back(std::unique_ptr<VarDeclStmt>(static_cast<VarDeclStmt *>(vd.release())));
             }
         } else {
             const size_t saved = current_;
@@ -115,6 +116,7 @@ std::unique_ptr<Stmt> Parser::ParseClassDecl() {
                     if (vd && vd->kind == NodeKind::VarDecl) {
                         VarDeclStmt *v = static_cast<VarDeclStmt *>(vd.get());
                         cl->fields.push_back(v->name);
+                        cl->field_decls.push_back(std::unique_ptr<VarDeclStmt>(static_cast<VarDeclStmt *>(vd.release())));
                     }
                 } else {
                     current_ = saved;
@@ -892,6 +894,9 @@ std::unique_ptr<Expr> Parser::ParsePrimary() {
     if (Check(TokenKind::LMapInit)) {
         return ParseMappingLiteralExpr();
     }
+    if (Check(TokenKind::LBrace)) {
+        return ParseBraceLiteralExpr();
+    }
 
     if (Match(TokenKind::Number)) {
         std::unique_ptr<NumberExpr> n(new NumberExpr());
@@ -1002,6 +1007,48 @@ std::unique_ptr<Expr> Parser::ParseMappingLiteralExpr() {
     Expect(TokenKind::RBracket, "expect ']' after mapping literal");
     Expect(TokenKind::RParen, "expect ')' after mapping literal");
     return std::unique_ptr<Expr>(m.release());
+}
+
+std::unique_ptr<Expr> Parser::ParseBraceLiteralExpr() {
+    if (!Expect(TokenKind::LBrace, "expect '{' for literal")) {
+        return nullptr;
+    }
+
+    SourceSpan span = Previous().span;
+    std::vector<std::unique_ptr<Expr>> items;
+    std::vector<std::pair<std::unique_ptr<Expr>, std::unique_ptr<Expr>>> pairs;
+    bool is_mapping = false;
+
+    if (!Check(TokenKind::RBrace)) {
+        do {
+            std::unique_ptr<Expr> first = ParseExpr();
+            if (Match(TokenKind::Colon)) {
+                is_mapping = true;
+                std::unique_ptr<Expr> val = ParseExpr();
+                pairs.push_back({std::move(first), std::move(val)});
+            } else {
+                if (is_mapping && diag_) {
+                    diag_->Add(DiagnosticLevel::Error, Peek().span, "expect ':' after mapping key");
+                }
+                items.push_back(std::move(first));
+            }
+        } while (Match(TokenKind::Comma));
+    }
+    Expect(TokenKind::RBrace, "expect '}' after literal");
+
+    if (is_mapping) {
+        std::unique_ptr<MappingLiteralExpr> m(new MappingLiteralExpr());
+        m->span = span;
+        m->pairs.swap(pairs);
+        return std::unique_ptr<Expr>(m.release());
+    }
+
+    std::unique_ptr<NewExpr> n(new NewExpr());
+    n->is_array_literal = true;
+    n->class_name = "array";
+    n->span = span;
+    n->array_items.swap(items);
+    return std::unique_ptr<Expr>(n.release());
 }
 
 std::unique_ptr<Expr> Parser::ParseLambdaExpr() {

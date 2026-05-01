@@ -57,6 +57,7 @@ public:
         MirModule out;
         out.class_order = sema_.class_order;
         out.class_fields = sema_.class_fields;
+        out.class_field_defaults = sema_.class_field_defaults;
         out.class_parent = sema_.class_parent;
 
         function_index_by_name_.clear();
@@ -507,6 +508,18 @@ private:
         }
         case NodeKind::CallExpr: {
             const CallExpr *c = static_cast<const CallExpr *>(expr);
+            if (c->callee && c->callee->kind == NodeKind::MemberExpr) {
+                const MemberExpr *m = static_cast<const MemberExpr *>(c->callee.get());
+                EmitExpr(m->object.get(), f);
+                int midx = static_cast<int>(f.sconsts.size());
+                f.sconsts.push_back(m->member);
+                f.code.push_back({MirOp::LoadSConst, midx, 0});
+                for (const auto &it : c->args) {
+                    EmitExpr(it.get(), f);
+                }
+                f.code.push_back({MirOp::CallEfun, Sema::EfunIndex("call_other"), static_cast<int>(c->args.size()) + 2});
+                break;
+            }
             for (const auto &it : c->args) {
                 EmitExpr(it.get(), f);
             }

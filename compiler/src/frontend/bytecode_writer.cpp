@@ -768,6 +768,41 @@ struct SectionWriter {
     }
 };
 
+static void WriteClassFieldDefault(SectionWriter &sw, const ClassFieldDefault &def) {
+    sw.WriteU8(static_cast<std::uint8_t>(def.kind));
+    switch (def.kind) {
+    case ClassFieldDefault::Kind::Int:
+        sw.WriteU64(static_cast<std::uint64_t>(def.int_value));
+        break;
+    case ClassFieldDefault::Kind::Float: {
+        std::uint64_t bits = 0;
+        static_assert(sizeof(double) == sizeof(std::uint64_t), "double must be 64 bits");
+        std::memcpy(&bits, &def.float_value, sizeof(double));
+        sw.WriteU64(bits);
+        break;
+    }
+    case ClassFieldDefault::Kind::String:
+        sw.WriteString(def.string_value);
+        break;
+    case ClassFieldDefault::Kind::Mapping:
+        sw.WriteU32(static_cast<std::uint32_t>(def.mapping_pairs.size()));
+        for (const auto &pair : def.mapping_pairs) {
+            WriteClassFieldDefault(sw, pair.first);
+            WriteClassFieldDefault(sw, pair.second);
+        }
+        break;
+    case ClassFieldDefault::Kind::Array:
+        sw.WriteU32(static_cast<std::uint32_t>(def.array_items.size()));
+        for (const auto &item : def.array_items) {
+            WriteClassFieldDefault(sw, item);
+        }
+        break;
+    case ClassFieldDefault::Kind::Zero:
+    default:
+        break;
+    }
+}
+
 static void EmitSection(std::vector<std::uint8_t> &out, std::uint8_t id, const SectionWriter &sw) {
     out.push_back(id);
     std::uint32_t sz = static_cast<std::uint32_t>(sw.payload.size());
@@ -997,8 +1032,17 @@ bool WriteMirAsNextVmBytecode(const MirModule &module, const std::string &module
             }
             sw.WriteU16(parent_idx);
             if (it != module.class_fields.end()) {
-                for (const auto &fname : it->second) {
+                const auto defaults_it = module.class_field_defaults.find(name);
+                const std::vector<ClassFieldDefault> *defaults =
+                    defaults_it == module.class_field_defaults.end() ? nullptr : &defaults_it->second;
+                for (std::size_t fi = 0; fi < it->second.size(); ++fi) {
+                    const auto &fname = it->second[fi];
                     sw.WriteString(fname);
+                    ClassFieldDefault def;
+                    if (defaults && fi < defaults->size()) {
+                        def = (*defaults)[fi];
+                    }
+                    WriteClassFieldDefault(sw, def);
                 }
             }
         }

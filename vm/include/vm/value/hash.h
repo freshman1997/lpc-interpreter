@@ -15,21 +15,13 @@ inline std::uint64_t _WyRead64(const std::uint8_t *p) {
     return v;
 }
 
-inline std::uint64_t _WyMix(std::uint64_t a, std::uint64_t b) {
-    std::uint64_t r = a ^ 0x53c5ca59UL;
-    r *= b ^ 0x74743c1bUL;
-    r ^= r >> 32;
-    r *= 0x6b59e3cbUL;
-    r ^= r >> 28;
-    return r;
-}
-
-inline std::uint64_t Wyhash64(std::uint64_t key) {
-    std::uint64_t seed = 0x53c5ca59UL;
-    const std::uint8_t *p = reinterpret_cast<const std::uint8_t *>(&key);
-    std::uint64_t a = _WyRead64(p) ^ 0x53c5ca59UL;
-    std::uint64_t b = seed ^ 0x74743c1bUL;
-    return _WyMix(a, b);
+inline std::uint64_t Avalanche64(std::uint64_t h) {
+    h ^= h >> 30;
+    h *= 0xbf58476d1ce4e5b9ULL;
+    h ^= h >> 27;
+    h *= 0x94d049bb133111ebULL;
+    h ^= h >> 31;
+    return h;
 }
 
 inline std::uint64_t HashValue(const Value &key) {
@@ -61,10 +53,7 @@ inline std::uint64_t HashValue(const Value &key) {
     }
 
     std::uint64_t h = bits ^ (static_cast<std::uint64_t>(key.Tag()) * 0x9e3779b97f4a7c15ULL);
-    h ^= h >> 33;
-    h *= 0xff51afd7ed558ccdULL;
-    h ^= h >> 29;
-    return h;
+    return Avalanche64(h);
 }
 
 inline bool KeyEqual(const Value &a, const Value &b) {

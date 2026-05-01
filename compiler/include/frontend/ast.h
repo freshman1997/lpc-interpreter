@@ -242,6 +242,7 @@ struct ClassDecl : public Stmt {
     std::string name;
     std::string parent_name;
     std::vector<std::string> fields;
+    std::vector<std::unique_ptr<VarDeclStmt>> field_decls;
 };
 
 struct InheritDecl : public Stmt {

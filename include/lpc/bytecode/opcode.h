@@ -331,6 +331,7 @@ enum class Op : std::uint8_t {
     //   32=capitalize, 33=lower_case, 34=upper_case, 35=allocate,
     //   36=reverse, 37=min, 38=max, 39=sqrt, 40=ctime, 41=strsrch,
     //   42=replace_string, 43=sort_array
+    //   45=getenv
     // Void efuns (no return value, push Nil): 1,2,3,13,15,31
     // Stack: [..., arg0, ..., argN-1] -> [..., result]  (or [..., Nil] for void)
     // Size: 5 bytes

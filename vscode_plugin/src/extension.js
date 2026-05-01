@@ -2,8 +2,7 @@
 
 const vscode = require("vscode");
 const { LpcTaskProvider } = require("./taskProvider");
-const path = require("path");
-const { activeLpcFile, buildCompileArgs, compileFile, configFor, runProcess, runVm, applyLpcEditorSettings } = require("./utils");
+const { activeLpcFile, buildCompileArgs, buildEnvArgs, compileFile, configFor, moduleNameForFile, runProcess, runVm, applyLpcEditorSettings } = require("./utils");
 const { publishDiagnostics } = require("./diagnostics");
 const { startLsp, stopLsp } = require("./lspClient");
 
@@ -156,10 +155,11 @@ function activate(context) {
         return undefined;
       }
 
-      const args = ["debug", "--protocol", "dap", "--entry-file", path.join(cfg.outRoot, "entry.txt"), "--bytecode-root", cfg.outRoot];
-      if (session.configuration.entryModule) {
-        args.splice(1, 0, session.configuration.entryModule);
-      }
+      const entryModule = session.configuration.entryModule || moduleNameForFile(program, cfg);
+      const entryFunction = session.configuration.entryFunction || "main";
+      const env = session.configuration.env || cfg.env;
+      const args = ["debug", "--protocol", "dap", "--module", entryModule, "--function", entryFunction, "--bytecode-root", cfg.outRoot];
+      args.splice(args.length - 2, 0, ...buildEnvArgs(env));
       return new vscode.DebugAdapterExecutable(cfg.vmPath, args, { cwd: cfg.workspace });
     }
   }));

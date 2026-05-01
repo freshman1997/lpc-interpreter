@@ -10,6 +10,12 @@ std::vector<Token> Lexer::Tokenize(const SourceFile &source) {
     offset_ = 0;
     line_ = 1;
     column_ = 1;
+    if (source_->text.size() >= 3 &&
+        static_cast<unsigned char>(source_->text[0]) == 0xEF &&
+        static_cast<unsigned char>(source_->text[1]) == 0xBB &&
+        static_cast<unsigned char>(source_->text[2]) == 0xBF) {
+        offset_ = 3;
+    }
 
     std::vector<Token> out;
     while (!IsAtEnd()) {

@@ -1,0 +1,30 @@
+class Test {
+    int a = 10;
+    int b = 20;
+    string name = "ready";
+    mapping data = {"name": "ready", "age": 18};
+    mixed nums = {1, 2, 3};
+}
+
+int main() {
+    Test obj = new Test();
+    if (obj->a != 10) {
+        return 1;
+    }
+    if (obj->b != 20) {
+        return 2;
+    }
+    if (obj->name != "ready") {
+        return 3;
+    }
+    if (obj->data["name"] != "ready") {
+        return 4;
+    }
+    if (obj->data["age"] != 18) {
+        return 5;
+    }
+    if (obj->nums[1] != 2) {
+        return 6;
+    }
+    return 0;
+}

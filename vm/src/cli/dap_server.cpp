@@ -305,13 +305,14 @@ public:
     }
 
     void SetVm(Vm *vm) { vm_ = vm; }
+    void SetEntryFunction(const std::string &entry_function) { entry_function_ = entry_function; }
 
     void StartVmThread() {
         vm_thread_ = std::thread([this]() {
             Vm *vm = vm_;
             if (!vm) return;
-            DapLog("[vm] RunEntry(main) begin");
-            RuntimeError e = vm->RunEntry("main");
+            DapLog("[vm] RunEntry(" + entry_function_ + ") begin");
+            RuntimeError e = vm->RunEntry(entry_function_.c_str());
             std::lock_guard<std::mutex> lock(state_mutex_);
             vm_finished_ = true;
             if (e.ok()) {
@@ -454,6 +455,7 @@ private:
     std::map<int, Value> expandable_vars_;
     std::map<int, std::string> source_refs_;
     int next_var_ref_;
+    std::string entry_function_ = "main";
     bool break_on_exceptions_;
     std::uint64_t last_active_version_ = 0;
 
@@ -1194,7 +1196,7 @@ RuntimeError RunDapServerStep(Vm &vm, std::uint32_t pc) {
     return RuntimeError::Ok();
 }
 
-void RunDapServer(Vm &vm) {
+void RunDapServer(Vm &vm, const std::string &entry_function) {
 #ifdef _WIN32
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
@@ -1202,6 +1204,7 @@ void RunDapServer(Vm &vm) {
     DapLog("=== LPC DAP session start ===");
     DapServer server;
     server.SetVm(&vm);
+    server.SetEntryFunction(entry_function);
     g_dap_server = &server;
     server.Run();
     g_dap_server = nullptr;

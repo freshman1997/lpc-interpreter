@@ -52,7 +52,12 @@ $tests = @(
     "test_inherit_module",
     "test_inherit_multi",
     "test_call_other",
-    "test_call_other2"
+    "test_call_other2",
+    "test_getenv",
+    "test_class_default",
+    "test_class_field_init",
+    "test_brace_literals",
+    "test_cross_module_call"
 )
 
 $pass = 0
@@ -73,7 +78,23 @@ foreach ($t in $tests) {
         continue
     }
 
-    $runOutput = & $vm run $t --bytecode-root $outRoot 2>&1
+    if ($t -eq "test_cross_module_call") {
+        $target = Join-Path $Root "test_cross_module_target.lpc"
+        $targetCompileOutput = & $compiler $target --workspace-root $Root --out-root $outRoot 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $fail++
+            Write-Host "FAIL: $t"
+            Write-Host "target compile failed:"
+            Write-Host $targetCompileOutput
+            continue
+        }
+    }
+
+    if ($t -eq "test_getenv") {
+        $runOutput = & $vm run $t --bytecode-root $outRoot --env mode=test --env shard=42 2>&1
+    } else {
+        $runOutput = & $vm run $t --bytecode-root $outRoot 2>&1
+    }
     if ($LASTEXITCODE -eq 0) {
         $pass++
     } else {

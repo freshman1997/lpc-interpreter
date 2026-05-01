@@ -165,6 +165,72 @@ static lpc::vm::RuntimeError ParseConstantsSection(std::ifstream &in, std::uint3
     return lpc::vm::RuntimeError::Ok();
 }
 
+static lpc::vm::RuntimeError ParseClassFieldDefault(std::ifstream &in, lpc::vm::ClassInfo::FieldDefault *out_def) {
+    if (!out_def) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class field default target");
+    }
+    std::uint8_t kind = 0;
+    if (!ReadU8(in, &kind)) {
+        return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class field default kind");
+    }
+    out_def->kind = static_cast<lpc::vm::ClassInfo::FieldDefault::Kind>(kind);
+    switch (out_def->kind) {
+    case lpc::vm::ClassInfo::FieldDefault::Kind::Int: {
+        std::uint64_t raw = 0;
+        if (!ReadU64(in, &raw)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class int default");
+        }
+        out_def->int_value = static_cast<std::int64_t>(raw);
+        break;
+    }
+    case lpc::vm::ClassInfo::FieldDefault::Kind::Float: {
+        std::uint64_t raw = 0;
+        if (!ReadU64(in, &raw)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class float default");
+        }
+        static_assert(sizeof(double) == sizeof(std::uint64_t), "double must be 64 bits");
+        std::memcpy(&out_def->float_value, &raw, sizeof(double));
+        break;
+    }
+    case lpc::vm::ClassInfo::FieldDefault::Kind::String:
+        if (!ReadString(in, &out_def->string_value)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class string default");
+        }
+        break;
+    case lpc::vm::ClassInfo::FieldDefault::Kind::Mapping: {
+        std::uint32_t count = 0;
+        if (!ReadU32(in, &count)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class mapping default count");
+        }
+        out_def->mapping_pairs.resize(count);
+        for (std::uint32_t i = 0; i < count; ++i) {
+            lpc::vm::RuntimeError key_err = ParseClassFieldDefault(in, &out_def->mapping_pairs[i].first);
+            if (!key_err.ok()) return key_err;
+            lpc::vm::RuntimeError val_err = ParseClassFieldDefault(in, &out_def->mapping_pairs[i].second);
+            if (!val_err.ok()) return val_err;
+        }
+        break;
+    }
+    case lpc::vm::ClassInfo::FieldDefault::Kind::Array: {
+        std::uint32_t count = 0;
+        if (!ReadU32(in, &count)) {
+            return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class array default count");
+        }
+        out_def->array_items.resize(count);
+        for (std::uint32_t i = 0; i < count; ++i) {
+            lpc::vm::RuntimeError item_err = ParseClassFieldDefault(in, &out_def->array_items[i]);
+            if (!item_err.ok()) return item_err;
+        }
+        break;
+    }
+    case lpc::vm::ClassInfo::FieldDefault::Kind::Zero:
+    default:
+        out_def->kind = lpc::vm::ClassInfo::FieldDefault::Kind::Zero;
+        break;
+    }
+    return lpc::vm::RuntimeError::Ok();
+}
+
 static lpc::vm::RuntimeError ParseClassesSection(std::ifstream &in, std::uint32_t /*payload_size*/, lpc::vm::Chunk &out) {
     std::uint32_t count = 0;
     if (!ReadU32(in, &count)) {
@@ -187,6 +253,10 @@ static lpc::vm::RuntimeError ParseClassesSection(std::ifstream &in, std::uint32_
                 return lpc::vm::RuntimeError::Error(lpc::vm::RuntimeErrorCode::ParseError, "invalid class field name");
             }
             ci.field_names.push_back(fname);
+            lpc::vm::ClassInfo::FieldDefault def;
+            lpc::vm::RuntimeError def_err = ParseClassFieldDefault(in, &def);
+            if (!def_err.ok()) return def_err;
+            ci.field_defaults.push_back(std::move(def));
         }
         out.classes.push_back(std::move(ci));
     }
@@ -426,7 +496,20 @@ static vm::Vm &LiveHotReloadVm() {
     return live_vm;
 }
 
-RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile, const std::string &bytecode_root, bool debug_checks) {
+static void InstallModuleLoader(vm::Vm &vm, const std::string &bytecode_root) {
+    vm.set_module_loader([bytecode_root](const std::string &module_name, vm::Chunk *out_chunk) -> RuntimeError {
+        if (!out_chunk) {
+            return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "output chunk pointer is null");
+        }
+        const std::string path = ResolveModulePath(module_name, bytecode_root);
+        if (path.empty()) {
+            return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode: " + module_name);
+        }
+        return LoadChunk(path, out_chunk);
+    });
+}
+
+RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile, const std::string &bytecode_root, bool debug_checks, const std::string &entry_function, const std::vector<std::pair<std::string, std::string>> &env_params) {
     const std::string next_path = ResolveModulePath(entry_module, bytecode_root);
     if (next_path.empty()) {
         return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
@@ -441,11 +524,13 @@ RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile
     vm::Vm nextvm_engine;
     nextvm_engine.set_profile_enabled(enable_profile);
     nextvm_engine.set_debug_checks_enabled(debug_checks);
+    nextvm_engine.set_env_params(env_params);
+    InstallModuleLoader(nextvm_engine, bytecode_root);
     vm::RuntimeError e = nextvm_engine.LoadChunk(ch);
     if (!e.ok()) {
         return e;
     }
-    e = nextvm_engine.RunEntry("main");
+    e = nextvm_engine.RunEntry(entry_function.c_str());
     if (!e.ok()) {
         return e;
     }
@@ -460,7 +545,7 @@ RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile
     return RuntimeError::Ok();
 }
 
-RuntimeError RunEntryModuleAttachable(const std::string &entry_module, int dap_listen_port, bool enable_profile, const std::string &bytecode_root, bool debug_checks) {
+RuntimeError RunEntryModuleAttachable(const std::string &entry_module, int dap_listen_port, bool enable_profile, const std::string &bytecode_root, bool debug_checks, const std::string &entry_function, const std::vector<std::pair<std::string, std::string>> &env_params) {
     const std::string next_path = ResolveModulePath(entry_module, bytecode_root);
     if (next_path.empty()) {
         return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
@@ -475,6 +560,8 @@ RuntimeError RunEntryModuleAttachable(const std::string &entry_module, int dap_l
     vm::Vm nextvm_engine;
     nextvm_engine.set_profile_enabled(enable_profile);
     nextvm_engine.set_debug_checks_enabled(debug_checks);
+    nextvm_engine.set_env_params(env_params);
+    InstallModuleLoader(nextvm_engine, bytecode_root);
     vm::RuntimeError e = nextvm_engine.LoadChunk(ch);
     if (!e.ok()) {
         return e;
@@ -484,7 +571,7 @@ RuntimeError RunEntryModuleAttachable(const std::string &entry_module, int dap_l
         return RuntimeError::Error(RuntimeErrorCode::InternalError, "failed to start DAP attach server");
     }
 
-    e = nextvm_engine.RunEntry("main");
+    e = nextvm_engine.RunEntry(entry_function.c_str());
     if (!e.ok()) {
         return e;
     }
@@ -499,7 +586,7 @@ RuntimeError RunEntryModuleAttachable(const std::string &entry_module, int dap_l
     return RuntimeError::Ok();
 }
 
-RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_json, bool protocol_dap, bool enable_profile, const std::string &bytecode_root) {
+RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_json, bool protocol_dap, bool enable_profile, const std::string &bytecode_root, const std::string &entry_function, const std::vector<std::pair<std::string, std::string>> &env_params) {
     const std::string next_path = ResolveModulePath(entry_module, bytecode_root);
     if (next_path.empty()) {
         return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
@@ -513,6 +600,8 @@ RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_
 
     vm::Vm nextvm_engine;
     nextvm_engine.set_profile_enabled(enable_profile);
+    nextvm_engine.set_env_params(env_params);
+    InstallModuleLoader(nextvm_engine, bytecode_root);
     vm::RuntimeError e = nextvm_engine.LoadChunk(ch);
     if (!e.ok()) {
         return e;
@@ -522,7 +611,7 @@ RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_
     nextvm_engine.debugger().SetStepMode(StepMode::StepInto, 0);
 
     if (protocol_dap) {
-        RunDapServer(nextvm_engine);
+        RunDapServer(nextvm_engine, entry_function);
         return RuntimeError::Ok();
     }
 
@@ -536,7 +625,7 @@ RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_
         });
     }
 
-    e = nextvm_engine.RunEntry("main");
+    e = nextvm_engine.RunEntry(entry_function.c_str());
     if (!e.ok()) {
         if (protocol_json) {
             std::cout << "{\"type\":\"event\",\"event\":\"runtimeError\",\"body\":{\"message\":"

@@ -53,12 +53,13 @@ static int EfunResultCount(int efun_index) {
     case 42: return 1; // replace_string
     case 43: return 1; // sort_array
     case 44: return 1; // instanceof
+    case 45: return 1; // getenv
     default: return 0;
     }
 }
 
 static bool IsKnownEfun(int efun_index) {
-    return efun_index >= 0 && efun_index <= 44;
+    return efun_index >= 0 && efun_index <= 45;
 }
 
 static int StackDelta(MirOp op) {

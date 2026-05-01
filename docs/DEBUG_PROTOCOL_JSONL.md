@@ -5,14 +5,14 @@ The VM debugger can emit a machine-readable JSON-lines stream while preserving t
 Enable it with:
 
 ```bash
-LPC_DEBUG_PROTOCOL=json ./build/vm/lpc_vm debug --entry-file bin/entry.txt
+LPC_DEBUG_PROTOCOL=json ./build/vm/lpc_vm debug --bytecode-root bin --module test_bitwise --function main
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:LPC_DEBUG_PROTOCOL='json'
-build\vm\lpc_vm.exe debug --entry-file bin\entry.txt
+build\vm\lpc_vm.exe debug --bytecode-root bin --module test_bitwise --function main
 ```
 
 ## Event Envelope

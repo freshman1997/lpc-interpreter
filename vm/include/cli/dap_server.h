@@ -11,7 +11,7 @@ namespace vm {
 class Vm;
 
 RuntimeError RunDapServerStep(Vm &vm, std::uint32_t pc);
-void RunDapServer(Vm &vm);
+void RunDapServer(Vm &vm, const std::string &entry_function = "main");
 bool StartDapAttachServer(Vm &vm, int port);
 
 } // namespace vm

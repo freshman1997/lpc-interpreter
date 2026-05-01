@@ -1,0 +1,15 @@
+class Defaults {
+    int count;
+}
+
+int main() {
+    Defaults obj = new Defaults();
+    if (obj->count != 0) {
+        return 1;
+    }
+    obj->count++;
+    if (obj->count != 1) {
+        return 2;
+    }
+    return 0;
+}

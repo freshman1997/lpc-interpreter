@@ -103,6 +103,74 @@ static bool ReadBytes(const std::uint8_t *data, std::size_t len, std::size_t &po
     return true;
 }
 
+static void WriteFieldDefault(std::vector<std::uint8_t> &buf, const ClassInfo::FieldDefault &def) {
+    WriteU8(buf, static_cast<std::uint8_t>(def.kind));
+    switch (def.kind) {
+    case ClassInfo::FieldDefault::Kind::Int:
+        WriteI64(buf, def.int_value);
+        break;
+    case ClassInfo::FieldDefault::Kind::Float:
+        WriteF64(buf, def.float_value);
+        break;
+    case ClassInfo::FieldDefault::Kind::String:
+        WriteStr(buf, def.string_value);
+        break;
+    case ClassInfo::FieldDefault::Kind::Mapping:
+        WriteU32(buf, static_cast<std::uint32_t>(def.mapping_pairs.size()));
+        for (const auto &pair : def.mapping_pairs) {
+            WriteFieldDefault(buf, pair.first);
+            WriteFieldDefault(buf, pair.second);
+        }
+        break;
+    case ClassInfo::FieldDefault::Kind::Array:
+        WriteU32(buf, static_cast<std::uint32_t>(def.array_items.size()));
+        for (const auto &item : def.array_items) {
+            WriteFieldDefault(buf, item);
+        }
+        break;
+    case ClassInfo::FieldDefault::Kind::Zero:
+    default:
+        break;
+    }
+}
+
+static bool ReadFieldDefault(const std::uint8_t *data, std::size_t len, std::size_t &pos, ClassInfo::FieldDefault &def) {
+    std::uint8_t kind = 0;
+    if (!ReadU8(data, len, pos, kind)) return false;
+    def.kind = static_cast<ClassInfo::FieldDefault::Kind>(kind);
+    switch (def.kind) {
+    case ClassInfo::FieldDefault::Kind::Int:
+        return ReadI64(data, len, pos, def.int_value);
+    case ClassInfo::FieldDefault::Kind::Float:
+        return ReadF64(data, len, pos, def.float_value);
+    case ClassInfo::FieldDefault::Kind::String:
+        return ReadStr(data, len, pos, def.string_value);
+    case ClassInfo::FieldDefault::Kind::Mapping: {
+        std::uint32_t count = 0;
+        if (!ReadU32(data, len, pos, count)) return false;
+        def.mapping_pairs.resize(count);
+        for (std::uint32_t i = 0; i < count; ++i) {
+            if (!ReadFieldDefault(data, len, pos, def.mapping_pairs[i].first)) return false;
+            if (!ReadFieldDefault(data, len, pos, def.mapping_pairs[i].second)) return false;
+        }
+        return true;
+    }
+    case ClassInfo::FieldDefault::Kind::Array: {
+        std::uint32_t count = 0;
+        if (!ReadU32(data, len, pos, count)) return false;
+        def.array_items.resize(count);
+        for (std::uint32_t i = 0; i < count; ++i) {
+            if (!ReadFieldDefault(data, len, pos, def.array_items[i])) return false;
+        }
+        return true;
+    }
+    case ClassInfo::FieldDefault::Kind::Zero:
+    default:
+        def.kind = ClassInfo::FieldDefault::Kind::Zero;
+        return true;
+    }
+}
+
 std::string SerializeChunk(const Chunk &chunk) {
     std::vector<std::uint8_t> buf;
 
@@ -129,7 +197,12 @@ std::string SerializeChunk(const Chunk &chunk) {
         WriteU16(buf, cls.nfields);
         WriteU16(buf, cls.parent_class_idx);
         WriteU32(buf, static_cast<std::uint32_t>(cls.field_names.size()));
-        for (const auto &fn : cls.field_names) WriteStr(buf, fn);
+        for (std::size_t i = 0; i < cls.field_names.size(); ++i) {
+            WriteStr(buf, cls.field_names[i]);
+            ClassInfo::FieldDefault def;
+            if (i < cls.field_defaults.size()) def = cls.field_defaults[i];
+            WriteFieldDefault(buf, def);
+        }
     }
 
     WriteU32(buf, static_cast<std::uint32_t>(chunk.functions.size()));
@@ -227,8 +300,10 @@ bool DeserializeChunk(const std::string &data, Chunk *out_chunk) {
         std::uint32_t nfn = 0;
         if (!ReadU32(d, len, pos, nfn)) return false;
         cls.field_names.resize(nfn);
+        cls.field_defaults.resize(nfn);
         for (std::size_t j = 0; j < nfn; ++j) {
             if (!ReadStr(d, len, pos, cls.field_names[j])) return false;
+            if (!ReadFieldDefault(d, len, pos, cls.field_defaults[j])) return false;
         }
         cls.field_name_index.clear();
         for (std::size_t j = 0; j < cls.field_names.size(); ++j) {

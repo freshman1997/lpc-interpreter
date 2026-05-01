@@ -61,7 +61,7 @@ void Mapping::ResetInlineSlots() {
 std::uint32_t Mapping::HomeIndex(const Value &key) const {
     std::uint64_t h = HashKey(key);
     std::uint32_t mask = capacity_ - 1;
-    return static_cast<std::uint32_t>(h) & mask;
+    return static_cast<std::uint32_t>(h ^ (h >> 32)) & mask;
 }
 
 Value *Mapping::Find(const Value &key) {

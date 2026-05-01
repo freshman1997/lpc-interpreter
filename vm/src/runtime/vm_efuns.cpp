@@ -60,14 +60,14 @@ static std::string FormatValue(const Value &v, Vm &vm, bool nested = false, int 
         }
         if (raw >= kMappingBase && raw < kClassBase) {
             auto pairs = vm.GetMappingPairs(v);
-            std::string out = "([";
+            std::string out = "{";
             for (std::size_t i = 0; i < pairs.size(); ++i) {
                 if (i > 0) out += ", ";
                 out += FormatValue(pairs[i].first, vm, true, depth + 1);
                 out += ": ";
                 out += FormatValue(pairs[i].second, vm, true, depth + 1);
             }
-            out += "])";
+            out += "}";
             return out;
         }
         if (raw >= kClassBase && raw < kObjectBase) {
@@ -217,6 +217,18 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
     switch (efun) {
     case Efun::CallOther: {
         return Value::Nil();
+    }
+    case Efun::Getenv: {
+        Mapping env;
+        for (const auto &item : env_params_) {
+            env.Insert(InternString(item.first), InternString(item.second));
+        }
+        if (!args.empty()) {
+            std::string key = ResolveObjRefStringOnly(args[0]);
+            Value *found = env.Find(InternString(key));
+            return found ? *found : Value::Nil();
+        }
+        return AllocateMappingHandle(std::move(env));
     }
     case Efun::Print: IntrinsicPrint(*this, args, BoundChunk(), string_heap_); break;
     case Efun::Puts: IntrinsicPuts(*this, args, BoundChunk(), string_heap_); break;

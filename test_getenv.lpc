@@ -1,0 +1,13 @@
+int main() {
+    mapping env = getenv();
+    if (env["mode"] != "test") {
+        return 1;
+    }
+    if (getenv("shard") != "42") {
+        return 2;
+    }
+    if (getenv("missing") != 0) {
+        return 3;
+    }
+    return 0;
+}

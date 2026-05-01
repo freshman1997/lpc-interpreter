@@ -4,6 +4,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include "frontend/bytecode_writer.h"
 #include "frontend/pipeline.h"
@@ -41,6 +42,46 @@ struct CompileOptions {
     bool dump_mir_before = false;
     bool dump_mir_after = false;
 };
+
+static bool is_lpc_source(const std::filesystem::path &path) {
+    return path.extension() == ".lpc";
+}
+
+static bool collect_lpc_sources(const std::filesystem::path &root, std::vector<std::string> *out, std::string *err) {
+    if (!out) {
+        return false;
+    }
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec)) {
+        if (err) *err = "path does not exist: " + root.string();
+        return false;
+    }
+    if (std::filesystem::is_regular_file(root, ec)) {
+        if (is_lpc_source(root)) {
+            out->push_back(root.string());
+        } else if (err) {
+            *err = "source file is not .lpc: " + root.string();
+            return false;
+        }
+        return true;
+    }
+    if (!std::filesystem::is_directory(root, ec)) {
+        if (err) *err = "path is neither file nor directory: " + root.string();
+        return false;
+    }
+
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(root, ec)) {
+        if (ec) {
+            if (err) *err = "error scanning directory: " + ec.message();
+            return false;
+        }
+        if (entry.is_regular_file(ec) && is_lpc_source(entry.path())) {
+            out->push_back(entry.path().string());
+        }
+    }
+    std::sort(out->begin(), out->end());
+    return true;
+}
 
 static int compile_one(const std::string &path, const CompileOptions &opt) {
     std::ifstream in(path.c_str(), std::ios::binary);
@@ -115,8 +156,8 @@ static int compile_one(const std::string &path, const CompileOptions &opt) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        std::cout << "usage: lpc_compiler <source-file> [source-file2 ...]\n";
-        std::cout << "   or: lpc_compiler --dir <directory>\n";
+        std::cout << "usage: lpc_compiler <source-file-or-directory> [more files/directories ...]\n";
+        std::cout << "   or: lpc_compiler --dir <directory> [--dir directory2 ...]\n";
         std::cout << "   or: lpc_compiler --test\n";
         return 1;
     }
@@ -134,9 +175,11 @@ int main(int argc, char **argv) {
     CompileOptions opt;
     opt.workspace_root = std::filesystem::current_path().string();
     opt.out_root = (std::filesystem::path(opt.workspace_root) / "bin").string();
+    bool workspace_root_explicit = false;
+    bool out_root_explicit = false;
 
-    std::vector<std::string> inputs;
-    std::string input_dir;
+    std::vector<std::string> raw_inputs;
+    std::vector<std::string> dir_inputs;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if ((arg == "-I" || arg == "--include-dir") && i + 1 < argc) {
@@ -145,10 +188,12 @@ int main(int argc, char **argv) {
         }
         if (arg == "--out-root" && i + 1 < argc) {
             opt.out_root = argv[++i];
+            out_root_explicit = true;
             continue;
         }
         if (arg == "--workspace-root" && i + 1 < argc) {
             opt.workspace_root = argv[++i];
+            workspace_root_explicit = true;
             continue;
         }
         if (arg == "--entry-module" && i + 1 < argc) {
@@ -156,7 +201,7 @@ int main(int argc, char **argv) {
             continue;
         }
         if (arg == "--dir" && i + 1 < argc) {
-            input_dir = argv[++i];
+            dir_inputs.push_back(argv[++i]);
             continue;
         }
         if (arg == "--dump-mir-before") {
@@ -167,25 +212,47 @@ int main(int argc, char **argv) {
             opt.dump_mir_after = true;
             continue;
         }
-        inputs.push_back(arg);
+        raw_inputs.push_back(arg);
     }
 
-    if (!input_dir.empty()) {
-        try {
-            std::filesystem::path dir_path(input_dir);
-            if (!std::filesystem::exists(dir_path) || !std::filesystem::is_directory(dir_path)) {
-                std::cout << "error: directory does not exist or is not a directory: " << input_dir << "\n";
+    std::vector<std::string> inputs;
+    std::vector<std::filesystem::path> directory_roots;
+    try {
+        for (const auto &in : raw_inputs) {
+            std::filesystem::path p(in);
+            std::error_code ec;
+            if (std::filesystem::is_directory(p, ec)) {
+                directory_roots.push_back(p);
+            }
+        }
+        for (const auto &dir : dir_inputs) {
+            directory_roots.push_back(std::filesystem::path(dir));
+        }
+
+        if (!workspace_root_explicit && directory_roots.size() == 1 && raw_inputs.size() + dir_inputs.size() == 1) {
+            opt.workspace_root = std::filesystem::weakly_canonical(directory_roots[0]).string();
+            if (!out_root_explicit) {
+                opt.out_root = (std::filesystem::path(opt.workspace_root) / "bin").string();
+            }
+        }
+
+        for (const auto &in : raw_inputs) {
+            std::string err;
+            if (!collect_lpc_sources(std::filesystem::path(in), &inputs, &err)) {
+                std::cout << "error: " << err << "\n";
                 return 1;
             }
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(dir_path)) {
-                if (entry.path().extension() == ".lpc") {
-                    inputs.push_back(entry.path().string());
-                }
-            }
-        } catch (const std::exception& e) {
-            std::cout << "error scanning directory: " << e.what() << "\n";
-            return 1;
         }
+        for (const auto &dir : dir_inputs) {
+            std::string err;
+            if (!collect_lpc_sources(std::filesystem::path(dir), &inputs, &err)) {
+                std::cout << "error: " << err << "\n";
+                return 1;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cout << "error scanning input: " << e.what() << "\n";
+        return 1;
     }
 
     if (opt.include_dirs.empty()) {
@@ -196,6 +263,8 @@ int main(int argc, char **argv) {
         std::cout << "no input files\n";
         return 1;
     }
+    std::sort(inputs.begin(), inputs.end());
+    inputs.erase(std::unique(inputs.begin(), inputs.end()), inputs.end());
 
     int rc = 0;
     for (const auto &in : inputs) {

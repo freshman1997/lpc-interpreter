@@ -52,6 +52,7 @@ enum class Efun : std::uint16_t {
     ReplaceString  = 42,
     SortArray      = 43,
     Instanceof     = 44,
+    Getenv         = 45,
 };
 
 constexpr bool EfunIsVoid(Efun e) {

@@ -66,6 +66,7 @@ private:
     std::unique_ptr<Expr> ParseLambdaExpr();
     std::unique_ptr<Expr> ParseArrayLiteralExpr();
     std::unique_ptr<Expr> ParseMappingLiteralExpr();
+    std::unique_ptr<Expr> ParseBraceLiteralExpr();
 
     bool IsDecoratorToken(TokenKind kind) const;
     bool IsTypeStartToken(TokenKind kind) const;

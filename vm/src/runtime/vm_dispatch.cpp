@@ -2200,46 +2200,68 @@ lpc_cg_fallback:
                 const std::size_t arg_base = stack_size - argc;
                 const Value target_arg = value_stack_[arg_base];
                 const Value func_arg = value_stack_[arg_base + 1];
-                const std::size_t target_oid = DecodeObjectId(target_arg);
-                const bool target_valid = target_oid > 0 && target_oid <= objects_.size();
-                if (!target_valid) {
-                    fail_call_other_nil(arg_base);
-                    break;
-                }
-                const LpcObject *target_obj = &objects_[target_oid - 1];
-                if (target_obj->destroyed) {
-                    fail_call_other_nil(arg_base);
-                    break;
-                }
                 if (!func_arg.IsObjRef()) {
                     fail_call_other_nil(arg_base);
                     break;
                 }
                 const std::string func_name = ResolveObjRefStringOnly(func_arg);
 
-                TryUpgradeObject(target_oid);
-                target_obj = &objects_[target_oid - 1];
-                if (target_obj->destroyed) {
-                    fail_call_other_nil(arg_base);
-                    break;
-                }
-
                 const std::string *target_module_name = &fp->module_name;
                 std::uint64_t target_version_id = fp->module_version_id;
                 const VersionRuntimeData *target_runtime = bound_vrdata_;
+                std::string string_target_module;
+                std::uint32_t target_object_id = 0;
                 if (!target_runtime) {
                     fail_call_other_nil(arg_base);
                     break;
                 }
 
-                if (!target_obj->module_name.empty() && target_obj->module_name != *target_module_name) {
-                    ModuleRuntimeState *tms = GetModuleState(target_obj->module_name);
-                    if (tms && tms->active_version_id != 0) {
-                        auto vit = tms->version_runtime_data.find(tms->active_version_id);
-                        if (vit != tms->version_runtime_data.end()) {
-                            target_module_name = &target_obj->module_name;
-                            target_version_id = tms->active_version_id;
-                            target_runtime = &vit->second;
+                if (target_arg.IsObjRef() && IsStringObjRefFull(target_arg)) {
+                    const std::string requested_module = ResolveObjRefStringOnly(target_arg);
+                    ModuleRuntimeState *tms = nullptr;
+                    RuntimeError module_err = EnsureModuleLoaded(requested_module, fp->module_name, &tms, &string_target_module);
+                    if (!module_err.ok() || !tms || tms->active_version_id == 0) {
+                        fail_call_other_nil(arg_base);
+                        break;
+                    }
+                    auto vit = tms->version_runtime_data.find(tms->active_version_id);
+                    if (vit == tms->version_runtime_data.end()) {
+                        fail_call_other_nil(arg_base);
+                        break;
+                    }
+                    target_module_name = &string_target_module;
+                    target_version_id = tms->active_version_id;
+                    target_runtime = &vit->second;
+                } else {
+                    const std::size_t target_oid = DecodeObjectId(target_arg);
+                    const bool target_valid = target_oid > 0 && target_oid <= objects_.size();
+                    if (!target_valid) {
+                        fail_call_other_nil(arg_base);
+                        break;
+                    }
+                    const LpcObject *target_obj = &objects_[target_oid - 1];
+                    if (target_obj->destroyed) {
+                        fail_call_other_nil(arg_base);
+                        break;
+                    }
+
+                    TryUpgradeObject(target_oid);
+                    target_obj = &objects_[target_oid - 1];
+                    if (target_obj->destroyed) {
+                        fail_call_other_nil(arg_base);
+                        break;
+                    }
+                    target_object_id = static_cast<std::uint32_t>(target_oid);
+
+                    if (!target_obj->module_name.empty() && target_obj->module_name != *target_module_name) {
+                        ModuleRuntimeState *tms = GetModuleState(target_obj->module_name);
+                        if (tms && tms->active_version_id != 0) {
+                            auto vit = tms->version_runtime_data.find(tms->active_version_id);
+                            if (vit != tms->version_runtime_data.end()) {
+                                target_module_name = &target_obj->module_name;
+                                target_version_id = tms->active_version_id;
+                                target_runtime = &vit->second;
+                            }
                         }
                     }
                 }
@@ -2271,7 +2293,7 @@ lpc_cg_fallback:
                     callee.code_start,
                     callee_base,
                     callee_base + callee.nlocals,
-                    static_cast<std::uint32_t>(target_oid),
+                    target_object_id,
                     target_version_id,
                     *target_module_name,
                     target_version_id == fp->module_version_id && *target_module_name == fp->module_name,

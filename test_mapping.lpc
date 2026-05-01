@@ -12,7 +12,7 @@ void main() {
 
     print(to_string(m["missing"]));
 
-    mapping m2 = ([ 1 : 100, 2 : 200 ]);
+    mapping m2 = {1 : 100, 2 : 200 };
     print(to_string(m2[1]));
     m2[3] = 300;
     print(to_string(m2[3]));

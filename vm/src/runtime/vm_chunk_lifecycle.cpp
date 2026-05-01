@@ -2,7 +2,47 @@
 #include "vm/runtime/hot_reload.h"
 #include "lpc/bytecode/opcode.h"
 
+#include <vector>
+
 using namespace lpc::vm;
+
+static Value MakeClassFieldDefaultValue(Vm &vm, const ClassInfo::FieldDefault &def) {
+    switch (def.kind) {
+    case ClassInfo::FieldDefault::Kind::Int:
+        return vm.MakeI64(def.int_value);
+    case ClassInfo::FieldDefault::Kind::Float:
+        return Value::FromF64(def.float_value);
+    case ClassInfo::FieldDefault::Kind::String:
+        return vm.InternString(def.string_value);
+    case ClassInfo::FieldDefault::Kind::Mapping: {
+        Mapping map;
+        for (const auto &pair : def.mapping_pairs) {
+            map.Insert(
+                MakeClassFieldDefaultValue(vm, pair.first),
+                MakeClassFieldDefaultValue(vm, pair.second));
+        }
+        return vm.AllocateMappingHandle(std::move(map));
+    }
+    case ClassInfo::FieldDefault::Kind::Array: {
+        std::vector<Value> values;
+        values.reserve(def.array_items.size());
+        for (const auto &item : def.array_items) {
+            values.push_back(MakeClassFieldDefaultValue(vm, item));
+        }
+        return vm.AllocateArrayHandle(std::move(values));
+    }
+    case ClassInfo::FieldDefault::Kind::Zero:
+    default:
+        return vm.MakeI64(0);
+    }
+}
+
+static Value DefaultForClassField(Vm &vm, const ClassInfo &ci, std::size_t field_idx) {
+    if (field_idx < ci.field_defaults.size()) {
+        return MakeClassFieldDefaultValue(vm, ci.field_defaults[field_idx]);
+    }
+    return vm.MakeI64(0);
+}
 
 Chunk Vm::empty_chunk_;
 
@@ -222,6 +262,72 @@ const Vm::ModuleRuntimeState *Vm::GetModuleState(const std::string &module_name)
     return it != module_states_.end() ? &it->second : nullptr;
 }
 
+RuntimeError Vm::EnsureModuleLoaded(const std::string &module_name,
+                                    const std::string &relative_to_module,
+                                    ModuleRuntimeState **out_state,
+                                    std::string *out_resolved_name) {
+    if (out_state) *out_state = nullptr;
+    if (out_resolved_name) out_resolved_name->clear();
+    if (module_name.empty()) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "empty module name");
+    }
+
+    std::vector<std::string> candidates;
+    candidates.push_back(module_name);
+
+    std::size_t slash = relative_to_module.find('/');
+    while (slash != std::string::npos) {
+        std::string prefix = relative_to_module.substr(0, slash);
+        if (!prefix.empty()) {
+            std::string candidate = prefix + "/" + module_name;
+            bool exists = false;
+            for (const auto &it : candidates) {
+                if (it == candidate) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) candidates.push_back(candidate);
+        }
+        slash = relative_to_module.find('/', slash + 1);
+    }
+
+    RuntimeError last_err = RuntimeError::Error(RuntimeErrorCode::NotFound, "module not found: " + module_name);
+    for (const std::string &candidate : candidates) {
+        ModuleRuntimeState *loaded = GetModuleState(candidate);
+        if (loaded && loaded->active_version_id != 0) {
+            if (out_state) *out_state = loaded;
+            if (out_resolved_name) *out_resolved_name = candidate;
+            return RuntimeError::Ok();
+        }
+
+        if (!module_loader_) {
+            continue;
+        }
+
+        Chunk chunk;
+        RuntimeError load_err = module_loader_(candidate, &chunk);
+        if (!load_err.ok()) {
+            last_err = load_err;
+            continue;
+        }
+
+        RuntimeError module_err = LoadModule(candidate, chunk);
+        if (!module_err.ok()) {
+            last_err = module_err;
+            continue;
+        }
+        loaded = GetModuleState(candidate);
+        if (loaded && loaded->active_version_id != 0) {
+            if (out_state) *out_state = loaded;
+            if (out_resolved_name) *out_resolved_name = candidate;
+            return RuntimeError::Ok();
+        }
+    }
+
+    return last_err;
+}
+
 RuntimeError Vm::PrepareHotReload(const std::string &module_name,
                                   const Chunk &candidate,
                                   HotReloadLevel level,
@@ -421,10 +527,14 @@ void Vm::UpgradeClassInstancesForModule(const std::string &module_name, std::uin
         if (cm_it != class_migration_map.end()) {
             MigrateClassFields(fields_vec, old_ci.field_names, new_ci.field_names, *cm_it->second);
         } else {
-            fields_vec.resize(new_ci.nfields, Value::Nil());
+            const std::size_t old_size = fields_vec.size();
+            fields_vec.resize(new_ci.nfields, MakeI64(0));
+            for (std::size_t fi = old_size; fi < fields_vec.size(); ++fi) {
+                fields_vec[fi] = DefaultForClassField(*this, new_ci, fi);
+            }
         }
 
-        class_fields_[idx] = LpcClass(new_ci.nfields, Value::Nil());
+        class_fields_[idx] = LpcClass(new_ci.nfields, MakeI64(0));
         for (std::size_t fi = 0; fi < fields_vec.size() && fi < class_fields_[idx].Size(); ++fi) {
             class_fields_[idx].Set(fi, fields_vec[fi]);
         }

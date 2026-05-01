@@ -1,8 +1,7 @@
 "use strict";
 
 const vscode = require("vscode");
-const path = require("path");
-const { buildCompileArgs, configFor, workspaceFolderFor, activeLpcFile } = require("./utils");
+const { buildCompileArgs, buildEnvArgs, configFor, moduleNameForFile, activeLpcFile } = require("./utils");
 
 class LpcTaskProvider {
   provideTasks() {
@@ -27,8 +26,10 @@ class LpcTaskProvider {
   makeTask(command, name, file) {
     const cfg = configFor(file);
     const definition = { type: "lpc", command, program: file };
+    const moduleName = moduleNameForFile(file, cfg);
+    const envArgs = buildEnvArgs(cfg.env).map(quoteShell).join(" ");
     const commandLine = command === "run"
-      ? `${quoteShell(cfg.vmPath)} run --entry-file ${quoteShell(path.join(cfg.outRoot, "entry.txt"))} --bytecode-root ${quoteShell(cfg.outRoot)}`
+      ? `${quoteShell(cfg.vmPath)} run --module ${quoteShell(moduleName)} --function main ${envArgs} --bytecode-root ${quoteShell(cfg.outRoot)}`
       : `${quoteShell(cfg.compilerPath)} ${buildCompileArgs(file, cfg).map(quoteShell).join(" ")}`;
     const execution = new vscode.ShellExecution(commandLine, { cwd: cfg.workspace });
     const task = new vscode.Task(definition, vscode.TaskScope.Workspace, name, "lpc", execution, command === "compile" ? "$lpc-compiler" : []);

@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <ostream>
 #include <iostream>
+#include <utility>
 
 #include "vm/value/value.h"
 #include "vm/value/objref.h"
@@ -79,6 +80,10 @@ public:
     bool profile_enabled() const { return profile_enabled_; }
     void set_debug_checks_enabled(bool enabled) { debug_checks_enabled_ = enabled; }
     bool debug_checks_enabled() const { return debug_checks_enabled_; }
+    void set_env_params(std::vector<std::pair<std::string, std::string>> env) { env_params_ = std::move(env); }
+    const std::vector<std::pair<std::string, std::string>> &env_params() const { return env_params_; }
+    using ModuleLoader = std::function<RuntimeError(const std::string &, Chunk *)>;
+    void set_module_loader(ModuleLoader loader) { module_loader_ = std::move(loader); }
     void BeginProfile() {
         if (!profile_enabled_) return;
         instruction_count_ = 0;
@@ -225,6 +230,10 @@ private:
     RuntimeError RebindActiveChunkForCurrentModule();
     ModuleRuntimeState *GetModuleState(const std::string &module_name);
     const ModuleRuntimeState *GetModuleState(const std::string &module_name) const;
+    RuntimeError EnsureModuleLoaded(const std::string &module_name,
+                                    const std::string &relative_to_module,
+                                    ModuleRuntimeState **out_state,
+                                    std::string *out_resolved_name = nullptr);
 
     // --- Hot path: accessed every opcode dispatch ---
     VersionRuntimeData *bound_vrdata_ = nullptr;
@@ -278,6 +287,7 @@ private:
     std::unordered_map<std::string, Value> string_intern_;
     bool profile_enabled_ = false;
     bool debug_checks_enabled_ = true;
+    std::vector<std::pair<std::string, std::string>> env_params_;
     std::uint64_t instruction_count_ = 0;
     std::array<std::uint64_t, 256> opcode_counts_{};
     std::chrono::steady_clock::time_point profile_start_{};
@@ -285,6 +295,7 @@ private:
     Debugger debugger_;
     DebugHook debug_hook_;
     OutputHook output_hook_;
+    ModuleLoader module_loader_;
     HotReloadManager hot_reload_manager_;
 
     RuntimeError RunInitCode();

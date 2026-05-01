@@ -30,7 +30,8 @@ function configFor(file) {
     compilerPath: resolveToolPath(expand(cfg.get("compilerPath")), "lpc_compiler"),
     vmPath: resolveToolPath(expand(cfg.get("vmPath")), "lpc_vm"),
     outRoot: expand(cfg.get("outRoot")),
-    includeDirs: (cfg.get("includeDirs") || []).map(expand)
+    includeDirs: (cfg.get("includeDirs") || []).map(expand),
+    env: cfg.get("env") || {}
   };
 }
 
@@ -42,6 +43,19 @@ function buildCompileArgs(file, cfg) {
   ];
   for (const dir of cfg.includeDirs) {
     args.push("-I", dir);
+  }
+  return args;
+}
+
+function moduleNameForFile(file, cfg) {
+  const rel = path.relative(cfg.workspace, file);
+  return rel.replace(path.extname(rel), "").split(path.sep).join("/");
+}
+
+function buildEnvArgs(env) {
+  const args = [];
+  for (const [key, value] of Object.entries(env || {})) {
+    args.push("--env", `${key}=${String(value)}`);
   }
   return args;
 }
@@ -62,10 +76,11 @@ function compileFile(file, diagnostics) {
 function runVm(file) {
   const cfg = configFor(file);
   const terminal = vscode.window.createTerminal("LPC VM");
-  const entryFile = path.join(cfg.outRoot, "entry.txt");
+  const moduleName = moduleNameForFile(file, cfg);
   const quoted = (value) => `"${String(value).replace(/"/g, '\\"')}"`;
+  const envArgs = buildEnvArgs(cfg.env).map(quoted).join(" ");
   terminal.show();
-  terminal.sendText(`${quoted(cfg.vmPath)} run --entry-file ${quoted(entryFile)} --bytecode-root ${quoted(cfg.outRoot)}`);
+  terminal.sendText(`${quoted(cfg.vmPath)} run --module ${quoted(moduleName)} --function main ${envArgs} --bytecode-root ${quoted(cfg.outRoot)}`);
 }
 
 function runProcess(command, args, cwd, channelName, options) {
@@ -133,6 +148,8 @@ module.exports = {
   activeLpcFile,
   workspaceFolderFor,
   configFor,
+  moduleNameForFile,
+  buildEnvArgs,
   buildCompileArgs,
   compileFile,
   runVm,

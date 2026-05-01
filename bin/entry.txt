@@ -1,1 +1,1 @@
-vm/tests/stress_alloc_gc
+test_mapping

@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const cp = require("child_process");
 const { publishDiagnostics } = require("./diagnostics");
-const { buildCompileArgs, configFor, resolveToolPath, runProcess, workspaceFolderFor } = require("./utils");
+const { buildCompileArgs, buildEnvArgs, configFor, moduleNameForFile, resolveToolPath, runProcess, workspaceFolderFor } = require("./utils");
 
 class LpcDebugAdapter {
   constructor(diagnostics) {
@@ -155,10 +155,11 @@ class LpcDebugAdapter {
       return;
     }
 
-    const args = ["debug", "--protocol", "json", "--entry-file", path.join(cfg.outRoot, "entry.txt"), "--bytecode-root", cfg.outRoot];
-    if (this.launchArgs.entryModule) {
-      args.splice(1, 0, this.launchArgs.entryModule);
-    }
+    const entryModule = this.launchArgs.entryModule || moduleNameForFile(program, cfg);
+    const entryFunction = this.launchArgs.entryFunction || "main";
+    const env = this.launchArgs.env || cfg.env;
+    const args = ["debug", "--protocol", "json", "--module", entryModule, "--function", entryFunction, "--bytecode-root", cfg.outRoot];
+    args.splice(args.length - 2, 0, ...buildEnvArgs(env));
     this.child = cp.spawn(cfg.vmPath, args, {
       cwd: cfg.workspace,
       shell: false,

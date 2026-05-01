@@ -1,8 +1,10 @@
 #ifndef LPC_FRONTEND_SEMA_H
 #define LPC_FRONTEND_SEMA_H
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "frontend/ast.h"
@@ -35,6 +37,23 @@ struct SemanticReference {
     SourceSpan span;
 };
 
+struct ClassFieldDefault {
+    enum class Kind {
+        Zero,
+        Int,
+        Float,
+        String,
+        Mapping,
+        Array,
+    };
+    Kind kind = Kind::Zero;
+    std::int64_t int_value = 0;
+    double float_value = 0.0;
+    std::string string_value;
+    std::vector<std::pair<ClassFieldDefault, ClassFieldDefault>> mapping_pairs;
+    std::vector<ClassFieldDefault> array_items;
+};
+
 struct SemanticModel {
     std::unordered_map<const Node *, std::string> resolved_symbol;
     std::unordered_map<const FunctionDecl *, FunctionSemanticInfo> functions;
@@ -42,6 +61,7 @@ struct SemanticModel {
     std::vector<std::string> global_variables;
     std::vector<std::string> class_order;
     std::unordered_map<std::string, std::vector<std::string>> class_fields;
+    std::unordered_map<std::string, std::vector<ClassFieldDefault>> class_field_defaults;
     std::unordered_map<std::string, std::string> class_parent;
     std::unordered_map<const Expr *, std::string> expr_type;
     std::unordered_map<const Expr *, int> member_field_index;

@@ -1,0 +1,13 @@
+
+int proto_cs_activate_hero(int hero_id)
+{
+	print("proto_cs_activate_hero called with hero_id:", hero_id);
+	return "base/module/hero/main"->activate_hero(hero_id);
+}
+
+
+void main()
+{
+	int ret = proto_cs_activate_hero(1001);
+	print(ret);
+}

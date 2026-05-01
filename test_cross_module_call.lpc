@@ -1,0 +1,7 @@
+int main() {
+    int v = "test_cross_module_target"->value(7);
+    if (v != 12) {
+        return 1;
+    }
+    return 0;
+}

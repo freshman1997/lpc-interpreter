@@ -1,6 +1,8 @@
 class Test {
 	int a = 10;
 	int b = 20;
+	string name = "ready";
+	mapping data = {"name": "ready", "age" : 18};
 }
 
 void main() {

@@ -1,10 +1,98 @@
 #include "frontend/sema.h"
 
 #include <functional>
+#include <cstdlib>
 #include <set>
 
 namespace lpc {
 namespace frontend {
+
+static std::string ProcessStringEscapesForDefault(const std::string &raw) {
+    std::string result;
+    result.reserve(raw.size());
+    for (size_t i = 0; i < raw.size(); ++i) {
+        if (raw[i] == '\\' && i + 1 < raw.size()) {
+            char next = raw[i + 1];
+            switch (next) {
+            case 'n': result += '\n'; ++i; break;
+            case 't': result += '\t'; ++i; break;
+            case 'r': result += '\r'; ++i; break;
+            case '\\': result += '\\'; ++i; break;
+            case '"': result += '"'; ++i; break;
+            case '\'': result += '\''; ++i; break;
+            case '0': result += '\0'; ++i; break;
+            case 'a': result += '\a'; ++i; break;
+            case 'b': result += '\b'; ++i; break;
+            case 'f': result += '\f'; ++i; break;
+            case 'v': result += '\v'; ++i; break;
+            default: result += raw[i]; break;
+            }
+        } else {
+            result += raw[i];
+        }
+    }
+    return result;
+}
+
+static ClassFieldDefault EvalClassFieldDefaultExpr(const Expr *expr) {
+    ClassFieldDefault out;
+    if (!expr) {
+        return out;
+    }
+    if (expr->kind == NodeKind::Number) {
+        const NumberExpr *num = static_cast<const NumberExpr *>(expr);
+        out.kind = ClassFieldDefault::Kind::Int;
+        out.int_value = std::strtoll(num->literal.c_str(), nullptr, 0);
+        return out;
+    }
+    if (expr->kind == NodeKind::Float) {
+        const FloatExpr *flt = static_cast<const FloatExpr *>(expr);
+        out.kind = ClassFieldDefault::Kind::Float;
+        out.float_value = std::strtod(flt->literal.c_str(), nullptr);
+        return out;
+    }
+    if (expr->kind == NodeKind::String) {
+        const StringExpr *str = static_cast<const StringExpr *>(expr);
+        out.kind = ClassFieldDefault::Kind::String;
+        out.string_value = str->literal;
+        if (out.string_value.size() >= 2 && out.string_value.front() == '"' && out.string_value.back() == '"') {
+            out.string_value = out.string_value.substr(1, out.string_value.size() - 2);
+        }
+        out.string_value = ProcessStringEscapesForDefault(out.string_value);
+        return out;
+    }
+    if (expr->kind == NodeKind::MappingLiteralExpr) {
+        const MappingLiteralExpr *map = static_cast<const MappingLiteralExpr *>(expr);
+        out.kind = ClassFieldDefault::Kind::Mapping;
+        out.mapping_pairs.reserve(map->pairs.size());
+        for (const auto &pair : map->pairs) {
+            out.mapping_pairs.push_back({
+                EvalClassFieldDefaultExpr(pair.first.get()),
+                EvalClassFieldDefaultExpr(pair.second.get())
+            });
+        }
+        return out;
+    }
+    if (expr->kind == NodeKind::NewExpr) {
+        const NewExpr *arr = static_cast<const NewExpr *>(expr);
+        if (arr->is_array_literal) {
+            out.kind = ClassFieldDefault::Kind::Array;
+            out.array_items.reserve(arr->array_items.size());
+            for (const auto &item : arr->array_items) {
+                out.array_items.push_back(EvalClassFieldDefaultExpr(item.get()));
+            }
+            return out;
+        }
+    }
+    return out;
+}
+
+static ClassFieldDefault EvalClassFieldDefault(const VarDeclStmt *field) {
+    if (!field || !field->init) {
+        return ClassFieldDefault();
+    }
+    return EvalClassFieldDefaultExpr(field->init.get());
+}
 
 static bool IsAssignOp(const std::string &op) {
     return op == "=" || op == "+=" || op == "-=" || op == "*=" || op == "/=" ||
@@ -280,6 +368,12 @@ SemanticModel Sema::Analyze(const Module &module) {
             const ClassDecl *cl = static_cast<const ClassDecl *>(decl.get());
             model_.class_order.push_back(cl->name);
             model_.class_fields[cl->name] = cl->fields;
+            std::vector<ClassFieldDefault> defaults;
+            defaults.reserve(cl->field_decls.size());
+            for (const auto &field : cl->field_decls) {
+                defaults.push_back(EvalClassFieldDefault(field.get()));
+            }
+            model_.class_field_defaults[cl->name] = std::move(defaults);
             if (!cl->parent_name.empty()) {
                 model_.class_parent[cl->name] = cl->parent_name;
             }
@@ -327,6 +421,11 @@ SemanticModel Sema::Analyze(const Module &module) {
                     flat.push_back(f);
                 }
                 model_.class_fields[cls] = std::move(flat);
+                std::vector<ClassFieldDefault> flat_defaults = model_.class_field_defaults[pit->second];
+                for (const auto &d : model_.class_field_defaults[cls]) {
+                    flat_defaults.push_back(d);
+                }
+                model_.class_field_defaults[cls] = std::move(flat_defaults);
             }
         }
     }
@@ -816,6 +915,7 @@ static const char *kEfunNames[] = {
     "replace_string",
     "sort_array",
     "instanceof",
+    "getenv",
 };
 static constexpr int kEfunCount = sizeof(kEfunNames) / sizeof(kEfunNames[0]);
 

@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "frontend/sema.h"
+
 namespace lpc {
 namespace frontend {
 
@@ -94,6 +96,7 @@ struct MirModule {
     MirFunction init_function;
     std::vector<std::string> class_order;
     std::unordered_map<std::string, std::vector<std::string>> class_fields;
+    std::unordered_map<std::string, std::vector<ClassFieldDefault>> class_field_defaults;
     std::unordered_map<std::string, std::string> class_parent;
 };
 

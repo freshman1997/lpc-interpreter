@@ -1,0 +1,54 @@
+
+class Hero
+{
+	int hero_id;
+	int level;
+	string name;
+	int hp;
+	int mp;
+	int attack;
+	int defense;
+	int speed;
+	int crit;
+	int dodge;
+	int block;
+	int counter;
+	int crit_damage;
+	int dodge_damage;
+	int block_damage;
+	int counter_damage;
+	int crit_chance;
+	int dodge_chance;
+	int block_chance;
+	int counter_chance;
+	int crit_reduce;
+	int dodge_reduce;
+	int block_reduce;
+	int counter_reduce;
+	int crit_damage_reduce;
+	int dodge_damage_reduce;
+	int block_damage_reduce;
+	int counter_damage_reduce;
+	int crit_chance_reduce;
+	int dodge_chance_reduce;
+	int block_chance_reduce;
+	int counter_chance_reduce;
+	int crit_damage_chance;
+	int dodge_damage_chance;
+	int block_damage_chance;
+	int counter_damage_chance;
+	int crit_damage_chance
+}
+
+int activate_hero(int hero_id)
+{
+	print("Activating hero with ID: ", hero_id);
+	if (hero_id <= 0) {
+		print("Invalid hero ID: ", hero_id);
+		return -1; // Invalid hero ID
+	}
+
+	print("Hero with ID %d activated successfully.\n", hero_id);
+
+	return 0;
+}
