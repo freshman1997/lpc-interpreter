@@ -53,6 +53,16 @@ enum class Efun : std::uint16_t {
     SortArray      = 43,
     Instanceof     = 44,
     Getenv         = 45,
+    CallLater      = 46,
+    CancelTimer    = 47,
+    Regexp         = 48,
+    RegexReplace   = 49,
+    TimerExists    = 50,
+    PendingTimers  = 51,
+    TimerInfo      = 52,
+    TimerClearModule = 53,
+    TimerStats     = 54,
+    RegexStats     = 55,
 };
 
 constexpr bool EfunIsVoid(Efun e) {

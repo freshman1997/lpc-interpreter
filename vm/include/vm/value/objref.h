@@ -15,6 +15,27 @@ static constexpr std::uintptr_t kMappingBase  = 0x200000000ULL;
 static constexpr std::uintptr_t kClassBase    = 0x300000000ULL;
 static constexpr std::uintptr_t kObjectBase   = 0x400000000ULL;
 
+static constexpr std::uintptr_t kStringTagMask  = 1;
+static constexpr std::uintptr_t kStringTagSConst = 1;
+static constexpr std::uintptr_t kStringTagHeap   = 0;
+static constexpr int            kStringIndexShift = 1;
+
+inline bool IsSConstStringRaw(std::uintptr_t raw) {
+    return (raw & kStringTagMask) == kStringTagSConst;
+}
+
+inline std::uint32_t DecodeStringIndex(std::uintptr_t raw) {
+    return static_cast<std::uint32_t>(raw >> kStringIndexShift) - 1;
+}
+
+inline Value MakeSConstHandle(std::uint32_t idx) {
+    return Value::FromObj((static_cast<std::uintptr_t>(idx) + 1) << kStringIndexShift | kStringTagSConst);
+}
+
+inline Value MakeHeapStringHandle(std::uint32_t idx) {
+    return Value::FromObj((static_cast<std::uintptr_t>(idx) + 1) << kStringIndexShift | kStringTagHeap);
+}
+
 inline bool IsStringObjRef(const Value &v) {
     if (!v.IsObjRef()) return false;
     auto raw = v.AsObj();
@@ -111,8 +132,6 @@ inline Value MakeBool(bool b) {
 }
 
 inline Value MakeI64(std::int64_t i) {
-    if (i >= Value::kIntMinInline && i <= Value::kIntMaxInline)
-        return Value::FromI64(i);
     return Value::FromI64(i);
 }
 

@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow synthetic token examples"
+regexes = [
+  '''<redacted-token-demo>'''
+]

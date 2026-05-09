@@ -1,0 +1,16 @@
+void main() {
+    int ok = regexp("hello-123", "[a-z]+-[0-9]+");
+    int ok_icase = regexp("HELLO-123", "hello-[0-9]+", "i");
+    int ok_opt = regexp("abc123", "abc[0-9]+", "o");
+    int ok_dotall = regexp("a\nb", "a.b", "s");
+    int ok_multiline = regexp("x\nabc\ny", "^abc$", "m");
+    int ok_badflag = regexp("abc", "abc", "z");
+    mapping rs = regex_stats();
+    int r_hits = rs["hits"];
+    int r_miss = rs["misses"];
+    string out = regex_replace("abc-123-xyz", "[0-9]+", "N");
+    string out2 = regex_replace("AbC", "abc", "z", "i");
+    string out3 = regex_replace("a\nb", "a.b", "Q", "s");
+    string out_bad = regex_replace("abc", "abc", "x", "z");
+    print("regexp=" + to_string(ok) + " icase=" + to_string(ok_icase) + " opt=" + to_string(ok_opt) + " dotall=" + to_string(ok_dotall) + " multiline=" + to_string(ok_multiline) + " badflag=" + to_string(ok_badflag) + " rh=" + r_hits + " rm=" + r_miss + " out=" + out + " out2=" + out2 + " out3=" + out3 + " out_bad=" + out_bad + "\n");
+}

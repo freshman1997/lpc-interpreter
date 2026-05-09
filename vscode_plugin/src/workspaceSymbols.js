@@ -2,10 +2,12 @@
 
 const vscode = require("vscode");
 const path = require("path");
+const { isLspActive } = require("./lspClient");
 
 function createWorkspaceSymbolProvider(workspaceIndex) {
   return vscode.languages.registerWorkspaceSymbolProvider({
     provideWorkspaceSymbols(query, token) {
+      if (isLspActive()) return [];
       if (!query || query.length === 0) return [];
       const results = workspaceIndex.lookupPrefix(query);
       return results.map(sym => {
@@ -15,7 +17,9 @@ function createWorkspaceSymbolProvider(workspaceIndex) {
           ? vscode.SymbolKind.Function
           : sym.kind === "class"
             ? vscode.SymbolKind.Class
-            : vscode.SymbolKind.Variable;
+            : sym.kind === "inherit"
+              ? vscode.SymbolKind.Module
+              : vscode.SymbolKind.Variable;
         return new vscode.SymbolInformation(
           sym.name,
           kind,

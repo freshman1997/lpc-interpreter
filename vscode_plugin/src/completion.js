@@ -3,6 +3,7 @@
 const vscode = require("vscode");
 const { EFUN_DB, EFUN_NAMES, LPC_KEYWORDS, LPC_TYPES } = require("./efunDb");
 const { parseDocumentSymbols } = require("./symbolParser");
+const { isLspActive } = require("./lspClient");
 
 function createCompletionProvider(workspaceIndex) {
   return vscode.languages.registerCompletionItemProvider(
@@ -19,19 +20,92 @@ function createCompletionProvider(workspaceIndex) {
           if (context.triggerCharacter === ".") {
             return items;
           }
+          if (context.triggerCharacter === "-" && prefix.endsWith("->")) {
+            return provideArrowCompletions(document, position, workspaceIndex);
+          }
         }
 
         addEfunCompletions(items);
-        addKeywordCompletions(items);
-        addTypeCompletions(items);
-        addDocumentSymbolCompletions(items, document);
-        addCrossFileSymbolCompletions(items, document, workspaceIndex);
+        if (!isLspActive()) {
+          addKeywordCompletions(items);
+          addTypeCompletions(items);
+          addDocumentSymbolCompletions(items, document);
+          addCrossFileSymbolCompletions(items, document, workspaceIndex);
+        }
 
         return items;
       }
     },
-    ".", " "
+    ".", "-", " "
   );
+}
+
+function provideArrowCompletions(document, position, workspaceIndex) {
+  const line = document.lineAt(position.line).text;
+  const prefix = line.slice(0, position.character);
+  const arrowIdx = prefix.lastIndexOf("->");
+  if (arrowIdx < 0) return [];
+
+  const beforeArrow = prefix.slice(0, arrowIdx).trim();
+  const typeMatch = beforeArrow.match(/([A-Za-z_][A-Za-z0-9_]*)\s*$/);
+  if (!typeMatch) return [];
+
+  const typeName = typeMatch[1];
+  const items = [];
+
+  const allSources = [];
+  const symbols = parseDocumentSymbols(document);
+  allSources.push(...symbols);
+  if (workspaceIndex) {
+    allSources.push(...workspaceIndex.otherFileSymbols(document.uri));
+  }
+
+  const classDef = allSources.find(s => s.kind === "class" && s.name === typeName);
+  if (!classDef) return [];
+
+  if (classDef.baseClass) {
+    addClassFieldCompletions(items, classDef.baseClass, allSources);
+  }
+
+  const classSymbols = allSources.filter(s =>
+    (s.kind === "variable" || s.kind === "field") &&
+    s.line > classDef.line
+  );
+  for (const field of classSymbols) {
+    const item = new vscode.CompletionItem(field.name, vscode.CompletionItemKind.Field);
+    item.detail = field.detail || field.name;
+    item.sortText = `0_${field.name}`;
+    items.push(item);
+  }
+
+  const funcSymbols = allSources.filter(s => s.kind === "function");
+  for (const fn of funcSymbols) {
+    const item = new vscode.CompletionItem(fn.name, vscode.CompletionItemKind.Method);
+    item.detail = fn.detail || fn.name;
+    item.sortText = `1_${fn.name}`;
+    items.push(item);
+  }
+
+  return items;
+}
+
+function addClassFieldCompletions(items, baseClassName, allSources) {
+  const baseClass = allSources.find(s => s.kind === "class" && s.name === baseClassName);
+  if (!baseClass) return;
+  if (baseClass.baseClass) {
+    addClassFieldCompletions(items, baseClass.baseClass, allSources);
+  }
+  const baseFields = allSources.filter(s =>
+    (s.kind === "variable" || s.kind === "field") &&
+    s.line > baseClass.line
+  );
+  for (const field of baseFields) {
+    if (items.some(i => i.label === field.name)) continue;
+    const item = new vscode.CompletionItem(field.name, vscode.CompletionItemKind.Field);
+    item.detail = field.detail || field.name;
+    item.sortText = `0_${field.name}`;
+    items.push(item);
+  }
 }
 
 function addEfunCompletions(items) {
@@ -98,7 +172,9 @@ function addDocumentSymbolCompletions(items, document) {
       ? vscode.CompletionItemKind.Function
       : sym.kind === "class"
         ? vscode.CompletionItemKind.Class
-        : vscode.CompletionItemKind.Variable;
+        : sym.kind === "inherit"
+          ? vscode.CompletionItemKind.Module
+          : vscode.CompletionItemKind.Variable;
     const item = new vscode.CompletionItem(sym.name, kind);
     item.detail = sym.detail || sym.name;
     item.sortText = `4_${sym.name}`;
@@ -118,7 +194,9 @@ function addCrossFileSymbolCompletions(items, document, workspaceIndex) {
       ? vscode.CompletionItemKind.Function
       : sym.kind === "class"
         ? vscode.CompletionItemKind.Class
-        : vscode.CompletionItemKind.Variable;
+        : sym.kind === "inherit"
+          ? vscode.CompletionItemKind.Module
+          : vscode.CompletionItemKind.Variable;
     const item = new vscode.CompletionItem(sym.name, kind);
     const fileName = require("path").basename(vscode.Uri.parse(sym.uri).fsPath);
     item.detail = `${sym.detail} — ${fileName}`;

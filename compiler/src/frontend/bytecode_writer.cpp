@@ -257,6 +257,241 @@ static bool LowerMirToNextVm(
             }
             continue;
         }
+        // Bitwise/shift local-iconst-store: a = a & 0xFF, a = a | 0x10, etc.
+        if (i + 3 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadConst &&
+            (fn.code[i + 2].op == MirOp::BitAnd || fn.code[i + 2].op == MirOp::BitOr ||
+             fn.code[i + 2].op == MirOp::BitXor || fn.code[i + 2].op == MirOp::Shl ||
+             fn.code[i + 2].op == MirOp::Shr) &&
+            fn.code[i + 3].op == MirOp::StoreLocal &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 &&
+            fn.code[i + 1].a < static_cast<int>(fn.iconsts.size()) &&
+            fn.code[i + 3].a >= 0 && fn.code[i + 3].a <= 0xffff) {
+            int const_idx = ensure_iconst(fn.iconsts[fn.code[i + 1].a]);
+            if (const_idx > 0xffff) {
+                return fail("nextvm lowering iconst index out of range");
+            }
+            Op bit_op;
+            switch (fn.code[i + 2].op) {
+            case MirOp::BitAnd: bit_op = Op::BitAndLocalIConstToLocal; break;
+            case MirOp::BitOr:  bit_op = Op::BitOrLocalIConstToLocal; break;
+            case MirOp::BitXor: bit_op = Op::BitXorLocalIConstToLocal; break;
+            case MirOp::Shl:    bit_op = Op::ShlLocalIConstToLocal; break;
+            case MirOp::Shr:    bit_op = Op::ShrLocalIConstToLocal; break;
+            default:            bit_op = Op::BitAndLocalIConstToLocal; break;
+            }
+            emit_u8(static_cast<std::uint8_t>(bit_op));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 3].a));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(const_idx));
+            for (int s = 0; s < 3; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // Float arithmetic local-fconst-store: sum = sum + 1.0, pos = pos * 2.0, etc.
+        if (i + 3 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadFConst &&
+            (fn.code[i + 2].op == MirOp::Add || fn.code[i + 2].op == MirOp::Sub ||
+             fn.code[i + 2].op == MirOp::Mul || fn.code[i + 2].op == MirOp::Div) &&
+            fn.code[i + 3].op == MirOp::StoreLocal &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 &&
+            fn.code[i + 1].a < static_cast<int>(fn.fconsts.size()) &&
+            fn.code[i + 3].a >= 0 && fn.code[i + 3].a <= 0xffff) {
+            double fval = fn.fconsts[fn.code[i + 1].a];
+            int fidx = 0;
+            auto fit = fconst_index.find(fval);
+            if (fit != fconst_index.end()) {
+                fidx = fit->second;
+            } else {
+                fidx = static_cast<int>(fconsts.size());
+                fconst_index[fval] = fidx;
+                fconsts.push_back(fval);
+            }
+            if (fidx > 0xffff) {
+                return fail("nextvm lowering fconst index out of range");
+            }
+            Op fop;
+            switch (fn.code[i + 2].op) {
+            case MirOp::Add: fop = Op::AddLocalFConstToLocal; break;
+            case MirOp::Sub: fop = Op::SubLocalFConstToLocal; break;
+            case MirOp::Mul: fop = Op::MulLocalFConstToLocal; break;
+            case MirOp::Div: fop = Op::DivLocalFConstToLocal; break;
+            default:         fop = Op::AddLocalFConstToLocal; break;
+            }
+            emit_u8(static_cast<std::uint8_t>(fop));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 3].a));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fidx));
+            for (int s = 0; s < 3; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // Class field store from local: v->x = i / obj->field = value。
+        if (i + 2 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadLocal &&
+            fn.code[i + 2].op == MirOp::StoreClassField &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 && fn.code[i + 1].a <= 0xffff &&
+            fn.code[i + 2].a >= 0 && fn.code[i + 2].a <= 0xffff) {
+            emit_u8(static_cast<std::uint8_t>(Op::SetClassFieldLocalFromLocal));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 2].a));
+            for (int s = 0; s < 2; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // Class field add accumulation: sum = sum + obj->field。
+        if (i + 4 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadLocal &&
+            fn.code[i + 2].op == MirOp::LoadClassField &&
+            fn.code[i + 3].op == MirOp::Add &&
+            fn.code[i + 4].op == MirOp::StoreLocal &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            !jump_targets.count(i + 4) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 && fn.code[i + 1].a <= 0xffff &&
+            fn.code[i + 2].a >= 0 && fn.code[i + 2].a <= 0xffff &&
+            fn.code[i + 4].a >= 0 && fn.code[i + 4].a <= 0xffff) {
+            emit_u8(static_cast<std::uint8_t>(Op::AddLocalClassFieldToLocal));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 4].a));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 2].a));
+            for (int s = 0; s < 4; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // Class field chain accumulation: sum = sum + obj->f1 + obj->f2。
+        if (i + 7 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadLocal &&
+            fn.code[i + 2].op == MirOp::LoadClassField &&
+            fn.code[i + 3].op == MirOp::Add &&
+            fn.code[i + 4].op == MirOp::LoadLocal &&
+            fn.code[i + 5].op == MirOp::LoadClassField &&
+            fn.code[i + 6].op == MirOp::Add &&
+            fn.code[i + 7].op == MirOp::StoreLocal &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            !jump_targets.count(i + 4) &&
+            !jump_targets.count(i + 5) &&
+            !jump_targets.count(i + 6) &&
+            !jump_targets.count(i + 7) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 && fn.code[i + 1].a <= 0xffff &&
+            fn.code[i + 2].a >= 0 && fn.code[i + 2].a <= 0xffff &&
+            fn.code[i + 4].a == fn.code[i + 1].a &&
+            fn.code[i + 5].a >= 0 && fn.code[i + 5].a <= 0xffff &&
+            fn.code[i + 7].a >= 0 && fn.code[i + 7].a <= 0xffff) {
+            emit_u8(static_cast<std::uint8_t>(Op::AddLocalTwoClassFieldsToLocal));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 7].a));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 2].a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 5].a));
+            for (int s = 0; s < 7; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // Closure update + return: upvalue = upvalue + local; return upvalue.
+        if (i + 5 < n &&
+            mi.op == MirOp::LoadUpvalue &&
+            fn.code[i + 1].op == MirOp::LoadLocal &&
+            fn.code[i + 2].op == MirOp::Add &&
+            fn.code[i + 3].op == MirOp::StoreUpvalue &&
+            fn.code[i + 4].op == MirOp::LoadUpvalue &&
+            fn.code[i + 5].op == MirOp::Return &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            !jump_targets.count(i + 4) &&
+            !jump_targets.count(i + 5) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 && fn.code[i + 1].a <= 0xffff &&
+            fn.code[i + 3].a == mi.a &&
+            fn.code[i + 4].a == mi.a) {
+            emit_u8(static_cast<std::uint8_t>(Op::AddLocalToUpvalueAndLoad));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            emit_u8(static_cast<std::uint8_t>(Op::Return));
+            for (int s = 0; s < 5; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // Class assignment result unused: obj->field = value; (discard assignment value)
+        // Pattern emitted by front-end: StoreClassField; LoadLocal(obj); LoadClassField(field); Pop.
+        if (i >= 1 && i + 3 < n &&
+            mi.op == MirOp::StoreClassField &&
+            fn.code[i - 1].op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadLocal &&
+            fn.code[i + 2].op == MirOp::LoadClassField &&
+            fn.code[i + 3].op == MirOp::Pop &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i - 1].a >= 0 && fn.code[i - 1].a <= 0xffff &&
+            fn.code[i + 1].a == fn.code[i - 1].a &&
+            fn.code[i + 2].a == mi.a) {
+            emit_u8(static_cast<std::uint8_t>(Op::SetClassField));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            for (int s = 0; s < 3; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
         // 局部变量与整数常量的加减赋值：hp = hp + 10 / cd = cd - 1。
         // 循环尾部：IncLocal 后立刻 Jump。
         if (i + 5 < n &&
@@ -401,6 +636,139 @@ static bool LowerMirToNextVm(
             emit_u16(static_cast<std::uint16_t>(mi.a));
             emit_u16(static_cast<std::uint16_t>(const_idx));
             for (int s = 0; s < 2; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // Bitwise AND local & iconst: 避免三次调度。
+        if (i + 2 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadConst &&
+            fn.code[i + 2].op == MirOp::BitAnd &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 &&
+            fn.code[i + 1].a < static_cast<int>(fn.iconsts.size())) {
+            int const_idx = ensure_iconst(fn.iconsts[fn.code[i + 1].a]);
+            if (const_idx > 0xffff) {
+                return fail("nextvm lowering iconst index out of range");
+            }
+            emit_u8(static_cast<std::uint8_t>(Op::LoadLocalBitAndIConst));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(const_idx));
+            for (int s = 0; s < 2; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // Float local-const expression: locals[local] + fconst, result on stack.
+        if (i + 2 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadFConst &&
+            (fn.code[i + 2].op == MirOp::Add || fn.code[i + 2].op == MirOp::Sub ||
+             fn.code[i + 2].op == MirOp::Mul || fn.code[i + 2].op == MirOp::Div) &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 &&
+            fn.code[i + 1].a < static_cast<int>(fn.fconsts.size())) {
+            double fval = fn.fconsts[fn.code[i + 1].a];
+            int fidx = 0;
+            auto fit = fconst_index.find(fval);
+            if (fit != fconst_index.end()) {
+                fidx = fit->second;
+            } else {
+                fidx = static_cast<int>(fconsts.size());
+                fconst_index[fval] = fidx;
+                fconsts.push_back(fval);
+            }
+            if (fidx > 0xffff) {
+                return fail("nextvm lowering fconst index out of range");
+            }
+            Op fop;
+            switch (fn.code[i + 2].op) {
+            case MirOp::Add: fop = Op::LoadLocalAddFConst; break;
+            case MirOp::Sub: fop = Op::LoadLocalSubFConst; break;
+            case MirOp::Mul: fop = Op::LoadLocalMulFConst; break;
+            case MirOp::Div: fop = Op::LoadLocalDivFConst; break;
+            default:         fop = Op::LoadLocalAddFConst; break;
+            }
+            emit_u8(static_cast<std::uint8_t>(fop));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fidx));
+            for (int s = 0; s < 2; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
+        // Class field expression from local object: push locals[obj]->field.
+        if (i + 1 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadClassField &&
+            !jump_targets.count(i + 1) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 && fn.code[i + 1].a <= 0xffff) {
+            emit_u8(static_cast<std::uint8_t>(Op::LoadLocalClassField));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fn.code[i + 1].a));
+            ++i;
+            pc_map[i] = static_cast<int>(out.size());
+            if (mir_pc_to_byte) {
+                mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+            }
+            continue;
+        }
+        // Float local-dup-const expression: locals[local], locals[local] + fconst on stack.
+        if (i + 3 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::Dup &&
+            fn.code[i + 2].op == MirOp::LoadFConst &&
+            (fn.code[i + 3].op == MirOp::Add || fn.code[i + 3].op == MirOp::Sub ||
+             fn.code[i + 3].op == MirOp::Mul || fn.code[i + 3].op == MirOp::Div) &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 2].a >= 0 &&
+            fn.code[i + 2].a < static_cast<int>(fn.fconsts.size())) {
+            double fval = fn.fconsts[fn.code[i + 2].a];
+            int fidx = 0;
+            auto fit = fconst_index.find(fval);
+            if (fit != fconst_index.end()) {
+                fidx = fit->second;
+            } else {
+                fidx = static_cast<int>(fconsts.size());
+                fconst_index[fval] = fidx;
+                fconsts.push_back(fval);
+            }
+            if (fidx > 0xffff) {
+                return fail("nextvm lowering fconst index out of range");
+            }
+            Op fop;
+            switch (fn.code[i + 3].op) {
+            case MirOp::Add: fop = Op::LoadLocalDupAddFConst; break;
+            case MirOp::Sub: fop = Op::LoadLocalDupSubFConst; break;
+            case MirOp::Mul: fop = Op::LoadLocalDupMulFConst; break;
+            case MirOp::Div: fop = Op::LoadLocalDupDivFConst; break;
+            default:         fop = Op::LoadLocalDupAddFConst; break;
+            }
+            emit_u8(static_cast<std::uint8_t>(fop));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(fidx));
+            for (int s = 0; s < 3; ++s) {
                 ++i;
                 pc_map[i] = static_cast<int>(out.size());
                 if (mir_pc_to_byte) {
@@ -1140,6 +1508,25 @@ bool WriteMirAsNextVmBytecode(const MirModule &module, const std::string &module
             sw.WriteString(sm.source_path);
         }
         EmitSection(all, 0x06, sw);
+    }
+
+    // Section 0x07 - LIFECYCLE
+    {
+        std::uint16_t create_idx = 0xFFFF;
+        std::uint16_t on_loadin_idx = 0xFFFF;
+        std::uint16_t on_destruct_idx = 0xFFFF;
+        for (std::size_t i = 0; i < lowered.size(); ++i) {
+            if (lowered[i].name == "create") create_idx = static_cast<std::uint16_t>(i);
+            else if (lowered[i].name == "on_loadin") on_loadin_idx = static_cast<std::uint16_t>(i);
+            else if (lowered[i].name == "on_destruct") on_destruct_idx = static_cast<std::uint16_t>(i);
+        }
+        if (create_idx != 0xFFFF || on_loadin_idx != 0xFFFF || on_destruct_idx != 0xFFFF) {
+            SectionWriter sw;
+            sw.WriteU16(create_idx);
+            sw.WriteU16(on_loadin_idx);
+            sw.WriteU16(on_destruct_idx);
+            EmitSection(all, 0x07, sw);
+        }
     }
 
     std::ofstream out(out_path.c_str(), std::ios::binary);

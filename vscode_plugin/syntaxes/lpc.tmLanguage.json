@@ -3,30 +3,16 @@
   "name": "LPC",
   "scopeName": "source.lpc",
   "patterns": [
-    {
-      "include": "#comments"
-    },
-    {
-      "include": "#preprocessor"
-    },
-    {
-      "include": "#strings"
-    },
-    {
-      "include": "#numbers"
-    },
-    {
-      "include": "#keywords"
-    },
-    {
-      "include": "#types"
-    },
-    {
-      "include": "#efuns"
-    },
-    {
-      "include": "#functions"
-    }
+    { "include": "#comments" },
+    { "include": "#preprocessor" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#literals" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#efuns" },
+    { "include": "#operators" },
+    { "include": "#functions" }
   ],
   "repository": {
     "comments": {
@@ -46,7 +32,11 @@
       "patterns": [
         {
           "name": "keyword.control.directive.lpc",
-          "match": "^\\s*#\\s*(include|define|undef|if|elif|else|endif)\\b"
+          "match": "^\\s*#\\s*(include|define|undef|if|ifdef|ifndef|elif|else|endif)\\b"
+        },
+        {
+          "name": "support.function.macro.lpc",
+          "match": "\\bdefined\\b"
         },
         {
           "name": "string.quoted.include.lpc",
@@ -87,8 +77,32 @@
           "match": "\\b(?:\\d+\\.\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?\\b"
         },
         {
+          "name": "constant.numeric.hex.lpc",
+          "match": "\\b0[xX][0-9A-Fa-f]+\\b"
+        },
+        {
           "name": "constant.numeric.integer.lpc",
-          "match": "\\b(?:0[xX][0-9A-Fa-f]+|\\d+)\\b"
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "literals": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.array.begin.lpc",
+          "match": "\\(\\{"
+        },
+        {
+          "name": "punctuation.definition.array.end.lpc",
+          "match": "\\}\\)"
+        },
+        {
+          "name": "punctuation.definition.mapping.begin.lpc",
+          "match": "\\(\\["
+        },
+        {
+          "name": "punctuation.definition.mapping.end.lpc",
+          "match": "\\]\\)"
         }
       ]
     },
@@ -105,6 +119,10 @@
         {
           "name": "keyword.operator.word.lpc",
           "match": "\\b(new|class)\\b"
+        },
+        {
+          "name": "constant.language.lpc",
+          "match": "\\b(true|false|nil)\\b"
         }
       ]
     },
@@ -120,7 +138,39 @@
       "patterns": [
         {
           "name": "support.function.efun.lpc",
-          "match": "\\b(call_other|print|puts|sleep|sizeof|random|keys|values|typeof|to_string|to_int|this_object|clone_object|destruct|sprintf|write|time|member_array|explode|implode|stringp|intp|floatp|arrayp|mappingp|objectp|nullp|functionp|to_float|abs|strlen|map_delete|capitalize|lower_case|upper_case|allocate|reverse|min|max|sqrt|ctime|strsrch|replace_string|sort_array)\\b"
+          "match": "\\b(call_other|print|puts|sleep|sizeof|random|keys|values|typeof|to_string|to_int|this_object|clone_object|destruct|sprintf|write|time|member_array|explode|implode|stringp|intp|floatp|arrayp|mappingp|objectp|nullp|functionp|to_float|abs|strlen|map_delete|capitalize|lower_case|upper_case|allocate|reverse|min|max|sqrt|ctime|strsrch|replace_string|sort_array|instanceof|getenv|call_later|cancel_timer|timer_exists|pending_timers|timer_info|timer_clear_module|timer_stats|regexp|regex_replace|regex_stats)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arrow.lpc",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.ternary.lpc",
+          "match": "[?]:"
+        },
+        {
+          "name": "keyword.operator.comparison.lpc",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.logical.lpc",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.arithmetic.lpc",
+          "match": "[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.assignment.lpc",
+          "match": "=(?!=)"
+        },
+        {
+          "name": "keyword.operator.increment.lpc",
+          "match": "\\+\\+|--"
         }
       ]
     },

@@ -4,6 +4,7 @@ const vscode = require("vscode");
 const path = require("path");
 const { EFUN_DB, LPC_KEYWORDS, LPC_TYPES } = require("./efunDb");
 const { parseDocumentSymbols } = require("./symbolParser");
+const { isLspActive } = require("./lspClient");
 
 function createHoverProvider(workspaceIndex) {
   return vscode.languages.registerHoverProvider(
@@ -16,6 +17,8 @@ function createHoverProvider(workspaceIndex) {
 
         const efunHover = tryEfunHover(word);
         if (efunHover) return new vscode.Hover(efunHover, range);
+
+        if (isLspActive()) return null;
 
         const typeHover = tryTypeHover(word);
         if (typeHover) return new vscode.Hover(typeHover, range);
@@ -60,6 +63,7 @@ function tryTypeHover(word) {
     mapping: "Key-value associative array.",
     mixed: "Any type accepted.",
     function: "Function reference / closure.",
+    buffer: "Binary buffer.",
   };
   if (typeDocs[word]) md.appendMarkdown("\n\n" + typeDocs[word]);
   md.appendMarkdown("\n\n*Append `*` for array type (e.g. `string*`).*");
@@ -72,9 +76,9 @@ function tryKeywordHover(word) {
   md.appendCodeblock(`keyword: ${word}`, "lpc");
   const kwDocs = {
     fun: "Declare a function.",
-    var: "Declare a variable.",
-    class: "Declare a class type.",
-    new: "Create a new class instance or array.",
+    var: "Declare a variable with inferred type.",
+    class: "Declare a class type. Use `: BaseName` for inheritance.",
+    new: "Create a new class instance.",
     inherit: "Inherit from another module.",
     foreach: "Iterate over elements in an array or mapping.",
     in: "Used with `foreach` to specify the collection.",
@@ -82,7 +86,10 @@ function tryKeywordHover(word) {
     static: "Modifier: function/variable is static (per-class, not per-instance).",
     private: "Modifier: function/variable is private to the declaring class.",
     public: "Modifier: function/variable is publicly accessible.",
+    protected: "Modifier: function/variable is accessible within the class and its subclasses.",
     nomask: "Modifier: function cannot be overridden by inheritance.",
+    varargs: "Modifier: function accepts variable number of arguments.",
+    nil: "Null/empty value.",
   };
   if (kwDocs[word]) md.appendMarkdown("\n\n" + kwDocs[word]);
   return md;
@@ -96,6 +103,14 @@ function tryDocumentSymbolHover(word, document) {
   md.appendCodeblock(sym.detail || sym.name, "lpc");
   if (sym.kind === "function") {
     md.appendMarkdown("\n\n*Defined in this file.*");
+  } else if (sym.kind === "class") {
+    if (sym.baseClass) {
+      md.appendMarkdown(`\n\n*Inherits from \`${sym.baseClass}\`.*`);
+    } else {
+      md.appendMarkdown("\n\n*Defined in this file.*");
+    }
+  } else if (sym.kind === "inherit") {
+    md.appendMarkdown("\n\n*Inherited module.*");
   }
   return md;
 }

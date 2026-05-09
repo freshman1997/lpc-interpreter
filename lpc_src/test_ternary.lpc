@@ -1,0 +1,11 @@
+int main() {
+    int errors = 0;
+    int x = 10;
+    string s = x > 5 ? "big" : "small";
+    if (s != "big") { errors++; }
+    int a = 1;
+    int b = 2;
+    int c = a > b ? a : b;
+    if (c != 2) { errors++; }
+    return errors;
+}

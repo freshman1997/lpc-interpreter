@@ -1,9 +1,10 @@
 param(
     [string]$Root = (Split-Path -Parent $PSScriptRoot),
-    [string[]]$Benchmarks = @("int_loop", "fib_rec", "array_churn", "mapping_churn"),
+    [string[]]$Benchmarks = @("int_loop", "fib_rec", "array_churn", "mapping_churn", "float_math", "string_ops", "class_field", "closure_call", "regex_match", "foreach_iter", "bitwise_ops", "mapping_ops", "object_lifecycle", "mixed_workload", "branchy_control_flow"),
     [int]$Iterations = 5,
     [switch]$SkipBuild,
     [switch]$VmRelease,
+    [string]$LuaPath = "",
     [string]$Out = ""
 )
 
@@ -55,7 +56,7 @@ function Measure-Native([string]$Exe, [string[]]$ToolArgs, [string]$Cwd, [int]$C
 
 $python = Find-Tool @("python", "python3")
 $node = Find-Tool @("node")
-$lua = Find-Tool @("luajit", "lua")
+$lua = if ($LuaPath -and (Test-Path $LuaPath)) { $LuaPath } else { Find-Tool @("luajit", "lua") }
 
 $rows = @()
 foreach ($bench in $Benchmarks) {

@@ -1,0 +1,45 @@
+module -- after-opt
+functions=2 globals=0
+fn main -- after-opt
+  nargs=0 locals=5 upvalues=0
+  [0] op=0 a=0 b=0 line=2
+  [1] op=5 a=0 b=0 line=2
+  [2] op=0 a=1 b=0 line=3
+  [3] op=5 a=1 b=0 line=3
+  [4] op=0 a=2 b=0 line=4
+  [5] op=5 a=2 b=0 line=4
+  [6] op=0 a=3 b=0 line=5
+  [7] op=5 a=3 b=0 line=5
+  [8] op=3 a=1 b=0 line=6
+  [9] op=5 a=4 b=0 line=6
+  [10] op=4 a=1 b=0 line=10
+  [11] op=4 a=0 b=0 line=10
+  [12] op=27 a=0 b=0 line=10
+  [13] op=43 a=22 b=0 line=10
+  [14] op=4 a=2 b=0 line=11
+  [15] op=4 a=1 b=0 line=11
+  [16] op=4 a=4 b=0 line=11
+  [17] op=39 a=1 b=0 line=11
+  [18] op=8 a=0 b=0 line=11
+  [19] op=5 a=2 b=0 line=11
+  [20] op=25 a=1 b=0 line=12
+  [21] op=45 a=10 b=0 line=10
+  [22] op=4 a=2 b=0 line=14
+  [23] op=0 a=5 b=0 line=14
+  [24] op=28 a=0 b=0 line=14
+  [25] op=43 a=28 b=0 line=14
+  [26] op=0 a=6 b=0 line=14
+  [27] op=46 a=0 b=0 line=14
+  [28] op=4 a=2 b=0 line=15
+  [29] op=46 a=0 b=0 line=15
+fn <lambda> -- after-opt
+  nargs=1 locals=0 upvalues=1
+  [0] op=6 a=0 b=0 line=7
+  [1] op=4 a=0 b=0 line=7
+  [2] op=8 a=0 b=0 line=7
+  [3] op=7 a=0 b=0 line=7
+  [4] op=6 a=0 b=0 line=8
+  [5] op=46 a=0 b=0 line=8
+fn __init_globals -- init
+  nargs=0 locals=0 upvalues=0
+  [0] op=46 a=0 b=0 line=0

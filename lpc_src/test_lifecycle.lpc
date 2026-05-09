@@ -1,0 +1,31 @@
+int created = 0;
+int loaded = 0;
+int destructed = 0;
+
+void create() {
+    created = 1;
+    print("create called\n");
+}
+
+void on_loadin() {
+    loaded = 1;
+    print("on_loadin called\n");
+}
+
+void on_destruct() {
+    destructed = 1;
+    print("on_destruct called\n");
+}
+
+int main() {
+    if (created != 1) {
+        print("FAIL: create not called\n");
+        return 1;
+    }
+    if (loaded != 1) {
+        print("FAIL: on_loadin not called\n");
+        return 1;
+    }
+    print("lifecycle ok\n");
+    return 0;
+}

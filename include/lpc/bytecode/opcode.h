@@ -330,8 +330,10 @@ enum class Op : std::uint8_t {
     //   27=functionp, 28=to_float, 29=abs, 30=strlen, 31=map_delete,
     //   32=capitalize, 33=lower_case, 34=upper_case, 35=allocate,
     //   36=reverse, 37=min, 38=max, 39=sqrt, 40=ctime, 41=strsrch,
-    //   42=replace_string, 43=sort_array
-    //   45=getenv
+    //   42=replace_string, 43=sort_array, 44=instanceof, 45=getenv,
+    //   46=call_later, 47=cancel_timer, 48=regexp, 49=regex_replace,
+    //   50=timer_exists, 51=pending_timers, 52=timer_info, 53=timer_clear_module,
+    //   54=timer_stats, 55=regex_stats
     // Void efuns (no return value, push Nil): 1,2,3,13,15,31
     // Stack: [..., arg0, ..., argN-1] -> [..., result]  (or [..., Nil] for void)
     // Size: 5 bytes
@@ -565,9 +567,118 @@ enum class Op : std::uint8_t {
     // 语义等价于 locals[dest] = locals[lhs] - iconst[rhs]。
     // 常见于 cooldown = cooldown - delta、hp = hp - damage。
     SubLocalIConstToLocal = 70,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [iconst_index:u16]
+    // Stack: unchanged
+    // locals[dest] = locals[lhs] & iconst[rhs]
+    BitAndLocalIConstToLocal = 71,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [iconst_index:u16]
+    // Stack: unchanged
+    // locals[dest] = locals[lhs] | iconst[rhs]
+    BitOrLocalIConstToLocal = 72,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [iconst_index:u16]
+    // Stack: unchanged
+    // locals[dest] = locals[lhs] ^ iconst[rhs]
+    BitXorLocalIConstToLocal = 73,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [iconst_index:u16]
+    // Stack: unchanged
+    // locals[dest] = locals[lhs] << iconst[rhs]
+    ShlLocalIConstToLocal = 74,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [iconst_index:u16]
+    // Stack: unchanged
+    // locals[dest] = locals[lhs] >> iconst[rhs]
+    ShrLocalIConstToLocal = 75,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [fconst_index:u16]
+    // Stack: unchanged
+    // locals[dest] = locals[lhs] + fconst[rhs]
+    AddLocalFConstToLocal = 76,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [fconst_index:u16]
+    // Stack: unchanged
+    // locals[dest] = locals[lhs] - fconst[rhs]
+    SubLocalFConstToLocal = 77,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [fconst_index:u16]
+    // Stack: unchanged
+    // locals[dest] = locals[lhs] * fconst[rhs]
+    MulLocalFConstToLocal = 78,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [fconst_index:u16]
+    // Stack: unchanged
+    // locals[dest] = locals[lhs] / fconst[rhs]
+    DivLocalFConstToLocal = 79,
+
+    // Encoding: [opcode:u8] [local_index:u16] [fconst_index:u16]
+    // Stack: [...] -> [..., locals[local] + fconst[rhs]]
+    LoadLocalAddFConst = 80,
+
+    // Encoding: [opcode:u8] [local_index:u16] [fconst_index:u16]
+    // Stack: [...] -> [..., locals[local] - fconst[rhs]]
+    LoadLocalSubFConst = 81,
+
+    // Encoding: [opcode:u8] [local_index:u16] [fconst_index:u16]
+    // Stack: [...] -> [..., locals[local] * fconst[rhs]]
+    LoadLocalMulFConst = 82,
+
+    // Encoding: [opcode:u8] [local_index:u16] [fconst_index:u16]
+    // Stack: [...] -> [..., locals[local] / fconst[rhs]]
+    LoadLocalDivFConst = 83,
+
+    // Encoding: [opcode:u8] [local_index:u16] [fconst_index:u16]
+    // Stack: [...] -> [..., locals[local], locals[local] + fconst[rhs]]
+    LoadLocalDupAddFConst = 84,
+
+    // Encoding: [opcode:u8] [local_index:u16] [fconst_index:u16]
+    // Stack: [...] -> [..., locals[local], locals[local] - fconst[rhs]]
+    LoadLocalDupSubFConst = 85,
+
+    // Encoding: [opcode:u8] [local_index:u16] [fconst_index:u16]
+    // Stack: [...] -> [..., locals[local], locals[local] * fconst[rhs]]
+    LoadLocalDupMulFConst = 86,
+
+    // Encoding: [opcode:u8] [local_index:u16] [fconst_index:u16]
+    // Stack: [...] -> [..., locals[local], locals[local] / fconst[rhs]]
+    LoadLocalDupDivFConst = 87,
+
+    // Encoding: [opcode:u8] [object_local:u16] [value_local:u16] [field_index:u16]
+    // Stack: unchanged
+    // 语义等价于 locals[object_local]->field[field_index] = locals[value_local]。
+    SetClassFieldLocalFromLocal = 88,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [object_local:u16] [field_index:u16]
+    // Stack: unchanged
+    // 语义等价于 locals[dest] = locals[lhs] + locals[object_local]->field[field_index]。
+    AddLocalClassFieldToLocal = 89,
+
+    // Encoding: [opcode:u8] [object_local:u16] [field_index:u16]
+    // Stack: [...] -> [..., locals[object_local]->field[field_index]]
+    LoadLocalClassField = 90,
+
+    // Encoding: [opcode:u8] [dest_local:u16] [lhs_local:u16] [object_local:u16]
+    //           [field1_index:u16] [field2_index:u16]
+    // Stack: unchanged
+    // 语义等价于 locals[dest] = locals[lhs] + locals[obj]->field[field1] + locals[obj]->field[field2]。
+    AddLocalTwoClassFieldsToLocal = 91,
+
+    // Encoding: [opcode:u8] [upvalue_index:u16] [local_index:u16]
+    // Stack: [...] -> [..., upvalues[up] + locals[local]]
+    // 语义：upvalues[up] = upvalues[up] + locals[local]，并把新值压栈。
+    AddLocalToUpvalueAndLoad = 92,
+
+    // Encoding: [opcode:u8] [local_index:u16] [iconst_index:u16]
+    // Stack: [...] -> [..., locals[local] & iconst[rhs]]
+    // 语义：等价于 LoadLocal + LoadIConst + BitAnd，避免三次调度。
+    // 常见于位掩码操作如 flags & 0xFF。
+    LoadLocalBitAndIConst = 93,
+
 };
 
-// Total: 51 opcodes (1..70, with gaps for removed/deprecated values)
+// Total: 74 opcodes (1..93, with gaps for removed/deprecated values)
 
 } // namespace lpc
 

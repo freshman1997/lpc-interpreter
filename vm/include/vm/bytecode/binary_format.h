@@ -28,6 +28,7 @@ namespace vm {
 //   0x04  LINE_TABLE    PC -> source line mapping
 //   0x05  CODE          bytecode + init_code
 //   0x06  DEBUG         debug symbols (variable names, source file, etc.)
+//   0x07  LIFECYCLE     create/on_loadin/on_destruct function indices
 //   0x07..0xFF          reserved for future use (skip via size)
 //
 // SECTION 0x00 - HEADER:
@@ -90,6 +91,11 @@ namespace vm {
 //     n_upvalue_names: u16
 //     upvalue_name[n]: u32(len) + len bytes each
 //
+// SECTION 0x07 - LIFECYCLE:
+//   create_idx:      u16  (0xFFFF = not present)
+//   on_loadin_idx:   u16  (0xFFFF = not present)
+//   on_destruct_idx: u16  (0xFFFF = not present)
+//
 // V1 Compatibility:
 //   V1 files start with "LPCNVM1\0" (8 bytes).
 //   V2 files start with "LPC\0" + version(u32=2) (8 bytes).
@@ -116,6 +122,7 @@ constexpr std::uint8_t kSecFunctions  = 0x03;
 constexpr std::uint8_t kSecLineTable  = 0x04;
 constexpr std::uint8_t kSecCode       = 0x05;
 constexpr std::uint8_t kSecDebug      = 0x06;
+constexpr std::uint8_t kSecLifecycle  = 0x07;
 
 constexpr std::uint32_t kFlagHasInitCode  = 0x01;
 constexpr std::uint32_t kFlagHasDebugInfo = 0x02;

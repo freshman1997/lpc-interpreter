@@ -61,7 +61,16 @@ static bool IsLocalCompareJump(Op op) {
 static bool IsLocalLocalToLocal(Op op) {
     return op == Op::AddLocalLocalToLocal ||
            op == Op::AddLocalIConstToLocal ||
-           op == Op::SubLocalIConstToLocal;
+           op == Op::SubLocalIConstToLocal ||
+           op == Op::BitAndLocalIConstToLocal ||
+           op == Op::BitOrLocalIConstToLocal ||
+           op == Op::BitXorLocalIConstToLocal ||
+           op == Op::ShlLocalIConstToLocal ||
+           op == Op::ShrLocalIConstToLocal ||
+           op == Op::AddLocalFConstToLocal ||
+           op == Op::SubLocalFConstToLocal ||
+           op == Op::MulLocalFConstToLocal ||
+           op == Op::DivLocalFConstToLocal;
 }
 
 static bool IsLocalJump(Op op) {
@@ -69,11 +78,26 @@ static bool IsLocalJump(Op op) {
 }
 
 static bool IsLocalExpr(Op op) {
-    return op == Op::LoadLocalDec || op == Op::LoadLocalSubIConst || op == Op::LoadLocalAddIConst;
+    return op == Op::LoadLocalDec || op == Op::LoadLocalSubIConst || op == Op::LoadLocalAddIConst ||
+           op == Op::LoadLocalBitAndIConst ||
+           op == Op::LoadLocalAddFConst || op == Op::LoadLocalSubFConst ||
+           op == Op::LoadLocalMulFConst || op == Op::LoadLocalDivFConst ||
+           op == Op::LoadLocalDupAddFConst || op == Op::LoadLocalDupSubFConst ||
+           op == Op::LoadLocalDupMulFConst || op == Op::LoadLocalDupDivFConst ||
+           op == Op::LoadLocalClassField;
 }
 
 static bool IsLocalIndexAccum(Op op) {
     return op == Op::AddLocalIndexIConstToLocal || op == Op::AddLocalIndexLocalToLocal;
+}
+
+static bool IsLocalClassField(Op op) {
+    return op == Op::SetClassFieldLocalFromLocal || op == Op::AddLocalClassFieldToLocal ||
+           op == Op::AddLocalTwoClassFieldsToLocal;
+}
+
+static bool IsClosureLocalAccum(Op op) {
+    return op == Op::AddLocalToUpvalueAndLoad;
 }
 
 static bool IsLocalLoopTail(Op op) {
@@ -294,9 +318,16 @@ static RuntimeError VerifyFunction(const Chunk &chunk, std::uint32_t fid) {
             std::uint16_t dst = ReadU16(chunk.code, &ip);
             std::uint16_t lhs = ReadU16(chunk.code, &ip);
             std::uint16_t rhs = ReadU16(chunk.code, &ip);
-            const bool rhs_ok = (op == Op::AddLocalIConstToLocal || op == Op::SubLocalIConstToLocal)
-                ? rhs < chunk.iconst.size()
-                : rhs < f.nlocals;
+            const bool rhs_is_iconst = op == Op::AddLocalIConstToLocal || op == Op::SubLocalIConstToLocal ||
+                op == Op::BitAndLocalIConstToLocal || op == Op::BitOrLocalIConstToLocal ||
+                op == Op::BitXorLocalIConstToLocal || op == Op::ShlLocalIConstToLocal ||
+                op == Op::ShrLocalIConstToLocal;
+            const bool rhs_is_fconst = op == Op::AddLocalFConstToLocal || op == Op::SubLocalFConstToLocal ||
+                op == Op::MulLocalFConstToLocal || op == Op::DivLocalFConstToLocal;
+            bool rhs_ok;
+            if (rhs_is_iconst) rhs_ok = rhs < chunk.iconst.size();
+            else if (rhs_is_fconst) rhs_ok = rhs < chunk.fconst.size();
+            else rhs_ok = rhs < f.nlocals;
             if (dst >= f.nlocals || lhs >= f.nlocals || !rhs_ok) {
                 RuntimeError e;
                 e.code = RuntimeErrorCode::InvalidOperand;
@@ -359,7 +390,7 @@ static RuntimeError VerifyFunction(const Chunk &chunk, std::uint32_t fid) {
                 e.pc = static_cast<int>(op_pc);
                 return e;
             }
-            if (op == Op::LoadLocalSubIConst || op == Op::LoadLocalAddIConst) {
+            if (op == Op::LoadLocalSubIConst || op == Op::LoadLocalAddIConst || op == Op::LoadLocalBitAndIConst) {
                 std::uint16_t cidx = ReadU16(chunk.code, &ip);
                 if (cidx >= chunk.iconst.size()) {
                     RuntimeError e;
@@ -369,8 +400,28 @@ static RuntimeError VerifyFunction(const Chunk &chunk, std::uint32_t fid) {
                     e.pc = static_cast<int>(op_pc);
                     return e;
                 }
+            } else if (op == Op::LoadLocalAddFConst || op == Op::LoadLocalSubFConst ||
+                       op == Op::LoadLocalMulFConst || op == Op::LoadLocalDivFConst ||
+                       op == Op::LoadLocalDupAddFConst || op == Op::LoadLocalDupSubFConst ||
+                       op == Op::LoadLocalDupMulFConst || op == Op::LoadLocalDupDivFConst) {
+                std::uint16_t cidx = ReadU16(chunk.code, &ip);
+                if (cidx >= chunk.fconst.size()) {
+                    RuntimeError e;
+                    e.code = RuntimeErrorCode::InvalidOperand;
+                    e.message = "local expression fconst index out of range";
+                    e.function = f.name;
+                    e.pc = static_cast<int>(op_pc);
+                    return e;
+                }
+            } else if (op == Op::LoadLocalClassField) {
+                ReadU16(chunk.code, &ip);
             }
-            ++depth;
+            if (op == Op::LoadLocalDupAddFConst || op == Op::LoadLocalDupSubFConst ||
+                op == Op::LoadLocalDupMulFConst || op == Op::LoadLocalDupDivFConst) {
+                depth += 2;
+            } else {
+                ++depth;
+            }
             continue;
         }
 
@@ -398,6 +449,97 @@ static RuntimeError VerifyFunction(const Chunk &chunk, std::uint32_t fid) {
                 e.pc = static_cast<int>(op_pc);
                 return e;
             }
+            continue;
+        }
+
+        if (IsLocalClassField(op)) {
+            if (op == Op::SetClassFieldLocalFromLocal) {
+                if (ip + 6 > f.code_end) {
+                    RuntimeError e;
+                    e.code = RuntimeErrorCode::InvalidOperand;
+                    e.message = "truncated local class-field store operands";
+                    e.function = f.name;
+                    e.pc = static_cast<int>(op_pc);
+                    return e;
+                }
+                std::uint16_t object_local = ReadU16(chunk.code, &ip);
+                std::uint16_t value_local = ReadU16(chunk.code, &ip);
+                ReadU16(chunk.code, &ip);
+                if (object_local >= f.nlocals || value_local >= f.nlocals) {
+                    RuntimeError e;
+                    e.code = RuntimeErrorCode::InvalidOperand;
+                    e.message = "local class-field store operand out of range";
+                    e.function = f.name;
+                    e.pc = static_cast<int>(op_pc);
+                    return e;
+                }
+            } else if (op == Op::AddLocalClassFieldToLocal) {
+                if (ip + 8 > f.code_end) {
+                    RuntimeError e;
+                    e.code = RuntimeErrorCode::InvalidOperand;
+                    e.message = "truncated local class-field add operands";
+                    e.function = f.name;
+                    e.pc = static_cast<int>(op_pc);
+                    return e;
+                }
+                std::uint16_t dst = ReadU16(chunk.code, &ip);
+                std::uint16_t lhs = ReadU16(chunk.code, &ip);
+                std::uint16_t object_local = ReadU16(chunk.code, &ip);
+                ReadU16(chunk.code, &ip);
+                if (dst >= f.nlocals || lhs >= f.nlocals || object_local >= f.nlocals) {
+                    RuntimeError e;
+                    e.code = RuntimeErrorCode::InvalidOperand;
+                    e.message = "local class-field add operand out of range";
+                    e.function = f.name;
+                    e.pc = static_cast<int>(op_pc);
+                    return e;
+                }
+            } else {
+                if (ip + 10 > f.code_end) {
+                    RuntimeError e;
+                    e.code = RuntimeErrorCode::InvalidOperand;
+                    e.message = "truncated local class-field chain operands";
+                    e.function = f.name;
+                    e.pc = static_cast<int>(op_pc);
+                    return e;
+                }
+                std::uint16_t dst = ReadU16(chunk.code, &ip);
+                std::uint16_t lhs = ReadU16(chunk.code, &ip);
+                std::uint16_t object_local = ReadU16(chunk.code, &ip);
+                ReadU16(chunk.code, &ip);
+                ReadU16(chunk.code, &ip);
+                if (dst >= f.nlocals || lhs >= f.nlocals || object_local >= f.nlocals) {
+                    RuntimeError e;
+                    e.code = RuntimeErrorCode::InvalidOperand;
+                    e.message = "local class-field chain operand out of range";
+                    e.function = f.name;
+                    e.pc = static_cast<int>(op_pc);
+                    return e;
+                }
+            }
+            continue;
+        }
+
+        if (IsClosureLocalAccum(op)) {
+            if (ip + 4 > f.code_end) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "truncated closure local accumulation operands";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            std::uint16_t up_idx = ReadU16(chunk.code, &ip);
+            std::uint16_t local_idx = ReadU16(chunk.code, &ip);
+            if (up_idx >= f.upvalues.size() || local_idx >= f.nlocals) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "closure local accumulation operand out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            ++depth;
             continue;
         }
 

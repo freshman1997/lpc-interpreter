@@ -13,6 +13,15 @@ static constexpr std::size_t   kGcThresholdPadding    = 256;
 static constexpr std::size_t   kGcThresholdMultiplier = 2;
 static constexpr std::size_t   kFormatBufSize         = 64;
 
+static constexpr std::uint16_t kInvalidIndex16        = 0xFFFF;
+
+static constexpr std::size_t   kInnerDispatchBatchSize = 512;
+static constexpr std::size_t   kTimerHeapRebuildMinSize = 1024;
+static constexpr std::size_t   kTimerHeapStaleRatio     = 2;
+static constexpr std::size_t   kInstanceofCacheSize     = 4;
+static constexpr std::size_t   kFormatMaxDepth          = 4;
+static constexpr std::size_t   kOpcodeCount             = 256;
+
 static constexpr std::uint8_t kUpsetSubOpInc  = 21;
 static constexpr std::uint8_t kUpsetSubOpDec  = 22;
 static constexpr std::uint8_t kUpsetFlagPrefix = 1;

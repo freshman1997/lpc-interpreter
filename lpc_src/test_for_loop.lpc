@@ -1,0 +1,43 @@
+int main() {
+    int errors = 0;
+
+    for (int i = 10; i > 0; i--) {
+    }
+    for (int i = 0; i < 5; i += 2) {
+    }
+
+    int sum = 0;
+    for (int i = 1; i <= 10; i++) {
+        sum += i;
+    }
+    if (sum != 55) { errors++; write("for sum: expected 55 got " + to_string(sum) + "\n"); }
+
+    int k = 0;
+    for (int i = 0; i < 10; i++) {
+        if (i % 2 == 0) continue;
+        k++;
+    }
+    if (k != 5) { errors++; write("for continue: expected 5 got " + to_string(k) + "\n"); }
+
+    int found = -1;
+    for (int i = 0; i < 100; i++) {
+        if (i == 42) { found = i; break; }
+    }
+    if (found != 42) { errors++; write("for break: expected 42 got " + to_string(found) + "\n"); }
+
+    int outer = 0;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            outer++;
+        }
+    }
+    if (outer != 9) { errors++; write("nested for: expected 9 got " + to_string(outer) + "\n"); }
+
+    int count = 0;
+    for (int i = 5; i > 0; i--) {
+        count++;
+    }
+    if (count != 5) { errors++; write("decrement for: expected 5 got " + to_string(count) + "\n"); }
+
+    return errors;
+}

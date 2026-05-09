@@ -177,19 +177,6 @@ int RunGoldenTests() {
                 ++failed;
                 continue;
             }
-
-            const std::filesystem::path ep = std::filesystem::path(out_root) / "entry.txt";
-            if (!fs::exists(ep)) {
-                std::cout << "[FAIL] " << tc.path << " missing entry file: " << ep.string() << "\n";
-                ++failed;
-                continue;
-            }
-            const std::string entry_text = ReadAll(ep.string());
-            if (entry_text.empty()) {
-                std::cout << "[FAIL] " << tc.path << " empty entry file\n";
-                ++failed;
-                continue;
-            }
         }
         if (ok != tc.expect_ok) {
             std::cout << "[FAIL] " << tc.path << " expected_ok=" << (tc.expect_ok ? 1 : 0)

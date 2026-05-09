@@ -37,7 +37,6 @@ static void DumpMirModule(const lpc::frontend::MirModule &m, const std::string &
 struct CompileOptions {
     std::string workspace_root;
     std::string out_root;
-    std::string entry_module_override;
     std::vector<std::string> include_dirs;
     bool dump_mir_before = false;
     bool dump_mir_after = false;
@@ -121,16 +120,6 @@ static int compile_one(const std::string &path, const CompileOptions &opt) {
         return 4;
     }
 
-    if (!opt.entry_module_override.empty()) {
-        out_module = opt.entry_module_override;
-    }
-
-    std::ofstream entry((std::filesystem::path(opt.out_root) / "entry.txt").string().c_str(), std::ios::binary);
-    if (entry.is_open()) {
-        entry << out_module;
-        entry.close();
-    }
-
     std::cout << "frontend ok: " << path << ", functions=" << result.module.functions.size() << "\n";
     std::cout << "  nextvm module " << out_module << "\n";
     std::cout << "  mir-opt instr: " << result.mir_instr_before_opt << " -> " << result.mir_instr_after_opt << "\n";
@@ -194,10 +183,6 @@ int main(int argc, char **argv) {
         if (arg == "--workspace-root" && i + 1 < argc) {
             opt.workspace_root = argv[++i];
             workspace_root_explicit = true;
-            continue;
-        }
-        if (arg == "--entry-module" && i + 1 < argc) {
-            opt.entry_module_override = argv[++i];
             continue;
         }
         if (arg == "--dir" && i + 1 < argc) {

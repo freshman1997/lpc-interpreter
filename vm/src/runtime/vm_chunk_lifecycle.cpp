@@ -78,7 +78,7 @@ RuntimeError Vm::LoadChunk(const Chunk &chunk) {
         return data_err;
     }
     ms.version_runtime_data[prepared_version] = std::move(data);
-    version_lookup_[prepared_version] = &ms.version_runtime_data[prepared_version];
+    version_lookup_[prepared_version] = current_module_name_;
     ms.prepared_runtime_data.clear();
 
     current_module_version_id_ = prepared_version;
@@ -89,7 +89,8 @@ RuntimeError Vm::LoadChunk(const Chunk &chunk) {
         return bind_err;
     }
 
-    value_stack_.clear();
+    EnsureStackCapacity();
+    StackClear();
     frames_.clear();
     last_result_ = Value::Nil();
     string_heap_.clear();
@@ -121,12 +122,14 @@ RuntimeError Vm::LoadChunk(const Chunk &chunk) {
     module_class_instances_.clear();
     for (std::size_t i = 0; i < BoundChunk().sconst.size(); ++i) {
         if (!BoundChunk().sconst[i].empty()) {
-            Value sv = Value::FromObj((i + 1) << 1 | 1);
+            Value sv = MakeSConstHandle(static_cast<std::uint32_t>(i));
             string_intern_[BoundChunk().sconst[i]] = sv;
         }
     }
     alloc_count_ = 0;
     current_object_id_ = 0;
+    pending_lifecycle_.clear();
+    entry_lifecycle_queue_.clear();
     return {};
 }
 
@@ -163,7 +166,7 @@ RuntimeError Vm::LoadModule(const std::string &module_name, const Chunk &chunk) 
         return data_err;
     }
     ms.version_runtime_data[prepared_version] = std::move(data);
-    version_lookup_[prepared_version] = &ms.version_runtime_data[prepared_version];
+    version_lookup_[prepared_version] = mname;
     ms.prepared_runtime_data.clear();
 
     return RuntimeError::Ok();
@@ -195,7 +198,7 @@ RuntimeError Vm::BuildVersionRuntimeData(const Chunk &chunk, VersionRuntimeData 
 
     data.sconst_values.reserve(data.chunk.sconst.size());
     for (std::size_t i = 0; i < data.chunk.sconst.size(); ++i) {
-        data.sconst_values.push_back(Value::FromObj((i + 1) << 1 | 1));
+        data.sconst_values.push_back(MakeSConstHandle(static_cast<std::uint32_t>(i)));
     }
 
     data.func_name_index.reserve(data.chunk.functions.size());
@@ -223,13 +226,21 @@ RuntimeError Vm::BuildVersionRuntimeData(const Chunk &chunk, VersionRuntimeData 
 int Vm::FindFunctionInModule(const std::string &module_name, std::uint64_t version_id, const std::string &func_name) const {
     auto vit = version_lookup_.find(version_id);
     if (vit == version_lookup_.end()) return -1;
-    return vit->second->FindFunction(func_name);
+    auto mit = module_states_.find(vit->second);
+    if (mit == module_states_.end()) return -1;
+    auto vdit = mit->second.version_runtime_data.find(version_id);
+    if (vdit == mit->second.version_runtime_data.end()) return -1;
+    return vdit->second.FindFunction(func_name);
 }
 
 int Vm::FindGlobalInModule(const std::string &module_name, std::uint64_t version_id, const std::string &global_name) const {
     auto vit = version_lookup_.find(version_id);
     if (vit == version_lookup_.end()) return -1;
-    return vit->second->FindGlobal(global_name);
+    auto mit = module_states_.find(vit->second);
+    if (mit == module_states_.end()) return -1;
+    auto vdit = mit->second.version_runtime_data.find(version_id);
+    if (vdit == mit->second.version_runtime_data.end()) return -1;
+    return vdit->second.FindGlobal(global_name);
 }
 
 RuntimeError Vm::BindExecutionVersion(const std::string &module_name, std::uint64_t module_version_id) {
@@ -376,7 +387,7 @@ RuntimeError Vm::ActivateHotReload(const std::string &module_name,
     if (!e.ok()) return e;
 
     ms->version_runtime_data[candidate_version] = std::move(pit->second);
-    version_lookup_[candidate_version] = &ms->version_runtime_data[candidate_version];
+    version_lookup_[candidate_version] = module_name;
     ms->prepared_runtime_data.erase(pit);
     ms->active_version_id = candidate_version;
 
@@ -433,9 +444,13 @@ RuntimeError Vm::RebindActiveChunkForCurrentModule() {
 }
 
 const Chunk *Vm::GetChunkForVersion(std::uint64_t module_version_id) const {
-    auto it = version_lookup_.find(module_version_id);
-    if (it != version_lookup_.end()) return &it->second->chunk;
-    return nullptr;
+    auto vit = version_lookup_.find(module_version_id);
+    if (vit == version_lookup_.end()) return nullptr;
+    auto mit = module_states_.find(vit->second);
+    if (mit == module_states_.end()) return nullptr;
+    auto vdit = mit->second.version_runtime_data.find(module_version_id);
+    if (vdit == mit->second.version_runtime_data.end()) return nullptr;
+    return &vdit->second.chunk;
 }
 
 bool Vm::TryUpgradeObject(std::size_t obj_id) {
@@ -544,6 +559,7 @@ void Vm::UpgradeClassInstancesForModule(const std::string &module_name, std::uin
 }
 
 RuntimeError Vm::RunInitCode() {
+    EnsureStackCapacity();
     if (BoundChunk().init_code.empty()) return {};
 
     std::vector<Value> globals;
@@ -564,7 +580,7 @@ RuntimeError Vm::RunInitCode() {
                 e.message = "init iconst index out of range";
                 return e;
             }
-            value_stack_.push_back(BoundIConst()[idx]);
+            StackPush(BoundIConst()[idx]);
         } else if (op == static_cast<std::uint8_t>(Op::LoadFConst)) {
             if (ip + 2 > BoundChunk().init_code.size()) {
                 RuntimeError e;
@@ -579,7 +595,7 @@ RuntimeError Vm::RunInitCode() {
                 e.message = "init fconst index out of range";
                 return e;
             }
-            value_stack_.push_back(BoundFConst()[idx]);
+            StackPush(BoundFConst()[idx]);
         } else if (op == static_cast<std::uint8_t>(Op::LoadSConst)) {
             if (ip + 2 > BoundChunk().init_code.size()) {
                 RuntimeError e;
@@ -594,7 +610,7 @@ RuntimeError Vm::RunInitCode() {
                 e.message = "init sconst index out of range";
                 return e;
             }
-            value_stack_.push_back(BoundSConst()[idx]);
+            StackPush(BoundSConst()[idx]);
         } else if (op == static_cast<std::uint8_t>(Op::StoreGlobal)) {
             if (ip + 2 > BoundChunk().init_code.size()) {
                 RuntimeError e;
@@ -604,13 +620,12 @@ RuntimeError Vm::RunInitCode() {
             std::uint16_t idx = static_cast<std::uint16_t>(BoundChunk().init_code[ip]) |
                 static_cast<std::uint16_t>(BoundChunk().init_code[ip + 1] << 8);
             ip += 2;
-            if (value_stack_.empty()) {
+            if (StackEmpty()) {
                 RuntimeError e;
                 e.message = "init StoreGlobal stack underflow";
                 return e;
             }
-            Value v = value_stack_.back();
-            value_stack_.pop_back();
+            Value v = StackPop();
             if (idx >= globals.size()) {
                 globals.resize(idx + 1, Value::Nil());
             }
@@ -625,6 +640,6 @@ RuntimeError Vm::RunInitCode() {
     }
 
     BoundChunk().globals = std::move(globals);
-    value_stack_.clear();
+    StackClear();
     return {};
 }

@@ -1,0 +1,33 @@
+int noop(int x) {
+    return x;
+}
+
+int main() {
+    int *ids = allocate(200);
+    int i = 0;
+    while (i < sizeof(ids)) {
+        ids[i] = call_later(1, noop, i);
+        i++;
+    }
+
+    int pending = pending_timers();
+    int cancelled = 0;
+    i = 0;
+    while (i < sizeof(ids)) {
+        cancelled += cancel_timer(ids[i]);
+        i++;
+    }
+
+    int cleared = timer_clear_module();
+    mapping stats = timer_stats();
+    int created = stats["created"];
+    int cancelled_stat = stats["cancelled"];
+    int cleared_stat = stats["cleared"];
+    int pending_stat = stats["pending"];
+    int peak_stat = stats["pending_peak"];
+    int heap_size = stats["heap_size"];
+    int heap_rebuilds = stats["heap_rebuilds"];
+
+    print("timer_stress pending=" + pending + " cancelled=" + cancelled + " cleared=" + cleared + " left=" + pending_timers() + " created=" + created + " cancelled_stat=" + cancelled_stat + " cleared_stat=" + cleared_stat + " pending_stat=" + pending_stat + " peak_stat=" + peak_stat + " heap_size=" + heap_size + " heap_rebuilds=" + heap_rebuilds + "\n");
+    return cancelled == sizeof(ids) ? 0 : 1;
+}

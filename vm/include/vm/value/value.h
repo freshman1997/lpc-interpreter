@@ -37,6 +37,23 @@ struct Value {
     static constexpr std::int64_t  kIntMinInline = -(1LL << 46);
 
     static constexpr std::uint64_t kNilBits = kQNaNBits | (kTagNil << kTagShift);
+    static constexpr std::uint64_t kTagBitsMask = kQNaNBits | kTagMask;
+    static constexpr std::uint64_t kInt64TagBits = kQNaNBits | (kTagInt64 << kTagShift);
+    static constexpr std::uint64_t kBoxedIntTagBits = kQNaNBits | (kTagBoxedInt << kTagShift);
+    static constexpr std::uint64_t kObjRefTagBits = kQNaNBits | (kTagObjRef << kTagShift);
+    static constexpr std::uint64_t kClosureTagBits = kQNaNBits | (kTagClosure << kTagShift);
+    static constexpr std::uint64_t kBoolTagBits = kQNaNBits | (kTagBool << kTagShift);
+
+    bool IsInlineInt64() const { return (bits_ & kTagBitsMask) == kInt64TagBits; }
+    bool IsInlineFloat64() const { return (bits_ & kQNaNBits) != kQNaNBits; }
+
+    static bool BothInlineInt64(const Value &a, const Value &b) {
+        return (((a.bits_ ^ kInt64TagBits) | (b.bits_ ^ kInt64TagBits)) & kTagBitsMask) == 0;
+    }
+
+    static bool BothInlineFloat64(const Value &a, const Value &b) {
+        return ((a.bits_ | b.bits_) & kQNaNBits) != kQNaNBits;
+    }
 
     ValueTag Tag() const {
         if (!IsTagged()) return ValueTag::Float64;
@@ -67,7 +84,8 @@ struct Value {
 
     std::int64_t AsI64() const {
         std::uint64_t p = bits_ & kPayloadMask;
-        if (p & (1ULL << 46)) p |= ~kPayloadMask;
+        std::uint64_t sign = (p >> 46) & 1;
+        p |= (0ULL - sign) & ~kPayloadMask;
         return static_cast<std::int64_t>(p);
     }
 
@@ -98,8 +116,7 @@ struct Value {
     }
 
     static Value FromI64(std::int64_t i) {
-        std::uint64_t p = static_cast<std::uint64_t>(i) & kPayloadMask;
-        return Value{kQNaNBits | (kTagInt64 << kTagShift) | p};
+        return Value{kInt64TagBits | (static_cast<std::uint64_t>(i) & kPayloadMask)};
     }
 
     static Value FromF64(double f) {

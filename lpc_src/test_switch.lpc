@@ -1,0 +1,59 @@
+int main() {
+    int errors = 0;
+
+    int val = 2;
+    int result = 0;
+    switch (val) {
+    case 1: result = 10; break;
+    case 2: result = 20; break;
+    case 3: result = 30; break;
+    default: result = 99; break;
+    }
+    if (result != 20) { errors++; write("switch basic: expected 20 got " + to_string(result) + "\n"); }
+
+    result = 0;
+    switch (99) {
+    case 1: result = 10; break;
+    case 2: result = 20; break;
+    default: result = 99; break;
+    }
+    if (result != 99) { errors++; write("switch default: expected 99 got " + to_string(result) + "\n"); }
+
+    result = 0;
+    switch (5) {
+    case 1: result = 10; break;
+    case 2: result = 20; break;
+    }
+    if (result != 0) { errors++; write("switch no match: expected 0 got " + to_string(result) + "\n"); }
+
+    result = 0;
+    switch (1) {
+    case 1: result += 1;
+    case 2: result += 10; break;
+    case 3: result += 100; break;
+    }
+    if (result != 11) { errors++; write("switch fallthrough: expected 11 got " + to_string(result) + "\n"); }
+
+    result = 0;
+    int outer = 0;
+    for (int i = 0; i < 3; i++) {
+        switch (i) {
+        case 0: outer += 1; break;
+        case 1: outer += 10; break;
+        case 2: outer += 100; break;
+        }
+    }
+    if (outer != 111) { errors++; write("switch in loop: expected 111 got " + to_string(outer) + "\n"); }
+
+    result = 0;
+    int x = 42;
+    switch (x) {
+    case 1: result = 1; break;
+    case 42: result = 42; break;
+    case 100: result = 100; break;
+    default: result = -1; break;
+    }
+    if (result != 42) { errors++; write("switch large case: expected 42 got " + to_string(result) + "\n"); }
+
+    return errors;
+}

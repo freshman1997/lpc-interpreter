@@ -54,12 +54,22 @@ static int EfunResultCount(int efun_index) {
     case 43: return 1; // sort_array
     case 44: return 1; // instanceof
     case 45: return 1; // getenv
+    case 46: return 1; // call_later
+    case 47: return 1; // cancel_timer
+    case 48: return 1; // regexp
+    case 49: return 1; // regex_replace
+    case 50: return 1; // timer_exists
+    case 51: return 1; // pending_timers
+    case 52: return 1; // timer_info
+    case 53: return 1; // timer_clear_module
+    case 54: return 1; // timer_stats
+    case 55: return 1; // regex_stats
     default: return 0;
     }
 }
 
 static bool IsKnownEfun(int efun_index) {
-    return efun_index >= 0 && efun_index <= 45;
+    return efun_index >= 0 && efun_index <= 55;
 }
 
 static int StackDelta(MirOp op) {

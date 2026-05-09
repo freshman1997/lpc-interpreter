@@ -6,13 +6,13 @@ std::string Vm::ResolveString(const Value &v) const {
     if (v.IsObjRef()) {
         std::uintptr_t raw = v.AsObj();
         if (raw > 0 && raw < kFuncBase) {
-            if (raw & 1) {
-                std::uint32_t sidx = static_cast<std::uint32_t>(raw >> 1) - 1;
+            if (IsSConstStringRaw(raw)) {
+                std::uint32_t sidx = DecodeStringIndex(raw);
                 if (sidx < BoundChunk().sconst.size()) {
                     return BoundChunk().sconst[sidx];
                 }
             } else {
-                std::uint32_t hidx = static_cast<std::uint32_t>(raw >> 1) - 1;
+                std::uint32_t hidx = DecodeStringIndex(raw);
                 if (hidx < string_heap_.size()) {
                     return string_heap_[hidx];
                 }
@@ -32,13 +32,13 @@ std::string_view Vm::ResolveStringView(const Value &v, std::string &buf) const {
     if (v.IsObjRef()) {
         std::uintptr_t raw = v.AsObj();
         if (raw > 0 && raw < kFuncBase) {
-            if (raw & 1) {
-                std::uint32_t sidx = static_cast<std::uint32_t>(raw >> 1) - 1;
+            if (IsSConstStringRaw(raw)) {
+                std::uint32_t sidx = DecodeStringIndex(raw);
                 if (sidx < BoundChunk().sconst.size()) {
                     return BoundChunk().sconst[sidx];
                 }
             } else {
-                std::uint32_t hidx = static_cast<std::uint32_t>(raw >> 1) - 1;
+                std::uint32_t hidx = DecodeStringIndex(raw);
                 if (hidx < string_heap_.size()) {
                     return string_heap_[hidx];
                 }
@@ -60,18 +60,26 @@ std::string Vm::ResolveObjRefStringOnly(const Value &v) const {
     if (!v.IsObjRef()) return "";
     std::uintptr_t raw = v.AsObj();
     if (raw >= kFuncBase) return "";
-    if (raw > 0 && (raw & 1)) {
-        std::uint32_t sidx = static_cast<std::uint32_t>(raw >> 1) - 1;
+    if (raw > 0 && IsSConstStringRaw(raw)) {
+        std::uint32_t sidx = DecodeStringIndex(raw);
         if (sidx < BoundChunk().sconst.size()) return BoundChunk().sconst[sidx];
     } else if (raw > 0) {
-        std::uint32_t hidx = static_cast<std::uint32_t>(raw >> 1) - 1;
+        std::uint32_t hidx = DecodeStringIndex(raw);
         if (hidx < string_heap_.size()) return string_heap_[hidx];
     }
     return "";
 }
 
 bool Vm::IsStringObjRefFull(const Value &v) const {
-    return IsStringObjRef(v) && !ResolveObjRefStringOnly(v).empty();
+    if (!IsStringObjRef(v)) return false;
+    const std::uintptr_t raw = v.AsObj();
+    if (raw == 0 || raw >= kFuncBase) return false;
+    if (IsSConstStringRaw(raw)) {
+        const std::uint32_t sidx = DecodeStringIndex(raw);
+        return sidx < BoundChunk().sconst.size();
+    }
+    const std::uint32_t hidx = DecodeStringIndex(raw);
+    return hidx < string_heap_.size();
 }
 
 Value Vm::GetArrayElement(const Value &arr, std::int64_t index) const {

@@ -33,7 +33,8 @@ RuntimeError RunDebugReplStep(Vm &vm, std::uint32_t pc) {
     Debugger &dbg = vm.debugger();
     const Chunk &chunk = vm.chunk();
     const std::vector<Frame> &frames = vm.frames();
-    const std::vector<Value> &stack = vm.stack();
+    const Value *stack = vm.StackData();
+    const std::size_t stack_size = vm.StackSize();
     auto chunk_resolver = [&vm](std::uint64_t version_id) -> const Chunk * {
         return vm.GetChunkForVersion(version_id);
     };
@@ -191,7 +192,7 @@ RuntimeError RunDebugReplStep(Vm &vm, std::uint32_t pc) {
 
         if (cmd == "locals") {
             if (!frames.empty()) {
-                dbg.PrintLocals(chunk, frames.back(), stack);
+                dbg.PrintLocals(chunk, frames.back(), stack, stack_size);
             }
             continue;
         }
@@ -210,7 +211,7 @@ RuntimeError RunDebugReplStep(Vm &vm, std::uint32_t pc) {
                         std::string name = fdi && i < fdi->param_names.size()
                             ? fdi->param_names[i] : ("arg" + std::to_string(i));
                         std::uint32_t slot = fr.base + i;
-                        if (slot < stack.size()) {
+                        if (slot < stack_size) {
                             std::cerr << "    " << name << " = " << Debugger::FormatValue(stack[slot]) << std::endl;
                         }
                     }
@@ -240,7 +241,7 @@ RuntimeError RunDebugReplStep(Vm &vm, std::uint32_t pc) {
             bool has_brackets = expr.find('[') != std::string::npos;
 
             if (has_dots || has_brackets) {
-                Value result = Debugger::ResolveExpr(expr, chunk, frames, stack, vm);
+                Value result = Debugger::ResolveExpr(expr, chunk, frames, stack, stack_size, vm);
                 if (!result.IsNil() || has_dots || has_brackets) {
                     std::cerr << "  " << expr << " = " << Debugger::FormatValueEx(result, vm) << std::endl;
                 } else {
@@ -249,7 +250,7 @@ RuntimeError RunDebugReplStep(Vm &vm, std::uint32_t pc) {
                 continue;
             }
 
-            Value v = dbg.ResolveVariable(expr, chunk, frames, stack);
+            Value v = dbg.ResolveVariable(expr, chunk, frames, stack, stack_size);
             if (!v.IsNil()) {
                 std::cerr << "  " << expr << " = " << Debugger::FormatValueEx(v, vm) << std::endl;
                 continue;

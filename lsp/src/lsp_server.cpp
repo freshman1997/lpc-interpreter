@@ -742,7 +742,8 @@ void LspServer::HandleNotification(const std::string &method,
   } else if (method == "textDocument/didClose") {
     DidClose(params);
   } else if (method == "exit") {
-    std::exit(shutdown_ ? 0 : 1);
+    exit_requested_ = true;
+    exit_code_ = shutdown_ ? 0 : 1;
   }
 }
 
@@ -1217,7 +1218,7 @@ std::string LspServer::PathToUri(const std::string &path) const {
 
 void LspServer::Run(std::istream &in) {
   JsonNode msg;
-  while (ReadRpcMessage(in, msg)) {
+  while (!exit_requested_ && ReadRpcMessage(in, msg)) {
     HandleMessage(msg);
     msg = JsonNode();
   }

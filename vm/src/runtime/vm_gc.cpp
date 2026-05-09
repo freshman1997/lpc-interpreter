@@ -5,6 +5,7 @@
 #include "vm/value/lpc_class.h"
 #include "vm/value/lpc_closure.h"
 #include "vm/runtime/vm_config.h"
+#include <algorithm>
 
 using namespace lpc::vm;
 
@@ -12,8 +13,8 @@ void Vm::MarkValue(const Value &v) {
     if (v.IsObjRef()) {
         std::uintptr_t raw = v.AsObj();
         if (raw > 0 && raw < kFuncBase) {
-            if ((raw & 1) == 0) {
-                std::uint32_t hidx = static_cast<std::uint32_t>(raw >> 1) - 1;
+            if (!IsSConstStringRaw(raw)) {
+                std::uint32_t hidx = DecodeStringIndex(raw);
                 if (hidx < string_marks_.size() && string_marks_[hidx] == 0) {
                     string_marks_[hidx] = 1;
                 }
@@ -82,8 +83,8 @@ void Vm::MarkReachable() {
     object_marks_.assign(objects_.size(), 0);
     boxed_int_marks_.assign(boxed_ints_.size(), 0);
 
-    for (auto &v : value_stack_) {
-        MarkValue(v);
+    for (Value *p = value_stack_; p != value_stack_sp_; ++p) {
+        MarkValue(*p);
     }
     for (auto &frame : frames_) {
         if (frame.closure_slot < closures_.size()) {
@@ -100,7 +101,22 @@ void Vm::MarkReachable() {
             }
         }
     }
+    for (const auto &timer : timers_) {
+        if (timer.cancelled) continue;
+        MarkValue(timer.callee);
+        for (const auto &arg : timer.args) {
+            MarkValue(arg);
+        }
+    }
     MarkValue(last_result_);
+    if (current_object_id_ > 0 && current_object_id_ <= objects_.size()) {
+        if (object_marks_[current_object_id_ - 1] == 0) {
+            object_marks_[current_object_id_ - 1] = 1;
+            for (auto &g : objects_[current_object_id_ - 1].globals) {
+                MarkValue(g);
+            }
+        }
+    }
 }
 
 void Vm::Sweep() {
@@ -120,8 +136,19 @@ void Vm::Sweep() {
     }
     for (std::size_t i = 0; i < class_fields_.size(); ++i) {
         if (class_marks_[i] == 0 && (i >= class_slot_free_.size() || class_slot_free_[i] == 0)) {
+#ifndef NDEBUG
+            if (i < class_module_names_.size() && !class_module_names_[i].empty()) {
+                auto mci_it = module_class_instances_.find(class_module_names_[i]);
+                if (mci_it != module_class_instances_.end()) {
+                    auto &inst_vec = mci_it->second;
+                    inst_vec.erase(std::remove(inst_vec.begin(), inst_vec.end(), i), inst_vec.end());
+                }
+            }
+#endif
+            if (i < class_module_names_.size()) class_module_names_[i].clear();
+            if (i < class_module_version_ids_.size()) class_module_version_ids_[i] = 0;
             class_fields_[i].Clear();
-            if (i < class_template_ids_.size()) class_template_ids_[i] = 0xFFFF;
+            if (i < class_template_ids_.size()) class_template_ids_[i] = kInvalidIndex16;
             class_free_.push_back(i);
             if (i < class_slot_free_.size()) class_slot_free_[i] = 1;
         }

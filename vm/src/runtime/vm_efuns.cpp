@@ -15,13 +15,16 @@
 #include <thread>
 #include <chrono>
 #include <random>
+#include <regex>
+#include <cctype>
+#include <list>
 
 using namespace lpc::vm;
 
 static std::string FormatValue(const Value &v, Vm &vm, bool nested = false, int depth = 0) {
     const Chunk &chunk = vm.BoundChunk();
     const std::vector<std::string> &string_heap = vm.string_heap();
-    if (depth > 4) return "...";
+    if (depth > static_cast<int>(kFormatMaxDepth)) return "...";
 
     switch (v.Tag()) {
     case ValueTag::Nil: return "0";
@@ -36,13 +39,13 @@ static std::string FormatValue(const Value &v, Vm &vm, bool nested = false, int 
     case ValueTag::ObjRef: {
         std::uintptr_t raw = v.AsObj();
         if (raw > 0 && raw < kFuncBase) {
-            if (raw & 1) {
-                std::uint32_t sidx = static_cast<std::uint32_t>(raw >> 1) - 1;
+            if (IsSConstStringRaw(raw)) {
+                std::uint32_t sidx = DecodeStringIndex(raw);
                 if (sidx < chunk.sconst.size()) {
                     return nested ? ("\"" + chunk.sconst[sidx] + "\"") : chunk.sconst[sidx];
                 }
             } else {
-                std::uint32_t hidx = static_cast<std::uint32_t>(raw >> 1) - 1;
+                std::uint32_t hidx = DecodeStringIndex(raw);
                 if (hidx < string_heap.size()) {
                     return nested ? ("\"" + string_heap[hidx] + "\"") : string_heap[hidx];
                 }
@@ -139,8 +142,149 @@ static Mapping *GetMappingObjRef(
     return &mappings_[map_id - 1];
 }
 
+static std::regex_constants::syntax_option_type RegexFlagsFromArg(const Value *arg, Vm &vm) {
+    std::regex_constants::syntax_option_type flags = std::regex_constants::ECMAScript;
+    if (!arg || !arg->IsObjRef()) return flags;
+    const std::string text = vm.ResolveObjRefStringOnly(*arg);
+    for (char ch : text) {
+        switch (static_cast<char>(std::tolower(static_cast<unsigned char>(ch)))) {
+        case 'i':
+            flags |= std::regex_constants::icase;
+            break;
+        case 'n':
+            flags |= std::regex_constants::nosubs;
+            break;
+        case 'o':
+            flags |= std::regex_constants::optimize;
+            break;
+        case 'm':
+        case 's':
+            // Reserved for future behavior extensions.
+            break;
+        default:
+            break;
+        }
+    }
+    return flags;
+}
+
+static std::string RegexPatternDotAll(const std::string &pattern) {
+    std::string out;
+    out.reserve(pattern.size() + 8);
+    bool in_class = false;
+    bool escaped = false;
+    for (char ch : pattern) {
+        if (escaped) {
+            out.push_back(ch);
+            escaped = false;
+            continue;
+        }
+        if (ch == '\\') {
+            out.push_back(ch);
+            escaped = true;
+            continue;
+        }
+        if (ch == '[') {
+            in_class = true;
+            out.push_back(ch);
+            continue;
+        }
+        if (ch == ']') {
+            in_class = false;
+            out.push_back(ch);
+            continue;
+        }
+        if (!in_class && ch == '.') {
+            out.append("[\\s\\S]");
+            continue;
+        }
+        out.push_back(ch);
+    }
+    return out;
+}
+
+static bool RegexFlagEnabled(const Value *arg, Vm &vm, char needle) {
+    if (!arg || !arg->IsObjRef()) return false;
+    const std::string text = vm.ResolveObjRefStringOnly(*arg);
+    for (char ch : text) {
+        if (static_cast<char>(std::tolower(static_cast<unsigned char>(ch))) == needle) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool RegexFlagsValid(const Value *arg, Vm &vm) {
+    if (!arg || !arg->IsObjRef()) return true;
+    const std::string text = vm.ResolveObjRefStringOnly(*arg);
+    for (char ch : text) {
+        switch (static_cast<char>(std::tolower(static_cast<unsigned char>(ch)))) {
+        case 'i':
+        case 'm':
+        case 's':
+        case 'n':
+        case 'o':
+            break;
+        default:
+            return false;
+        }
+    }
+    return true;
+}
+
+struct RegexCacheState {
+    using CacheNode = std::pair<std::string, std::regex>;
+    std::list<CacheNode> lru;
+    std::unordered_map<std::string, std::list<CacheNode>::iterator> index;
+    std::uint64_t hits = 0;
+    std::uint64_t misses = 0;
+    std::uint64_t evictions = 0;
+};
+
+static RegexCacheState &RegexCache() {
+    static RegexCacheState state;
+    return state;
+}
+
+static const std::regex *GetOrCompileRegexCached(
+    const std::string &pattern,
+    std::regex_constants::syntax_option_type syntax) {
+    static constexpr std::size_t kRegexCacheCap = 128;
+    RegexCacheState &cache = RegexCache();
+
+    const std::string key = pattern + "\n" + std::to_string(static_cast<int>(syntax));
+    auto it = cache.index.find(key);
+    if (it != cache.index.end()) {
+        ++cache.hits;
+        cache.lru.splice(cache.lru.begin(), cache.lru, it->second);
+        return &cache.lru.begin()->second;
+    }
+
+    ++cache.misses;
+
+    std::regex compiled(pattern, syntax);
+    cache.lru.emplace_front(key, std::move(compiled));
+    cache.index[key] = cache.lru.begin();
+
+    if (cache.lru.size() > kRegexCacheCap) {
+        auto last = cache.lru.end();
+        --last;
+        cache.index.erase(last->first);
+        cache.lru.pop_back();
+        ++cache.evictions;
+    }
+    return &cache.lru.begin()->second;
+}
+
+static void GetRegexCacheStats(std::uint64_t *hits, std::uint64_t *misses, std::uint64_t *evictions) {
+    RegexCacheState &cache = RegexCache();
+    if (hits) *hits = cache.hits;
+    if (misses) *misses = cache.misses;
+    if (evictions) *evictions = cache.evictions;
+}
+
 Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
-    if (argc > value_stack_.size()) {
+    if (argc > StackSize()) {
         return Value::Nil();
     }
 
@@ -152,13 +296,11 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
         return Value::Nil();
     }
     if (efun == Efun::Typeof && argc == 1) {
-        Value v = value_stack_.back();
-        value_stack_.pop_back();
+        Value v = StackPop();
         return MakeI64(static_cast<std::int64_t>(v.Tag()));
     }
     if (efun == Efun::ToInt && argc == 1) {
-        Value v = value_stack_.back();
-        value_stack_.pop_back();
+        Value v = StackPop();
         if (v.IsBool()) return MakeI64(v.AsI64());
         if (v.Tag() == ValueTag::Int64) return v;
         if (v.IsFloat64()) return MakeI64(static_cast<std::int64_t>(v.AsF64()));
@@ -166,8 +308,7 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
         return MakeI64(0);
     }
     if (efun == Efun::ToString && argc == 1) {
-        Value v = value_stack_.back();
-        value_stack_.pop_back();
+        Value v = StackPop();
         std::string s;
         if (v.Tag() == ValueTag::Int64) {
             s = std::to_string(GetI64(v));
@@ -186,10 +327,8 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
         return Value::Nil();
     }
     if (efun == Efun::Instanceof && argc == 2) {
-        Value rhs = value_stack_.back();
-        value_stack_.pop_back();
-        Value lhs = value_stack_.back();
-        value_stack_.pop_back();
+        Value rhs = StackPop();
+        Value lhs = StackPop();
         if (!IsClassObjRef(lhs)) return MakeI64(0);
         std::uint16_t cur = 0;
         if (!ResolveClassTemplateIndex(lhs, &cur)) return MakeI64(0);
@@ -201,22 +340,305 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
             if (idx < BoundChunk().classes.size()) target_name = BoundChunk().classes[idx].name;
         }
         if (target_name.empty()) return MakeI64(0);
-        while (cur != 0xFFFF && cur < BoundChunk().classes.size()) {
+        while (cur != kInvalidIndex16 && cur < BoundChunk().classes.size()) {
             if (BoundChunk().classes[cur].name == target_name) return MakeI64(1);
             cur = BoundChunk().classes[cur].parent_class_idx;
         }
         return MakeI64(0);
     }
 
-    std::vector<Value> args(argc);
+    thread_local std::vector<Value> cached_args;
+    cached_args.resize(argc);
     for (std::uint8_t i = argc; i > 0; --i) {
-        args[i - 1] = value_stack_.back();
-        value_stack_.pop_back();
+        cached_args[i - 1] = StackPop();
     }
+    const std::vector<Value> &args = cached_args;
 
     switch (efun) {
     case Efun::CallOther: {
         return Value::Nil();
+    }
+    case Efun::CallLater: {
+        if (args.size() < 2 || args[0].Tag() != ValueTag::Int64) {
+            return MakeI64(0);
+        }
+        const Value &callee = args[1];
+        if (!(IsFuncObjRef(callee) || callee.IsClosure() || IsStringObjRefFull(callee))) {
+            return MakeI64(0);
+        }
+
+        const std::int64_t delay_ms = GetI64(args[0]) < 0 ? 0 : GetI64(args[0]);
+        static constexpr std::size_t kMaxPendingTimers = 4096;
+        static constexpr std::size_t kMaxPendingTimersPerModule = 1024;
+        if (timer_pending_count_ >= kMaxPendingTimers) {
+            return MakeI64(0);
+        }
+        const std::uint64_t module_pending_count = module_timer_pending_count_[current_module_name_];
+        if (module_pending_count >= kMaxPendingTimersPerModule) {
+            return MakeI64(0);
+        }
+        TimerTask task;
+        task.id = next_timer_id_++;
+        if (task.id == 0) {
+            task.id = next_timer_id_++;
+        }
+        task.due_at = std::chrono::steady_clock::now() + std::chrono::milliseconds(delay_ms);
+        task.callee = callee;
+        for (std::size_t i = 2; i < args.size(); ++i) {
+            task.args.push_back(args[i]);
+        }
+        task.module_name = current_module_name_;
+        task.module_version_id = current_module_version_id_;
+        task.object_id = current_object_id_;
+        timers_.push_back(std::move(task));
+        timer_id_index_[timers_.back().id] = timers_.size() - 1;
+        timer_heap_.push(TimerHeapEntry{timers_.back().due_at, timers_.back().id});
+        ++timer_created_count_;
+        ++timer_pending_count_;
+        ++module_timer_pending_count_[timers_.back().module_name];
+        if (timer_pending_count_ > timer_pending_peak_) {
+            timer_pending_peak_ = timer_pending_count_;
+        }
+        if (timers_.back().due_at < timer_next_due_) {
+            timer_next_due_ = timers_.back().due_at;
+        }
+        return MakeI64(static_cast<std::int64_t>(timers_.back().id));
+    }
+    case Efun::CancelTimer: {
+        if (args.empty() || args[0].Tag() != ValueTag::Int64) {
+            return MakeI64(0);
+        }
+        const std::uint64_t timer_id = static_cast<std::uint64_t>(GetI64(args[0]));
+        auto it = timer_id_index_.find(timer_id);
+        if (it != timer_id_index_.end() && it->second < timers_.size()) {
+            auto &timer = timers_[it->second];
+            if (timer.id != timer_id || timer.cancelled) {
+                return MakeI64(0);
+            }
+            timer.cancelled = true;
+            timer.args.clear();
+            timer.callee = Value::Nil();
+            timer_id_index_.erase(it);
+            ++timer_cancelled_count_;
+            if (timer_pending_count_ > 0) {
+                --timer_pending_count_;
+            }
+            auto mit = module_timer_pending_count_.find(timer.module_name);
+            if (mit != module_timer_pending_count_.end()) {
+                if (mit->second > 1) {
+                    --mit->second;
+                } else {
+                    module_timer_pending_count_.erase(mit);
+                }
+            }
+            return MakeI64(1);
+        }
+        return MakeI64(0);
+    }
+
+    if (argc == 1) {
+        const Value v = StackBack();
+        switch (efun) {
+        case Efun::Stringp:
+            StackPop();
+            return MakeBool(IsStringObjRefFull(v));
+        case Efun::Intp:
+            StackPop();
+            return MakeBool(v.Tag() == ValueTag::Int64);
+        case Efun::Floatp:
+            StackPop();
+            return MakeBool(v.IsFloat64());
+        case Efun::Nullp:
+            StackPop();
+            return MakeBool(v.IsNil());
+        case Efun::Functionp:
+            StackPop();
+            return MakeBool(v.IsClosure());
+        default:
+            break;
+        }
+    }
+    case Efun::TimerExists: {
+        if (args.empty() || args[0].Tag() != ValueTag::Int64) {
+            return MakeI64(0);
+        }
+        const std::uint64_t timer_id = static_cast<std::uint64_t>(GetI64(args[0]));
+        auto it = timer_id_index_.find(timer_id);
+        if (it != timer_id_index_.end() && it->second < timers_.size()) {
+            const auto &timer = timers_[it->second];
+            if (timer.id == timer_id && !timer.cancelled) return MakeI64(1);
+        }
+        return MakeI64(0);
+    }
+    case Efun::PendingTimers: {
+        return MakeI64(static_cast<std::int64_t>(timer_pending_count_));
+    }
+    case Efun::TimerInfo: {
+        if (args.empty() || args[0].Tag() != ValueTag::Int64) {
+            return Value::Nil();
+        }
+        const std::uint64_t timer_id = static_cast<std::uint64_t>(GetI64(args[0]));
+        auto it = timer_id_index_.find(timer_id);
+        if (it != timer_id_index_.end() && it->second < timers_.size()) {
+            const auto &timer = timers_[it->second];
+            if (timer.id != timer_id || timer.cancelled) {
+                return Value::Nil();
+            }
+            Mapping info;
+            info.Insert(InternString("id"), MakeI64(static_cast<std::int64_t>(timer.id)));
+            info.Insert(InternString("exists"), MakeI64(1));
+            const auto now = std::chrono::steady_clock::now();
+            const auto due_ms = std::chrono::duration_cast<std::chrono::milliseconds>(timer.due_at - now).count();
+            info.Insert(InternString("due_ms"), MakeI64(due_ms > 0 ? due_ms : 0));
+            info.Insert(InternString("module"), InternString(timer.module_name));
+            info.Insert(InternString("cancelled"), MakeI64(timer.cancelled ? 1 : 0));
+            info.Insert(InternString("argc"), MakeI64(static_cast<std::int64_t>(timer.args.size())));
+            if (timer.callee.IsClosure()) {
+                info.Insert(InternString("callback_kind"), InternString("closure"));
+                const std::uint32_t cid = timer.callee.ClosureId();
+                if (cid > 0 && cid <= closures_.size()) {
+                    const std::uint16_t fid = closures_[cid - 1].FuncId();
+                    if (fid < BoundChunk().functions.size()) {
+                        info.Insert(InternString("callback_name"), InternString(BoundChunk().functions[fid].name));
+                    }
+                }
+            } else if (IsFuncObjRef(timer.callee)) {
+                info.Insert(InternString("callback_kind"), InternString("function"));
+                const std::size_t raw_fid = DecodeFuncId(timer.callee);
+                if (raw_fid > 0) {
+                    const std::size_t fid = raw_fid - 1;
+                    if (fid < BoundChunk().functions.size()) {
+                        info.Insert(InternString("callback_name"), InternString(BoundChunk().functions[fid].name));
+                    }
+                }
+            } else if (IsStringObjRefFull(timer.callee)) {
+                info.Insert(InternString("callback_kind"), InternString("string"));
+                info.Insert(InternString("callback_name"), InternString(ResolveObjRefStringOnly(timer.callee)));
+            } else {
+                info.Insert(InternString("callback_kind"), InternString("unknown"));
+                info.Insert(InternString("callback_name"), InternString(""));
+            }
+            return AllocateMappingHandle(std::move(info));
+        }
+        return Value::Nil();
+    }
+    case Efun::TimerClearModule: {
+        std::string target_module = current_module_name_;
+        if (!args.empty() && args[0].IsObjRef()) {
+            target_module = ResolveObjRefStringOnly(args[0]);
+        }
+        if (target_module.empty()) {
+            return MakeI64(0);
+        }
+        std::int64_t removed = 0;
+        for (std::size_t i = 0; i < timers_.size(); ++i) {
+            auto &timer = timers_[i];
+            if (timer.cancelled) continue;
+            if (timer.module_name != target_module) continue;
+            timer.cancelled = true;
+            timer_id_index_.erase(timer.id);
+            ++removed;
+        }
+        if (removed > 0) {
+            if (static_cast<std::uint64_t>(removed) >= timer_pending_count_) {
+                timer_pending_count_ = 0;
+            } else {
+                timer_pending_count_ -= static_cast<std::uint64_t>(removed);
+            }
+            auto mit = module_timer_pending_count_.find(target_module);
+            if (mit != module_timer_pending_count_.end()) {
+                if (static_cast<std::uint64_t>(removed) >= mit->second) {
+                    module_timer_pending_count_.erase(mit);
+                } else {
+                    mit->second -= static_cast<std::uint64_t>(removed);
+                }
+            }
+        }
+        timer_cleared_count_ += static_cast<std::uint64_t>(removed);
+        return MakeI64(removed);
+    }
+    case Efun::TimerStats: {
+        Mapping stats;
+        stats.Insert(InternString("created"), MakeI64(static_cast<std::int64_t>(timer_created_count_)));
+        stats.Insert(InternString("fired"), MakeI64(static_cast<std::int64_t>(timer_fired_count_)));
+        stats.Insert(InternString("cancelled"), MakeI64(static_cast<std::int64_t>(timer_cancelled_count_)));
+        stats.Insert(InternString("cleared"), MakeI64(static_cast<std::int64_t>(timer_cleared_count_)));
+        stats.Insert(InternString("pending"), MakeI64(static_cast<std::int64_t>(timer_pending_count_)));
+        stats.Insert(InternString("pending_peak"), MakeI64(static_cast<std::int64_t>(timer_pending_peak_)));
+        stats.Insert(InternString("heap_size"), MakeI64(static_cast<std::int64_t>(timer_heap_.size())));
+        stats.Insert(InternString("heap_stale_pops"), MakeI64(static_cast<std::int64_t>(timer_heap_stale_pops_)));
+        stats.Insert(InternString("heap_rebuilds"), MakeI64(static_cast<std::int64_t>(timer_heap_rebuild_count_)));
+        return AllocateMappingHandle(std::move(stats));
+    }
+    case Efun::RegexStats: {
+        std::uint64_t hits = 0;
+        std::uint64_t misses = 0;
+        std::uint64_t evictions = 0;
+        GetRegexCacheStats(&hits, &misses, &evictions);
+        Mapping stats;
+        stats.Insert(InternString("hits"), MakeI64(static_cast<std::int64_t>(hits)));
+        stats.Insert(InternString("misses"), MakeI64(static_cast<std::int64_t>(misses)));
+        stats.Insert(InternString("evictions"), MakeI64(static_cast<std::int64_t>(evictions)));
+        return AllocateMappingHandle(std::move(stats));
+    }
+    case Efun::Regexp: {
+        if (args.size() < 2 || !args[0].IsObjRef() || !args[1].IsObjRef()) {
+            return MakeI64(0);
+        }
+        const std::string text = ResolveObjRefStringOnly(args[0]);
+        std::string pattern = ResolveObjRefStringOnly(args[1]);
+        const Value *flags_arg = args.size() >= 3 ? &args[2] : nullptr;
+        if (!RegexFlagsValid(flags_arg, *this)) {
+            return MakeI64(0);
+        }
+        if (RegexFlagEnabled(flags_arg, *this, 's')) {
+            pattern = RegexPatternDotAll(pattern);
+        }
+        try {
+#if defined(__cpp_lib_regex)
+            auto syntax = RegexFlagsFromArg(flags_arg, *this);
+            if (RegexFlagEnabled(flags_arg, *this, 'm')) {
+                syntax |= std::regex_constants::multiline;
+            }
+            const std::regex *re = GetOrCompileRegexCached(pattern, syntax);
+#else
+            auto syntax = RegexFlagsFromArg(flags_arg, *this);
+            const std::regex *re = GetOrCompileRegexCached(pattern, syntax);
+#endif
+            return MakeI64(std::regex_search(text, *re) ? 1 : 0);
+        } catch (...) {
+            return MakeI64(0);
+        }
+    }
+    case Efun::RegexReplace: {
+        if (args.size() < 3 || !args[0].IsObjRef() || !args[1].IsObjRef() || !args[2].IsObjRef()) {
+            return Value::Nil();
+        }
+        const std::string text = ResolveObjRefStringOnly(args[0]);
+        std::string pattern = ResolveObjRefStringOnly(args[1]);
+        const std::string repl = ResolveObjRefStringOnly(args[2]);
+        const Value *flags_arg = args.size() >= 4 ? &args[3] : nullptr;
+        if (!RegexFlagsValid(flags_arg, *this)) {
+            return Value::Nil();
+        }
+        if (RegexFlagEnabled(flags_arg, *this, 's')) {
+            pattern = RegexPatternDotAll(pattern);
+        }
+        try {
+#if defined(__cpp_lib_regex)
+            auto syntax = RegexFlagsFromArg(flags_arg, *this);
+            if (RegexFlagEnabled(flags_arg, *this, 'm')) {
+                syntax |= std::regex_constants::multiline;
+            }
+            const std::regex *re = GetOrCompileRegexCached(pattern, syntax);
+#else
+            auto syntax = RegexFlagsFromArg(flags_arg, *this);
+            const std::regex *re = GetOrCompileRegexCached(pattern, syntax);
+#endif
+            return InternString(std::regex_replace(text, *re, repl));
+        } catch (...) {
+            return Value::Nil();
+        }
     }
     case Efun::Getenv: {
         Mapping env;
@@ -338,6 +760,9 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
             std::string path = ResolveObjRefStringOnly(args[0]);
             Vm::LpcObject obj;
             obj.module_name = path;
+            const Chunk *obj_chunk = nullptr;
+            std::uint64_t obj_version = 0;
+            std::string obj_module_name = path;
             const ModuleRuntimeState *tms = GetModuleState(path);
             if (tms && tms->active_version_id != 0) {
                 auto vit = tms->version_runtime_data.find(tms->active_version_id);
@@ -346,14 +771,36 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
                     obj.blueprint = &vit->second.chunk;
                     obj.globals = vit->second.chunk.globals;
                     obj.destroyed = false;
-                    return AllocateObjectHandle(std::move(obj));
+                    obj_chunk = &vit->second.chunk;
+                    obj_version = tms->active_version_id;
+                    Value handle = AllocateObjectHandle(std::move(obj));
+                    if (obj_chunk && obj_chunk->create_idx != kInvalidIndex16) {
+                        PendingLifecycleCall plc;
+                        plc.func_id = obj_chunk->create_idx;
+                        plc.object_id = DecodeObjectId(handle);
+                        plc.module_version_id = obj_version;
+                        plc.module_name = obj_module_name;
+                        pending_lifecycle_.push_back(std::move(plc));
+                    }
+                    return handle;
                 }
             }
             obj.module_version_id = current_module_version_id_;
             obj.blueprint = &BoundChunk();
             obj.globals = BoundChunk().globals;
             obj.destroyed = false;
-            return AllocateObjectHandle(std::move(obj));
+            obj_chunk = &BoundChunk();
+            obj_version = current_module_version_id_;
+            Value handle = AllocateObjectHandle(std::move(obj));
+            if (obj_chunk && obj_chunk->create_idx != kInvalidIndex16) {
+                PendingLifecycleCall plc;
+                plc.func_id = obj_chunk->create_idx;
+                plc.object_id = DecodeObjectId(handle);
+                plc.module_version_id = obj_version;
+                plc.module_name = obj_module_name;
+                pending_lifecycle_.push_back(std::move(plc));
+            }
+            return handle;
         }
         return Value::Nil();
     }
@@ -361,6 +808,15 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
         if (!args.empty()) {
             std::size_t oid = DecodeObjectId(args[0]);
             if (oid > 0 && oid <= objects_.size()) {
+                const LpcObject &dobj = objects_[oid - 1];
+                if (!dobj.destroyed && dobj.blueprint && dobj.blueprint->on_destruct_idx != kInvalidIndex16) {
+                    PendingLifecycleCall plc;
+                    plc.func_id = dobj.blueprint->on_destruct_idx;
+                    plc.object_id = static_cast<std::uint32_t>(oid);
+                    plc.module_version_id = dobj.module_version_id;
+                    plc.module_name = dobj.module_name;
+                    pending_lifecycle_.push_back(std::move(plc));
+                }
                 objects_[oid - 1].destroyed = true;
             }
         }
@@ -695,7 +1151,7 @@ Value Vm::DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc) {
             if (idx < BoundChunk().classes.size()) target_name = BoundChunk().classes[idx].name;
         }
         if (target_name.empty()) return MakeI64(0);
-        while (cur != 0xFFFF && cur < BoundChunk().classes.size()) {
+        while (cur != kInvalidIndex16 && cur < BoundChunk().classes.size()) {
             if (BoundChunk().classes[cur].name == target_name) return MakeI64(1);
             cur = BoundChunk().classes[cur].parent_class_idx;
         }

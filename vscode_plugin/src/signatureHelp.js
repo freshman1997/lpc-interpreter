@@ -3,6 +3,7 @@
 const vscode = require("vscode");
 const { EFUN_DB } = require("./efunDb");
 const { parseDocumentSymbols } = require("./symbolParser");
+const { isLspActive } = require("./lspClient");
 
 function createSignatureHelpProvider(workspaceIndex) {
   return vscode.languages.registerSignatureHelpProvider(
@@ -17,6 +18,8 @@ function createSignatureHelpProvider(workspaceIndex) {
 
         const efunHelp = tryEfunSignature(callInfo);
         if (efunHelp) return efunHelp;
+
+        if (isLspActive()) return null;
 
         const docHelp = tryDocumentFunctionSignature(callInfo, document);
         if (docHelp) return docHelp;

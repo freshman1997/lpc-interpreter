@@ -1,0 +1,1 @@
+class Vec2 { int x = 0; int y = 0; } int main() { int n = 100000; int i = 0; int sum = 0; while (i < n) { Vec2 v = new Vec2(); v->x = i; v->y = i + 1; sum = sum + v->x + v->y; i = i + 1; } return sum; }

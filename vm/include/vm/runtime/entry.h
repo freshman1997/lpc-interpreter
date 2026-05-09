@@ -11,7 +11,13 @@
 namespace lpc {
 namespace vm {
 
-RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile = false, const std::string &bytecode_root = "", bool debug_checks = true, const std::string &entry_function = "main", const std::vector<std::pair<std::string, std::string>> &env_params = {});
+RuntimeError RunEntryModule(const std::string &entry_module,
+                            bool enable_profile = false,
+                            const std::string &bytecode_root = "",
+                            bool debug_checks = true,
+                            const std::string &entry_function = "main",
+                            const std::vector<std::pair<std::string, std::string>> &env_params = {},
+                            int repeat_count = 1);
 RuntimeError RunEntryModuleAttachable(const std::string &entry_module, int dap_listen_port, bool enable_profile = false, const std::string &bytecode_root = "", bool debug_checks = true, const std::string &entry_function = "main", const std::vector<std::pair<std::string, std::string>> &env_params = {});
 RuntimeError RunEntryModuleDebug(const std::string &entry_module, bool protocol_json, bool protocol_dap = false, bool enable_profile = false, const std::string &bytecode_root = "", const std::string &entry_function = "main", const std::vector<std::pair<std::string, std::string>> &env_params = {});
 RuntimeError LoadModuleChunkForHotReload(const std::string &module_name, Chunk *out_chunk, const std::string &bytecode_root = "");

@@ -88,6 +88,7 @@ public:
 
     void HandleMessage(const JsonNode &message);
     void Run(std::istream &in);
+    int ExitCode() const { return exit_code_; }
 
     const SymbolIndex &symbol_index() const { return symbol_index_; }
 
@@ -124,6 +125,8 @@ private:
     std::unordered_map<std::string, DocumentVersion> open_docs_;
     bool initialized_ = false;
     bool shutdown_ = false;
+    bool exit_requested_ = false;
+    int exit_code_ = 0;
     std::string root_uri_;
     std::string root_path_;
 };

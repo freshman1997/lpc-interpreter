@@ -1,0 +1,35 @@
+int main() {
+    int errors = 0;
+
+    if (!(3 == 3)) { errors++; write("int eq: expected true\n"); }
+    if (3 == 4) { errors++; write("int eq false: expected false\n"); }
+    if (!(3 != 4)) { errors++; write("int neq: expected true\n"); }
+    if (!(5 > 3)) { errors++; write("int gt: expected true\n"); }
+    if (!(5 >= 5)) { errors++; write("int gte: expected true\n"); }
+    if (!(3 < 5)) { errors++; write("int lt: expected true\n"); }
+    if (!(3 <= 3)) { errors++; write("int lte: expected true\n"); }
+
+    if (!(3.14 > 3.0)) { errors++; write("float gt: expected true\n"); }
+    if (!(3.0 < 3.14)) { errors++; write("float lt: expected true\n"); }
+    if (!(3.14 == 3.14)) { errors++; write("float eq: expected true\n"); }
+    if (!(3.14 != 3.15)) { errors++; write("float neq: expected true\n"); }
+
+    string sa = "hello";
+    string sb = "hello";
+    string sc = "world";
+    if (!(sa == sb)) { errors++; write("string eq: expected true\n"); }
+    if (!(sa != sc)) { errors++; write("string neq: expected true\n"); }
+    if (!(sa < sc)) { errors++; write("string lt: expected true\n"); }
+    if (!(sc > sa)) { errors++; write("string gt: expected true\n"); }
+    if (!(sa <= sb)) { errors++; write("string lte: expected true\n"); }
+    if (!(sa >= sb)) { errors++; write("string gte: expected true\n"); }
+
+    if (1 && 0) { errors++; write("logic and: expected false\n"); }
+    if (!(1 && 1)) { errors++; write("logic and true: expected true\n"); }
+    if (!(0 || 1)) { errors++; write("logic or: expected true\n"); }
+    if (0 || 0) { errors++; write("logic or false: expected false\n"); }
+    if (!(!0)) { errors++; write("logic not true: expected true\n"); }
+    if (!1) { errors++; write("logic not false: expected false\n"); }
+
+    return errors;
+}

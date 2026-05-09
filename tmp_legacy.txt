@@ -1,3 +1,0 @@
-Active code page: 65001
-stack:
-in file: test_class_incr, func: main, line: 8

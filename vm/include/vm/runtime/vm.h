@@ -4,6 +4,7 @@
 #include <vector>
 #include <array>
 #include <chrono>
+#include <queue>
 #include <string>
 #include <functional>
 #include <unordered_map>
@@ -37,6 +38,32 @@ public:
         bool destroyed = false;
     };
 
+    struct TimerTask {
+        std::uint64_t id = 0;
+        std::chrono::steady_clock::time_point due_at{};
+        Value callee = Value::Nil();
+        std::vector<Value> args;
+        std::string module_name;
+        std::uint64_t module_version_id = 0;
+        std::uint32_t object_id = 0;
+        bool version_pinned = false;
+        bool cancelled = false;
+    };
+
+    struct TimerHeapEntry {
+        std::chrono::steady_clock::time_point due_at{};
+        std::uint64_t id = 0;
+    };
+
+    struct TimerHeapCmp {
+        bool operator()(const TimerHeapEntry &a, const TimerHeapEntry &b) const {
+            if (a.due_at != b.due_at) {
+                return a.due_at > b.due_at;
+            }
+            return a.id > b.id;
+        }
+    };
+
     RuntimeError LoadChunk(const Chunk &chunk);
     RuntimeError LoadModule(const std::string &module_name, const Chunk &chunk);
     RuntimeError RunEntry(const char *function_name);
@@ -57,8 +84,33 @@ public:
     AuditLog &audit_log() { return hot_reload_manager_.audit_log(); }
     const AuditLog &audit_log() const { return hot_reload_manager_.audit_log(); }
 
+    ~Vm() { delete[] value_stack_; }
+
+    void EnsureStackCapacity() {
+        if (!value_stack_) {
+            value_stack_ = new Value[kMaxStackSize];
+            value_stack_sp_ = value_stack_;
+            stack_cap_ = kMaxStackSize;
+        }
+    }
+    void StackClear() { value_stack_sp_ = value_stack_; }
+    void StackResize(std::size_t new_size) {
+        if (new_size > StackSize()) {
+            for (Value *p = value_stack_sp_; p != value_stack_ + new_size; ++p)
+                *p = Value::Nil();
+        }
+        value_stack_sp_ = value_stack_ + new_size;
+    }
+    void StackPush(const Value &v) { *value_stack_sp_++ = v; }
+    Value StackPop() { return *--value_stack_sp_; }
+    Value &StackBack() { return *(value_stack_sp_ - 1); }
+    const Value &StackBack() const { return *(value_stack_sp_ - 1); }
+    bool StackEmpty() const { return value_stack_sp_ == value_stack_; }
+
     const std::vector<Frame> &frames() const { return frames_; }
-    const std::vector<Value> &stack() const { return value_stack_; }
+    const Value *StackData() const { return value_stack_; }
+    Value *StackData() { return value_stack_; }
+    std::size_t StackSize() const { return static_cast<std::size_t>(value_stack_sp_ - value_stack_); }
     const Chunk &chunk() const { return bound_vrdata_ ? bound_vrdata_->chunk : empty_chunk_; }
     Value last_result() const { return last_result_; }
     Debugger &debugger() { return debugger_; }
@@ -156,11 +208,11 @@ public:
             std::size_t idx = string_free_.back();
             string_free_.pop_back();
             string_heap_[idx] = s;
-            out = Value::FromObj((idx + 1) << 1);
+            out = MakeHeapStringHandle(static_cast<std::uint32_t>(idx));
         } else {
             std::uint32_t hidx = static_cast<std::uint32_t>(string_heap_.size());
             string_heap_.push_back(s);
-            out = Value::FromObj((hidx + 1) << 1);
+            out = MakeHeapStringHandle(hidx);
         }
         string_intern_[s] = out;
         return out;
@@ -237,7 +289,9 @@ private:
 
     // --- Hot path: accessed every opcode dispatch ---
     VersionRuntimeData *bound_vrdata_ = nullptr;
-    std::vector<Value> value_stack_;
+    Value *value_stack_ = nullptr;
+    Value *value_stack_sp_ = nullptr;
+    std::size_t stack_cap_ = 0;
     std::vector<Frame> frames_;
     std::uint32_t current_object_id_ = 0;
     std::string current_module_name_;
@@ -246,7 +300,7 @@ private:
     std::string bound_module_name_;
     Value last_result_;
     std::unordered_map<std::string, ModuleRuntimeState> module_states_;
-    std::unordered_map<std::uint64_t, VersionRuntimeData *> version_lookup_;
+    std::unordered_map<std::uint64_t, std::string> version_lookup_;
 
     // --- Warm path: accessed during allocation/efun ---
     std::vector<std::string> string_heap_;
@@ -289,7 +343,7 @@ private:
     bool debug_checks_enabled_ = true;
     std::vector<std::pair<std::string, std::string>> env_params_;
     std::uint64_t instruction_count_ = 0;
-    std::array<std::uint64_t, 256> opcode_counts_{};
+    std::array<std::uint64_t, kOpcodeCount> opcode_counts_{};
     std::chrono::steady_clock::time_point profile_start_{};
     std::chrono::steady_clock::time_point profile_end_{};
     Debugger debugger_;
@@ -297,12 +351,46 @@ private:
     OutputHook output_hook_;
     ModuleLoader module_loader_;
     HotReloadManager hot_reload_manager_;
+    std::vector<TimerTask> timers_;
+    std::uint64_t next_timer_id_ = 1;
+    std::uint64_t timer_created_count_ = 0;
+    std::uint64_t timer_fired_count_ = 0;
+    std::uint64_t timer_cancelled_count_ = 0;
+    std::uint64_t timer_cleared_count_ = 0;
+    std::uint64_t timer_pending_count_ = 0;
+    std::uint64_t timer_pending_peak_ = 0;
+    std::chrono::steady_clock::time_point timer_next_due_ = std::chrono::steady_clock::time_point::max();
+    std::unordered_map<std::string, std::uint64_t> module_timer_pending_count_;
+    std::priority_queue<TimerHeapEntry, std::vector<TimerHeapEntry>, TimerHeapCmp> timer_heap_;
+    std::unordered_map<std::uint64_t, std::size_t> timer_id_index_;
+    std::uint64_t timer_heap_stale_pops_ = 0;
+    std::uint64_t timer_heap_rebuild_count_ = 0;
+
+    std::array<std::uint16_t, kInstanceofCacheSize> instanceof_cache_template_idx_{{kInvalidIndex16, kInvalidIndex16, kInvalidIndex16, kInvalidIndex16}};
+    std::array<std::uint64_t, kInstanceofCacheSize> instanceof_cache_target_bits_{{0, 0, 0, 0}};
+    std::array<std::uint8_t, kInstanceofCacheSize> instanceof_cache_result_{{0, 0, 0, 0}};
+    std::uint8_t instanceof_cache_next_slot_ = 0;
+
+    std::uint64_t class_field_cache_handle_bits_ = 0;
+    std::uint16_t class_field_cache_field_idx_ = kInvalidIndex16;
+    std::uint32_t class_field_cache_class_id_ = 0;
+    std::uint8_t class_field_cache_valid_ = 0;
 
     RuntimeError RunInitCode();
     Value DispatchIntrinsic(std::uint16_t efun_idx, std::uint8_t argc);
     void MarkReachable();
     void MarkValue(const Value &v);
     void Sweep();
+
+    struct PendingLifecycleCall {
+        std::uint16_t func_id = 0;
+        std::uint32_t object_id = 0;
+        std::uint64_t module_version_id = 0;
+        std::string module_name;
+        bool is_entry = false;
+    };
+    std::vector<PendingLifecycleCall> pending_lifecycle_;
+    std::vector<PendingLifecycleCall> entry_lifecycle_queue_;
 };
 
 } // namespace vm

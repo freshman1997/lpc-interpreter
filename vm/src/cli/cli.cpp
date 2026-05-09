@@ -1,5 +1,4 @@
 #include <iostream>
-#include <fstream>
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -7,12 +6,12 @@
 #include <cctype>
 
 #include "cli/cli.h"
+#include "lpc/runtime/exit_code.h"
 #include "vm/runtime/entry.h"
+#include "vm/runtime/exit_code_map.h"
 #include "vm/runtime/hot_reload.h"
 #include "vm/runtime/audit_log.h"
 #include "lsp/lsp_server.h"
-
-extern std::string get_cwd();
 
 namespace lpc {
 namespace cli {
@@ -20,7 +19,8 @@ namespace cli {
 static void PrintUsage() {
     std::cout << "lpc <command> [args]\n";
     std::cout << "commands: run, debug, hot-reload, lsp\n";
-    std::cout << "run args: [entry-module] [entry-function] [--module name] [--function name] [--env key=value] [--bytecode-root path] [--dap-listen port] [--profile] [--release|--no-debug-checks]\n";
+    std::cout << "run args: [entry-module] [entry-function] [--module name] [--function name] [--env key=value] [--bytecode-root path] [--dap-listen port] [--profile] [--repeat N] [--release|--no-debug-checks]\n";
+    std::cout << "  defaults: module=LPC_ENTRY_MODULE env or 'main', function=LPC_ENTRY_FUNCTION env or 'main'\n";
     std::cout << "debug args: [entry-module] [entry-function] [--module name] [--function name] [--env key=value] [--bytecode-root path] [--protocol dap|json|repl] [--profile]\n";
     std::cout << "hot-reload args: <module> [--bytecode-root path] [--check-only] [--dry-run] [--require-smoke func] [--status] [--allow-level L0|L1|L2] [--audit-log path]\n";
     std::cout << "lsp: start LSP server on stdin/stdout\n";
@@ -63,27 +63,6 @@ static bool ParseHotReloadLevel(const std::string &text, lpc::vm::HotReloadLevel
     return false;
 }
 
-static std::string ReadEntryFile(const std::string &p) {
-    std::ifstream in(p.c_str(), std::ios::binary);
-    if (!in.is_open()) {
-        return "";
-    }
-    std::string m;
-    std::getline(in, m);
-    in.close();
-    while (!m.empty() && std::isspace(static_cast<unsigned char>(m.back()))) {
-        m.pop_back();
-    }
-    std::size_t start = 0;
-    while (start < m.size() && std::isspace(static_cast<unsigned char>(m[start]))) {
-        ++start;
-    }
-    if (start > 0) {
-        m.erase(0, start);
-    }
-    return m;
-}
-
 static void AddEnvParam(std::vector<std::pair<std::string, std::string>> *env_params,
                         const std::string &text) {
     if (!env_params) return;
@@ -102,21 +81,17 @@ int Run(int argc, char **argv) {
     }
 
     const std::string cmd = argv[1];
-    std::string entry_file;
     std::string bytecode_root;
     std::string entry_arg;
     std::string entry_function = "main";
     std::string protocol;
     int dap_listen_port = 0;
+    int repeat_count = 1;
     bool enable_profile = false;
     bool debug_checks = true;
     std::vector<std::pair<std::string, std::string>> env_params;
     for (int i = 2; i < argc; ++i) {
         std::string a = argv[i];
-        if (a == "--entry-file" && i + 1 < argc) {
-            entry_file = argv[++i];
-            continue;
-        }
         if ((a == "--entry-module" || a == "--module") && i + 1 < argc) {
             entry_arg = argv[++i];
             continue;
@@ -141,6 +116,10 @@ int Run(int argc, char **argv) {
             dap_listen_port = std::atoi(argv[++i]);
             continue;
         }
+        if (a == "--repeat" && i + 1 < argc) {
+            repeat_count = std::atoi(argv[++i]);
+            continue;
+        }
         if (a == "--profile") {
             enable_profile = true;
             continue;
@@ -163,47 +142,51 @@ int Run(int argc, char **argv) {
     }
 
     if (cmd == "run") {
-        if (bytecode_root.empty() && !entry_file.empty()) {
-            bytecode_root = std::filesystem::path(entry_file).parent_path().string();
-        }
         std::string entry_module = entry_arg;
         if (entry_module.empty()) {
-            std::string m = ReadEntryFile(entry_file);
-            if (!m.empty()) {
-                entry_module = m;
+            const char *env_mod = std::getenv("LPC_ENTRY_MODULE");
+            if (env_mod && env_mod[0] != '\0') {
+                entry_module = env_mod;
             }
         }
         if (entry_module.empty()) {
-            std::cerr << "run: no entry module specified" << std::endl;
-            return 1;
+            entry_module = "main";
+        }
+        if (entry_function == "main") {
+            const char *env_fn = std::getenv("LPC_ENTRY_FUNCTION");
+            if (env_fn && env_fn[0] != '\0') {
+                entry_function = env_fn;
+            }
         }
         if (dap_listen_port > 0) {
             debug_checks = true;
         }
         lpc::vm::RuntimeError s = dap_listen_port > 0
             ? lpc::vm::RunEntryModuleAttachable(entry_module, dap_listen_port, enable_profile, bytecode_root, debug_checks, entry_function, env_params)
-            : lpc::vm::RunEntryModule(entry_module, enable_profile, bytecode_root, debug_checks, entry_function, env_params);
+            : lpc::vm::RunEntryModule(entry_module, enable_profile, bytecode_root, debug_checks, entry_function, env_params, repeat_count);
         if (!s.ok()) {
-            std::cerr << "run failed: " << s.message << std::endl;
-            return 1;
+            std::cerr << "run failed [code=" << static_cast<int>(s.code) << "]: " << s.message << std::endl;
+            return lpc::vm::ProcessExitCodeFromRuntimeError(s);
         }
-        return 0;
+        return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Ok);
     }
 
     if (cmd == "debug") {
-        if (bytecode_root.empty() && !entry_file.empty()) {
-            bytecode_root = std::filesystem::path(entry_file).parent_path().string();
-        }
         std::string entry_module = entry_arg;
         if (entry_module.empty()) {
-            std::string m = ReadEntryFile(entry_file);
-            if (!m.empty()) {
-                entry_module = m;
+            const char *env_mod = std::getenv("LPC_ENTRY_MODULE");
+            if (env_mod && env_mod[0] != '\0') {
+                entry_module = env_mod;
             }
         }
         if (entry_module.empty()) {
-            std::cerr << "debug: no entry module specified" << std::endl;
-            return 1;
+            entry_module = "main";
+        }
+        if (entry_function == "main") {
+            const char *env_fn = std::getenv("LPC_ENTRY_FUNCTION");
+            if (env_fn && env_fn[0] != '\0') {
+                entry_function = env_fn;
+            }
         }
         bool protocol_json = false;
         bool protocol_dap = false;
@@ -222,12 +205,10 @@ int Run(int argc, char **argv) {
         }
         lpc::vm::RuntimeError s = lpc::vm::RunEntryModuleDebug(entry_module, protocol_json, protocol_dap, enable_profile, bytecode_root, entry_function, env_params);
         if (!s.ok()) {
-            if (s.code != lpc::vm::RuntimeErrorCode::InternalError) {
-                std::cerr << "debug failed: " << s.message << std::endl;
-                return 1;
-            }
+            std::cerr << "debug failed [code=" << static_cast<int>(s.code) << "]: " << s.message << std::endl;
+            return lpc::vm::ProcessExitCodeFromRuntimeError(s);
         }
-        return 0;
+        return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Ok);
     }
 
     if (cmd == "hot-reload") {
@@ -260,7 +241,7 @@ int Run(int argc, char **argv) {
             if (a == "--allow-level" && i + 1 < argc) {
                 if (!ParseHotReloadLevel(argv[++i], &level)) {
                     std::cerr << "hot-reload: invalid --allow-level, expected L0|L1|L2" << std::endl;
-                    return 1;
+                    return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Usage);
                 }
                 continue;
             }
@@ -279,7 +260,7 @@ int Run(int argc, char **argv) {
 
         if (module_name.empty()) {
             std::cerr << "hot-reload: module name is required" << std::endl;
-            return 1;
+            return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Usage);
         }
 
         if (!audit_log_path.empty()) {
@@ -290,51 +271,51 @@ int Run(int argc, char **argv) {
             lpc::vm::ModuleHotReloadStatus status;
             lpc::vm::RuntimeError status_err = lpc::vm::GetHotReloadModuleStatus(module_name, &status);
             if (!status_err.ok()) {
-                std::cerr << "hot-reload status failed: " << status_err.message << std::endl;
-                return 1;
+                std::cerr << "hot-reload status failed [code=" << static_cast<int>(status_err.code) << "]: " << status_err.message << std::endl;
+                return lpc::vm::ProcessExitCodeFromRuntimeError(status_err);
             }
             PrintHotReloadStatus(status);
-            return 0;
+            return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Ok);
         }
 
         lpc::vm::Chunk candidate;
         lpc::vm::RuntimeError load_err = lpc::vm::LoadModuleChunkForHotReload(module_name, &candidate, bytecode_root);
         if (!load_err.ok()) {
-            std::cerr << "hot-reload load failed: " << load_err.message << std::endl;
-            return 1;
+            std::cerr << "hot-reload load failed [code=" << static_cast<int>(load_err.code) << "]: " << load_err.message << std::endl;
+            return lpc::vm::ProcessExitCodeFromRuntimeError(load_err);
         }
 
         if (check_only) {
             lpc::vm::HotReloadCompatReport report;
             lpc::vm::RuntimeError check_err = lpc::vm::CheckHotReloadModule(module_name, candidate, level, &report);
             if (!check_err.ok()) {
-                std::cerr << "hot-reload check failed: " << check_err.message << std::endl;
+                std::cerr << "hot-reload check failed [code=" << static_cast<int>(check_err.code) << "]: " << check_err.message << std::endl;
                 if (!report.issues.empty()) {
                     for (std::size_t i = 0; i < report.issues.size(); ++i) {
                         std::cerr << "  - " << report.issues[i].field << ": " << report.issues[i].detail << std::endl;
                     }
                 }
-                return 1;
+                return lpc::vm::ProcessExitCodeFromRuntimeError(check_err);
             }
             std::cout << "hot-reload check passed"
                       << " module=" << module_name
                       << " level=" << lpc::vm::ToString(level)
                       << std::endl;
-            return 0;
+            return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Ok);
         }
 
         if (dry_run) {
             lpc::vm::HotReloadCompatReport report;
             lpc::vm::RuntimeError check_err = lpc::vm::CheckHotReloadModule(module_name, candidate, level, &report);
             if (!check_err.ok()) {
-                std::cerr << "hot-reload dry-run failed: " << check_err.message << std::endl;
-                return 1;
+                std::cerr << "hot-reload dry-run failed [code=" << static_cast<int>(check_err.code) << "]: " << check_err.message << std::endl;
+                return lpc::vm::ProcessExitCodeFromRuntimeError(check_err);
             }
             std::cout << "hot-reload dry-run passed"
                       << " module=" << module_name
                       << " level=" << lpc::vm::ToString(level)
                       << std::endl;
-            return 0;
+            return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Ok);
         }
 
         if (!smoke_function.empty()) {
@@ -343,16 +324,16 @@ int Run(int argc, char **argv) {
             lpc::vm::RuntimeError smoke_err = lpc::vm::PrepareHotReloadModule(
                 module_name, candidate, level, smoke_function, &candidate_version, &prep_status);
             if (!smoke_err.ok()) {
-                std::cerr << "hot-reload smoke failed: " << smoke_err.message << std::endl;
-                return 1;
+                std::cerr << "hot-reload smoke failed [code=" << static_cast<int>(smoke_err.code) << "]: " << smoke_err.message << std::endl;
+                return lpc::vm::ProcessExitCodeFromRuntimeError(smoke_err);
             }
 
             lpc::vm::ModuleHotReloadStatus activate_status;
             lpc::vm::RuntimeError activate_err = lpc::vm::ActivatePreparedHotReloadModule(
                 module_name, candidate_version, &activate_status);
             if (!activate_err.ok()) {
-                std::cerr << "hot-reload activate failed after smoke: " << activate_err.message << std::endl;
-                return 1;
+                std::cerr << "hot-reload activate failed after smoke [code=" << static_cast<int>(activate_err.code) << "]: " << activate_err.message << std::endl;
+                return lpc::vm::ProcessExitCodeFromRuntimeError(activate_err);
             }
 
             std::cout << "hot-reload activated (smoke passed)"
@@ -361,14 +342,14 @@ int Run(int argc, char **argv) {
                       << " smoke=" << smoke_function
                       << std::endl;
             PrintHotReloadStatus(activate_status);
-            return 0;
+            return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Ok);
         }
 
         lpc::vm::ModuleHotReloadStatus status;
         lpc::vm::RuntimeError apply_err = lpc::vm::ApplyHotReloadModule(module_name, candidate, level, &status);
         if (!apply_err.ok()) {
-            std::cerr << "hot-reload apply failed: " << apply_err.message << std::endl;
-            return 1;
+            std::cerr << "hot-reload apply failed [code=" << static_cast<int>(apply_err.code) << "]: " << apply_err.message << std::endl;
+            return lpc::vm::ProcessExitCodeFromRuntimeError(apply_err);
         }
 
         std::cout << "hot-reload activated"
@@ -377,7 +358,7 @@ int Run(int argc, char **argv) {
                   << " prepared_version=" << status.prepared_version
                   << std::endl;
         PrintHotReloadStatus(status);
-        return 0;
+        return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Ok);
     }
 
     if (cmd == "lsp") {
@@ -385,11 +366,14 @@ int Run(int argc, char **argv) {
             std::cout << msg << std::flush;
         });
         server.Run(std::cin);
-        return 0;
+        if (server.ExitCode() == 0) {
+            return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Ok);
+        }
+        return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::ProtocolError);
     }
 
     PrintUsage();
-    return 1;
+    return lpc::runtime::ToProcessCode(lpc::runtime::ExitCode::Usage);
 }
 
 } // namespace cli

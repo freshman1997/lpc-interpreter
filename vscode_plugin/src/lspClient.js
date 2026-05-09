@@ -55,7 +55,12 @@ function stopLsp() {
   return Promise.resolve();
 }
 
+function isLspActive() {
+  return client !== null && client.isRunning();
+}
+
 module.exports = {
   startLsp,
-  stopLsp
+  stopLsp,
+  isLspActive
 };

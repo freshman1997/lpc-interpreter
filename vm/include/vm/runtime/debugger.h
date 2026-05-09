@@ -207,13 +207,13 @@ public:
 
     bool ShouldBreak(std::uint32_t pc, std::uint32_t frame_depth,
                      const Chunk &chunk, const std::vector<Frame> &frames,
-                     const std::vector<Value> &stack) {
+                     const Value *stack, std::size_t stack_size) {
         if (!active_) return false;
 
         for (const auto &bp : breakpoints_) {
             if (bp.pc == pc && bp.verified) {
                 if (!bp.condition.empty()) {
-                    if (!EvaluateCondition(bp.condition, chunk, frames, stack)) {
+                    if (!EvaluateCondition(bp.condition, chunk, frames, stack, stack_size)) {
                         continue;
                     }
                 }
@@ -401,7 +401,7 @@ public:
     }
 
     void PrintLocals(const Chunk &chunk, const Frame &frame,
-                     const std::vector<Value> &stack) const {
+                     const Value *stack, std::size_t stack_size) const {
         if (frame.func_id >= chunk.functions.size()) return;
         const auto &fproto = chunk.functions[frame.func_id];
         const FunctionDebugInfo *fdi = nullptr;
@@ -414,7 +414,7 @@ public:
             std::string name = fdi && i < fdi->param_names.size()
                 ? fdi->param_names[i] : ("arg" + std::to_string(i));
             std::uint32_t slot = frame.base + i;
-            if (slot < stack.size()) {
+            if (slot < stack_size) {
                 std::cerr << "    " << name << " = " << FormatValue(stack[slot]) << std::endl;
             }
         }
@@ -424,7 +424,7 @@ public:
         std::cerr << "  locals (" << n_local_names << "):" << std::endl;
         for (int i = 0; i < n_local_names; ++i) {
             std::uint32_t slot = frame.base + fproto.arity + i;
-            if (slot < stack.size()) {
+            if (slot < stack_size) {
                 std::cerr << "    " << fdi->local_names[i]
                           << " = " << FormatValue(stack[slot]) << std::endl;
             }
@@ -439,7 +439,7 @@ public:
     }
 
     std::vector<DebugVariable> GetArgs(const Chunk &chunk, const Frame &frame,
-                                       const std::vector<Value> &stack) const {
+                                       const Value *stack, std::size_t stack_size) const {
         std::vector<DebugVariable> result;
         if (frame.func_id >= chunk.functions.size()) return result;
         const auto &fproto = chunk.functions[frame.func_id];
@@ -452,7 +452,7 @@ public:
             dv.name = fdi && i < fdi->param_names.size()
                 ? fdi->param_names[i] : ("arg" + std::to_string(i));
             std::uint32_t slot = frame.base + i;
-            if (slot < stack.size()) {
+            if (slot < stack_size) {
                 dv.value = FormatValue(stack[slot]);
                 dv.type = TypeName(stack[slot]);
             }
@@ -462,7 +462,7 @@ public:
     }
 
     std::vector<DebugVariable> GetLocals(const Chunk &chunk, const Frame &frame,
-                                         const std::vector<Value> &stack) const {
+                                         const Value *stack, std::size_t stack_size) const {
         std::vector<DebugVariable> result;
         if (frame.func_id >= chunk.functions.size()) return result;
         const auto &fproto = chunk.functions[frame.func_id];
@@ -476,7 +476,7 @@ public:
             DebugVariable dv;
             dv.name = fdi->local_names[i];
             std::uint32_t slot = frame.base + fproto.arity + i;
-            if (slot < stack.size()) {
+            if (slot < stack_size) {
                 dv.value = FormatValue(stack[slot]);
                 dv.type = TypeName(stack[slot]);
             }
@@ -617,9 +617,9 @@ public:
     Value ResolveVariable(const std::string &name,
                           const Chunk &chunk,
                           const std::vector<Frame> &frames,
-                          const std::vector<Value> &stack) const {
+                          const Value *stack, std::size_t stack_size) const {
         Value out;
-        if (TryResolveVariable(name, chunk, frames, stack, &out)) {
+        if (TryResolveVariable(name, chunk, frames, stack, stack_size, &out)) {
             return out;
         }
         return Value::Nil();
@@ -628,7 +628,7 @@ public:
     bool TryResolveVariable(const std::string &name,
                             const Chunk &chunk,
                             const std::vector<Frame> &frames,
-                            const std::vector<Value> &stack,
+                            const Value *stack, std::size_t stack_size,
                             Value *out) const {
         if (!frames.empty()) {
             const Frame &fr = frames.back();
@@ -643,7 +643,7 @@ public:
                         ? fdi->param_names[i] : ("arg" + std::to_string(i));
                     if (pname == name) {
                         std::uint32_t slot = fr.base + i;
-                        if (out) *out = slot < stack.size() ? stack[slot] : Value::Nil();
+                        if (out) *out = slot < stack_size ? stack[slot] : Value::Nil();
                         return true;
                     }
                 }
@@ -651,7 +651,7 @@ public:
                     for (int i = 0; i < static_cast<int>(fdi->local_names.size()); ++i) {
                         if (fdi->local_names[i] == name) {
                             std::uint32_t slot = fr.base + fproto.arity + i;
-                            if (out) *out = slot < stack.size() ? stack[slot] : Value::Nil();
+                            if (out) *out = slot < stack_size ? stack[slot] : Value::Nil();
                             return true;
                         }
                     }
@@ -670,7 +670,7 @@ public:
     static Value ResolveExpr(const std::string &expr,
                              const Chunk &chunk,
                              const std::vector<Frame> &frames,
-                             const std::vector<Value> &stack,
+                             const Value *stack, std::size_t stack_size,
                              const Vm &vm);
 
     static bool ValueToBool(const Value &v) {
@@ -745,7 +745,7 @@ public:
     bool EvaluateCondition(const std::string &condition,
                            const Chunk &chunk,
                            const std::vector<Frame> &frames,
-                           const std::vector<Value> &stack) const {
+                           const Value *stack, std::size_t stack_size) const {
         std::string cond = condition;
         std::size_t ws = cond.find_first_not_of(" \t");
         if (ws != std::string::npos && ws > 0) cond = cond.substr(ws);
@@ -754,16 +754,16 @@ public:
         if (or_pos != std::string::npos) {
             std::string left = cond.substr(0, or_pos);
             std::string right = cond.substr(or_pos + 2);
-            return EvaluateCondition(left, chunk, frames, stack)
-                || EvaluateCondition(right, chunk, frames, stack);
+            return EvaluateCondition(left, chunk, frames, stack, stack_size)
+                || EvaluateCondition(right, chunk, frames, stack, stack_size);
         }
 
         auto and_pos = cond.find("&&");
         if (and_pos != std::string::npos) {
             std::string left = cond.substr(0, and_pos);
             std::string right = cond.substr(and_pos + 2);
-            return EvaluateCondition(left, chunk, frames, stack)
-                && EvaluateCondition(right, chunk, frames, stack);
+            return EvaluateCondition(left, chunk, frames, stack, stack_size)
+                && EvaluateCondition(right, chunk, frames, stack, stack_size);
         }
 
         std::string ops[] = {"!=", "<=", ">=", "==", "<", ">", "="};
@@ -777,11 +777,11 @@ public:
                 while (!rhs_str.empty() && (rhs_str.front() == ' ' || rhs_str.front() == '\t'))
                     rhs_str.erase(rhs_str.begin());
 
-                Value lhs = ResolveVariable(lhs_name, chunk, frames, stack);
+                Value lhs = ResolveVariable(lhs_name, chunk, frames, stack, stack_size);
                 Value rhs = ParseLiteral(rhs_str);
                 if (lhs.IsNil() && rhs.IsNil()) {
                     lhs = ParseLiteral(lhs_name);
-                    rhs = ResolveVariable(rhs_str, chunk, frames, stack);
+                    rhs = ResolveVariable(rhs_str, chunk, frames, stack, stack_size);
                 }
                 if (lhs.IsNil() && rhs.IsNil()) {
                     lhs = ParseLiteral(lhs_name);
@@ -791,7 +791,7 @@ public:
             }
         }
 
-        Value v = ResolveVariable(cond, chunk, frames, stack);
+        Value v = ResolveVariable(cond, chunk, frames, stack, stack_size);
         return ValueToBool(v);
     }
 

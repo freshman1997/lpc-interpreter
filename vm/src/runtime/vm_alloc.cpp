@@ -39,6 +39,7 @@ static LpcClass BuildDefaultClassFields(Vm &vm, const ClassInfo &ci) {
     return fields;
 }
 
+
 bool Vm::ResolveClassTemplateIndex(const Value &class_handle, std::uint16_t *out_template_idx) const {
     if (!out_template_idx) return false;
     std::size_t cls_id = DecodeClassId(class_handle);
@@ -110,12 +111,14 @@ Value Vm::AllocateClassHandle(std::uint16_t class_idx) {
     if (!class_free_.empty()) {
         std::size_t idx = class_free_.back();
         class_free_.pop_back();
-        class_fields_[idx] = BuildDefaultClassFields(*this, BoundChunk().classes[class_idx]);
         class_template_ids_[idx] = class_idx;
         class_module_version_ids_[idx] = current_module_version_id_;
         class_module_names_[idx] = current_module_name_;
         class_slot_free_[idx] = 0;
+        class_fields_[idx] = BuildDefaultClassFields(*this, BoundChunk().classes[class_idx]);
+#ifndef NDEBUG
         module_class_instances_[current_module_name_].push_back(idx);
+#endif
         return MakeClassHandle(idx + 1);
     }
     class_fields_.push_back(BuildDefaultClassFields(*this, BoundChunk().classes[class_idx]));
@@ -124,7 +127,9 @@ Value Vm::AllocateClassHandle(std::uint16_t class_idx) {
     class_module_names_.push_back(current_module_name_);
     class_slot_free_.push_back(0);
     std::size_t idx = class_fields_.size() - 1;
+#ifndef NDEBUG
     module_class_instances_[current_module_name_].push_back(idx);
+#endif
     return MakeClassHandle(class_fields_.size());
 }
 

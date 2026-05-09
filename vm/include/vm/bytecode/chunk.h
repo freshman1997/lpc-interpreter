@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "vm/value/value.h"
+#include "vm/runtime/vm_config.h"
 
 namespace lpc {
 namespace vm {
@@ -52,7 +53,7 @@ struct ClassInfo {
 
     std::string name;
     std::uint16_t nfields = 0;
-    std::uint16_t parent_class_idx = 0xFFFF;
+    std::uint16_t parent_class_idx = kInvalidIndex16;
     std::vector<std::string> field_names;
     std::vector<FieldDefault> field_defaults;
     std::unordered_map<std::string, std::uint16_t> field_name_index;
@@ -96,6 +97,9 @@ struct Chunk {
     mutable std::vector<Value> globals;
     DebugInfo debug_info;
     std::vector<std::string> global_names;
+    std::uint16_t create_idx = kInvalidIndex16;
+    std::uint16_t on_loadin_idx = kInvalidIndex16;
+    std::uint16_t on_destruct_idx = kInvalidIndex16;
 };
 
 } // namespace vm

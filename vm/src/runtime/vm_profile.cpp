@@ -79,6 +79,29 @@ static const char *OpcodeName(std::uint8_t op) {
     case lpc::Op::AddLocalLocalIncJumpIfLocalLt:return "AddLocalLocalIncJumpIfLocalLt";
     case lpc::Op::AddLocalIConstToLocal:return "AddLocalIConstToLocal";
     case lpc::Op::SubLocalIConstToLocal:return "SubLocalIConstToLocal";
+    case lpc::Op::BitAndLocalIConstToLocal:return "BitAndLocalIConstToLocal";
+    case lpc::Op::BitOrLocalIConstToLocal:return "BitOrLocalIConstToLocal";
+    case lpc::Op::BitXorLocalIConstToLocal:return "BitXorLocalIConstToLocal";
+    case lpc::Op::ShlLocalIConstToLocal:return "ShlLocalIConstToLocal";
+    case lpc::Op::ShrLocalIConstToLocal:return "ShrLocalIConstToLocal";
+    case lpc::Op::AddLocalFConstToLocal:return "AddLocalFConstToLocal";
+    case lpc::Op::SubLocalFConstToLocal:return "SubLocalFConstToLocal";
+    case lpc::Op::MulLocalFConstToLocal:return "MulLocalFConstToLocal";
+    case lpc::Op::DivLocalFConstToLocal:return "DivLocalFConstToLocal";
+    case lpc::Op::LoadLocalAddFConst:return "LoadLocalAddFConst";
+    case lpc::Op::LoadLocalSubFConst:return "LoadLocalSubFConst";
+    case lpc::Op::LoadLocalMulFConst:return "LoadLocalMulFConst";
+    case lpc::Op::LoadLocalDivFConst:return "LoadLocalDivFConst";
+    case lpc::Op::LoadLocalDupAddFConst:return "LoadLocalDupAddFConst";
+    case lpc::Op::LoadLocalDupSubFConst:return "LoadLocalDupSubFConst";
+    case lpc::Op::LoadLocalDupMulFConst:return "LoadLocalDupMulFConst";
+    case lpc::Op::LoadLocalDupDivFConst:return "LoadLocalDupDivFConst";
+    case lpc::Op::SetClassFieldLocalFromLocal:return "SetClassFieldLocalFromLocal";
+    case lpc::Op::AddLocalClassFieldToLocal:return "AddLocalClassFieldToLocal";
+    case lpc::Op::LoadLocalClassField:return "LoadLocalClassField";
+    case lpc::Op::AddLocalTwoClassFieldsToLocal:return "AddLocalTwoClassFieldsToLocal";
+    case lpc::Op::AddLocalToUpvalueAndLoad:return "AddLocalToUpvalueAndLoad";
+    case lpc::Op::LoadLocalBitAndIConst:return "LoadLocalBitAndIConst";
     default:                    return "Unknown";
     }
 }

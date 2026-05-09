@@ -916,6 +916,16 @@ static const char *kEfunNames[] = {
     "sort_array",
     "instanceof",
     "getenv",
+    "call_later",
+    "cancel_timer",
+    "regexp",
+    "regex_replace",
+    "timer_exists",
+    "pending_timers",
+    "timer_info",
+    "timer_clear_module",
+    "timer_stats",
+    "regex_stats",
 };
 static constexpr int kEfunCount = sizeof(kEfunNames) / sizeof(kEfunNames[0]);
 

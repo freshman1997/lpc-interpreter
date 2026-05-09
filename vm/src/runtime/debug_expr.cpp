@@ -120,7 +120,8 @@ static std::vector<std::string> TokenizeExpr(const std::string &expr) {
 Value Debugger::ResolveExpr(const std::string &expr,
                             const Chunk &chunk,
                             const std::vector<Frame> &frames,
-                            const std::vector<Value> &stack,
+                            const Value *stack,
+                            std::size_t stack_size,
                             const Vm &vm) {
     std::string trimmed = Trim(expr);
     if (trimmed.empty()) return Value::Nil();
@@ -129,7 +130,7 @@ Value Debugger::ResolveExpr(const std::string &expr,
     if (tokens.empty()) return Value::Nil();
 
     Debugger dbg;
-    Value current = dbg.ResolveVariable(tokens[0], chunk, frames, stack);
+    Value current = dbg.ResolveVariable(tokens[0], chunk, frames, stack, stack_size);
     if (current.IsNil()) {
         current = ParseLiteral(tokens[0]);
     }

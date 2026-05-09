@@ -12,11 +12,10 @@
 #include "lpc/bytecode/opcode.h"
 #include "vm/runtime/vm.h"
 #include "vm/runtime/debugger.h"
+#include "vm/runtime/process_context.h"
 #include "vm/value/value.h"
 #include "cli/debug_repl.h"
 #include "cli/dap_server.h"
-
-extern std::string get_cwd();
 
 namespace {
 
@@ -471,6 +470,16 @@ static lpc::vm::RuntimeError LoadChunk(const std::string &path, lpc::vm::Chunk *
         case lpc::vm::kSecDebug:
             e = ParseDebugSection(in, sec_size, out);
             break;
+        case lpc::vm::kSecLifecycle:
+            if (sec_size >= 6) {
+                std::uint16_t ci = 0, li = 0, di = 0;
+                if (ReadU16(in, &ci) && ReadU16(in, &li) && ReadU16(in, &di)) {
+                    out.create_idx = ci;
+                    out.on_loadin_idx = li;
+                    out.on_destruct_idx = di;
+                }
+            }
+            break;
         default:
             break;
         }
@@ -509,7 +518,16 @@ static void InstallModuleLoader(vm::Vm &vm, const std::string &bytecode_root) {
     });
 }
 
-RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile, const std::string &bytecode_root, bool debug_checks, const std::string &entry_function, const std::vector<std::pair<std::string, std::string>> &env_params) {
+RuntimeError RunEntryModule(const std::string &entry_module,
+                            bool enable_profile,
+                            const std::string &bytecode_root,
+                            bool debug_checks,
+                            const std::string &entry_function,
+                            const std::vector<std::pair<std::string, std::string>> &env_params,
+                            int repeat_count) {
+    if (repeat_count <= 0) {
+        return RuntimeError::Error(RuntimeErrorCode::InvalidOperand, "repeat_count must be > 0");
+    }
     const std::string next_path = ResolveModulePath(entry_module, bytecode_root);
     if (next_path.empty()) {
         return RuntimeError::Error(RuntimeErrorCode::NotFound, "could not find module bytecode");
@@ -530,9 +548,11 @@ RuntimeError RunEntryModule(const std::string &entry_module, bool enable_profile
     if (!e.ok()) {
         return e;
     }
-    e = nextvm_engine.RunEntry(entry_function.c_str());
-    if (!e.ok()) {
-        return e;
+    for (int i = 0; i < repeat_count; ++i) {
+        e = nextvm_engine.RunEntry(entry_function.c_str());
+        if (!e.ok()) {
+            return e;
+        }
     }
 
     vm::Value out = nextvm_engine.last_result();

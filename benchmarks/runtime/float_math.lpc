@@ -1,0 +1,13 @@
+float main() {
+    int n = 1000000;
+    int i = 0;
+    float pi = 3.14159265;
+    float sum = 0.0;
+    while (i < n) {
+        float x = to_float(i) * pi;
+        sum = sum + x / (x + 1.0);
+        i = i + 1;
+    }
+    if (sum <= 0.0) return 1.0;
+    return sum;
+}

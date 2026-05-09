@@ -1,0 +1,13 @@
+int main() {
+    int n = 10000;
+    int i = 0;
+    int sum = 0;
+    while (i < n) {
+        var ob = clone_object();
+        sum = sum + 1;
+        destruct(ob);
+        i = i + 1;
+    }
+    if (sum <= 0) return 1;
+    return sum;
+}

@@ -1061,13 +1061,14 @@ private:
         Debugger &dbg = vm_->debugger();
         const Chunk &chunk = vm_->chunk();
         const std::vector<Frame> &frames = vm_->frames();
-        const std::vector<Value> &stack = vm_->stack();
+        const Value *stack = vm_->StackData();
+        const std::size_t stack_size = vm_->StackSize();
 
-        Value result = Debugger::ResolveExpr(expr, chunk, frames, stack, *vm_);
+        Value result = Debugger::ResolveExpr(expr, chunk, frames, stack, stack_size, *vm_);
         bool found = (result.Tag() != ValueTag::Nil);
 
         if (!found) {
-            found = dbg.TryResolveVariable(expr, chunk, frames, stack, &result);
+            found = dbg.TryResolveVariable(expr, chunk, frames, stack, stack_size, &result);
         }
 
         if (!found) {
@@ -1151,7 +1152,8 @@ private:
         Debugger &dbg = vm_->debugger();
         const Chunk &chunk = vm_->chunk();
         const std::vector<Frame> &frames = vm_->frames();
-        const std::vector<Value> &stack = vm_->stack();
+        const Value *stack = vm_->StackData();
+        const std::size_t stack_size = vm_->StackSize();
 
         cached_arg_values_.clear();
         cached_local_values_.clear();
@@ -1159,8 +1161,8 @@ private:
 
         if (!frames.empty()) {
             const Frame &fr = frames.back();
-            cached_args_ = dbg.GetArgs(chunk, fr, stack);
-            cached_locals_ = dbg.GetLocals(chunk, fr, stack);
+            cached_args_ = dbg.GetArgs(chunk, fr, stack, stack_size);
+            cached_locals_ = dbg.GetLocals(chunk, fr, stack, stack_size);
 
             if (fr.func_id < chunk.functions.size()) {
                 const auto &fproto = chunk.functions[fr.func_id];
@@ -1170,12 +1172,12 @@ private:
                 }
                 for (std::uint16_t i = 0; i < fproto.arity; ++i) {
                     std::uint32_t slot = fr.base + i;
-                    cached_arg_values_.push_back(slot < stack.size() ? stack[slot] : Value::Nil());
+                    cached_arg_values_.push_back(slot < stack_size ? stack[slot] : Value::Nil());
                 }
                 if (fdi) {
                     for (int i = 0; i < static_cast<int>(fdi->local_names.size()); ++i) {
                         std::uint32_t slot = fr.base + fproto.arity + i;
-                        cached_local_values_.push_back(slot < stack.size() ? stack[slot] : Value::Nil());
+                        cached_local_values_.push_back(slot < stack_size ? stack[slot] : Value::Nil());
                     }
                 }
             }

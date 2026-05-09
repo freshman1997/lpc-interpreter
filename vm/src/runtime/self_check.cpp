@@ -3,6 +3,7 @@
 #include <string>
 #include <chrono>
 #include <cstring>
+#include <filesystem>
 
 #include "vm/runtime/self_check.h"
 #include "vm/runtime/vm.h"
@@ -12,11 +13,21 @@
 #include "lsp/lsp_server.h"
 #include "vm/runtime/distributed_hot_reload.h"
 #include "vm/runtime/persistent_storage.h"
+#include "vm/runtime/efun.h"
 #include "vm/bytecode/binary_format.h"
 #include "lpc/bytecode/opcode.h"
 
 namespace lpc {
 namespace vm {
+
+static std::string TempDirPath()
+{
+    try {
+        return std::filesystem::temp_directory_path().string();
+    } catch (...) {
+        return ".";
+    }
+}
 
 static bool CheckNextVMMinimalProgram()
 {
@@ -181,6 +192,95 @@ static bool CheckNextVMCallValue()
                   << " value=" << out.AsI64() << std::endl;
     }
     return out.Tag() == lpc::vm::ValueTag::Int64 && out.AsI64() == 6;
+}
+
+static bool CheckNextVMTimerCallLaterCancel()
+{
+    lpc::vm::Chunk ch;
+    ch.module_name = "self_check_timer";
+    ch.iconst = {30, 1, 7, 0};
+
+    lpc::vm::FunctionProto timer_func;
+    timer_func.name = "on_timer";
+    timer_func.arity = 1;
+    timer_func.nlocals = 1;
+    timer_func.code_start = 0;
+
+    lpc::vm::FunctionProto mainf;
+    mainf.name = "main";
+    mainf.arity = 0;
+    mainf.nlocals = 0;
+
+    auto emit_u16 = [&](unsigned v) {
+        ch.code.push_back(static_cast<std::uint8_t>(v & 0xff));
+        ch.code.push_back(static_cast<std::uint8_t>((v >> 8) & 0xff));
+    };
+    auto emit_op = [&](lpc::vm::Op op) {
+        ch.code.push_back(static_cast<std::uint8_t>(op));
+    };
+
+    emit_op(lpc::Op::LoadLocal);
+    emit_u16(0);
+    emit_op(lpc::Op::Return);
+    timer_func.code_end = static_cast<std::uint32_t>(ch.code.size());
+
+    mainf.code_start = timer_func.code_end;
+
+    emit_op(lpc::Op::LoadIConst); emit_u16(0);
+    emit_op(lpc::Op::LoadFunc); emit_u16(0);
+    emit_op(lpc::Op::LoadIConst); emit_u16(2);
+    emit_op(lpc::Op::CallIntrinsic); emit_u16(static_cast<std::uint16_t>(lpc::vm::Efun::CallLater)); ch.code.push_back(static_cast<std::uint8_t>(3));
+
+    // pending_timers() should be >= 1
+    emit_op(lpc::Op::CallIntrinsic); emit_u16(static_cast<std::uint16_t>(lpc::vm::Efun::PendingTimers)); ch.code.push_back(static_cast<std::uint8_t>(0));
+    emit_op(lpc::Op::LoadIConst); emit_u16(1);
+    emit_op(lpc::Op::Gte);
+    emit_op(lpc::Op::JumpIfTrue); emit_u16(4);
+    emit_op(lpc::Op::LoadIConst); emit_u16(3);
+    emit_op(lpc::Op::Return);
+    emit_op(lpc::Op::Pop);
+
+    // timer_exists(keep)
+    emit_op(lpc::Op::Dup);
+    emit_op(lpc::Op::CallIntrinsic); emit_u16(static_cast<std::uint16_t>(lpc::vm::Efun::TimerExists)); ch.code.push_back(static_cast<std::uint8_t>(1));
+    emit_op(lpc::Op::JumpIfTrue); emit_u16(4);
+    emit_op(lpc::Op::LoadIConst); emit_u16(3);
+    emit_op(lpc::Op::Return);
+    emit_op(lpc::Op::Pop);
+
+    emit_op(lpc::Op::LoadIConst); emit_u16(1);
+    emit_op(lpc::Op::LoadFunc); emit_u16(0);
+    emit_op(lpc::Op::LoadIConst); emit_u16(2);
+    emit_op(lpc::Op::CallIntrinsic); emit_u16(static_cast<std::uint16_t>(lpc::vm::Efun::CallLater)); ch.code.push_back(static_cast<std::uint8_t>(3));
+    emit_op(lpc::Op::CallIntrinsic);
+    emit_u16(static_cast<std::uint16_t>(lpc::vm::Efun::CancelTimer));
+    ch.code.push_back(static_cast<std::uint8_t>(1));
+    emit_op(lpc::Op::Pop);
+
+    emit_op(lpc::Op::Return);
+    mainf.code_end = static_cast<std::uint32_t>(ch.code.size());
+
+    ch.functions.push_back(timer_func);
+    ch.functions.push_back(mainf);
+
+    lpc::vm::Vm vm;
+    lpc::vm::RuntimeError e = vm.LoadChunk(ch);
+    if (!e.ok()) {
+        std::cerr << "[NextVM timer] load error: " << e.message << std::endl;
+        return false;
+    }
+    e = vm.RunEntry("main");
+    if (!e.ok()) {
+        std::cerr << "[NextVM timer] run error: " << e.message << std::endl;
+        return false;
+    }
+
+    lpc::vm::Value out = vm.last_result();
+    if (out.Tag() != lpc::vm::ValueTag::Int64 || out.AsI64() <= 0) {
+        std::cerr << "[NextVM timer] invalid timer id result" << std::endl;
+        return false;
+    }
+    return true;
 }
 
 static bool CheckNextVMVerifierRejectsBadJump()
@@ -3256,10 +3356,17 @@ struct BenchResult {
 };
 
 static BenchResult RunBench(const char *name, std::uint64_t ops, std::function<void()> fn) {
-    auto start = std::chrono::steady_clock::now();
-    fn();
-    auto end = std::chrono::steady_clock::now();
-    double ms = std::chrono::duration<double, std::milli>(end - start).count();
+    static constexpr int kRounds = 5;
+    std::vector<double> rounds;
+    rounds.reserve(kRounds);
+    for (int i = 0; i < kRounds; ++i) {
+        auto start = std::chrono::steady_clock::now();
+        fn();
+        auto end = std::chrono::steady_clock::now();
+        rounds.push_back(std::chrono::duration<double, std::milli>(end - start).count());
+    }
+    std::sort(rounds.begin(), rounds.end());
+    const double ms = rounds[rounds.size() / 2];
     double ns_per_op = (ms * 1e6) / static_cast<double>(ops);
     return {name, ms, ops, ns_per_op};
 }
@@ -3564,6 +3671,93 @@ static BenchResult BenchChunkSerialization() {
     });
 }
 
+static BenchResult BenchRegexIntrinsicCache() {
+    using namespace lpc::vm;
+    const int N = 10000;
+
+    Chunk ch;
+    ch.module_name = "bench_regex";
+    ch.sconst = {"HELLO-123", "hello-[0-9]+", "i"};
+
+    FunctionProto f;
+    f.name = "main";
+    f.arity = 0;
+    f.nlocals = 0;
+    f.max_stack = 4;
+    f.code_start = 0;
+
+    auto emit_u16 = [&](unsigned v) {
+        ch.code.push_back(static_cast<std::uint8_t>(v & 0xff));
+        ch.code.push_back(static_cast<std::uint8_t>((v >> 8) & 0xff));
+    };
+    auto emit_op = [&](Op op) { ch.code.push_back(static_cast<std::uint8_t>(op)); };
+
+    emit_op(Op::LoadSConst); emit_u16(0);
+    emit_op(Op::LoadSConst); emit_u16(1);
+    emit_op(Op::LoadSConst); emit_u16(2);
+    emit_op(Op::CallIntrinsic);
+    emit_u16(static_cast<std::uint16_t>(Efun::Regexp));
+    ch.code.push_back(static_cast<std::uint8_t>(3));
+    emit_op(Op::Return);
+
+    f.code_end = static_cast<std::uint32_t>(ch.code.size());
+    ch.functions.push_back(f);
+
+    Vm vm;
+    vm.LoadChunk(ch);
+
+    return RunBench("regex_intrinsic_cached_10k", N, [&]() {
+        for (int i = 0; i < N; ++i) {
+            vm.RunEntry("main");
+        }
+    });
+}
+
+static BenchResult BenchRegexIntrinsicColdCompile() {
+    using namespace lpc::vm;
+    const int N = 1000;
+
+    auto make_regex_chunk = [](const std::string &pattern) {
+        Chunk ch;
+        ch.module_name = "bench_regex_cold";
+        ch.sconst = {"HELLO-123", pattern, "i"};
+
+        FunctionProto f;
+        f.name = "main";
+        f.arity = 0;
+        f.nlocals = 0;
+        f.max_stack = 4;
+        f.code_start = 0;
+
+        auto emit_u16 = [&](unsigned v) {
+            ch.code.push_back(static_cast<std::uint8_t>(v & 0xff));
+            ch.code.push_back(static_cast<std::uint8_t>((v >> 8) & 0xff));
+        };
+        auto emit_op = [&](Op op) { ch.code.push_back(static_cast<std::uint8_t>(op)); };
+
+        emit_op(Op::LoadSConst); emit_u16(0);
+        emit_op(Op::LoadSConst); emit_u16(1);
+        emit_op(Op::LoadSConst); emit_u16(2);
+        emit_op(Op::CallIntrinsic);
+        emit_u16(static_cast<std::uint16_t>(Efun::Regexp));
+        ch.code.push_back(static_cast<std::uint8_t>(3));
+        emit_op(Op::Return);
+
+        f.code_end = static_cast<std::uint32_t>(ch.code.size());
+        ch.functions.push_back(f);
+        return ch;
+    };
+
+    return RunBench("regex_intrinsic_cold_1k", N, [&]() {
+        for (int i = 0; i < N; ++i) {
+            Vm vm;
+            Chunk ch = make_regex_chunk("hello-[0-9]+-" + std::to_string(i));
+            vm.LoadChunk(ch);
+            vm.RunEntry("main");
+        }
+    });
+}
+
 int RunPerfBenchmarks() {
     std::vector<BenchResult> results;
     results.push_back(BenchDispatchLoopIntAdd());
@@ -3575,6 +3769,8 @@ int RunPerfBenchmarks() {
     results.push_back(BenchReloadProtocolEncode());
     results.push_back(BenchPersistenceCodecValue());
     results.push_back(BenchChunkSerialization());
+    results.push_back(BenchRegexIntrinsicCache());
+    results.push_back(BenchRegexIntrinsicColdCompile());
 
     std::cout << "\n[vm-perf] === Performance Benchmarks ===" << std::endl;
     std::cout << std::fixed;
@@ -4574,12 +4770,7 @@ static bool CheckPersistentStorageSaveLoadModule()
     RuntimeError e = vm.LoadChunk(ch);
     if (!e.ok()) return false;
 
-    std::string tmp_dir;
-#ifdef _WIN32
-    tmp_dir = std::getenv("TEMP") ? std::getenv("TEMP") : "C:\\Temp";
-#else
-    tmp_dir = "/tmp";
-#endif
+    std::string tmp_dir = TempDirPath();
     PersistentStorage ps(tmp_dir);
     bool saved = ps.SaveModuleState(vm, "persist_mod");
     if (!saved) return false;
@@ -4615,12 +4806,7 @@ static bool CheckPersistentStorageSaveLoadAllModules()
     RuntimeError e = vm.LoadModule("persist_all_a", chA);
     if (!e.ok()) return false;
 
-    std::string tmp_dir;
-#ifdef _WIN32
-    tmp_dir = std::getenv("TEMP") ? std::getenv("TEMP") : "C:\\Temp";
-#else
-    tmp_dir = "/tmp";
-#endif
+    std::string tmp_dir = TempDirPath();
     PersistentStorage ps(tmp_dir);
     bool saved = ps.SaveAllModules(vm);
     if (!saved) return false;

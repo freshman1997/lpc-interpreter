@@ -1,0 +1,21 @@
+int on_timer(int x) {
+    print("on_timer=" + x + "\n");
+    return x + 1;
+}
+
+int main() {
+    int keep = call_later(10, on_timer, 41);
+    int remove = call_later(1, on_timer, 99);
+    int pending_before = pending_timers();
+    int exists_before = timer_exists(keep);
+    int cancelled = cancel_timer(remove);
+    int pending_after = pending_timers();
+    int exists_after = timer_exists(remove);
+    mapping info = timer_info(keep);
+    int info_exists = info["exists"];
+    string callback_kind = info["callback_kind"];
+    string callback_name = info["callback_name"];
+    int info_argc = info["argc"];
+    print("timer_keep=" + keep + " cancelled=" + cancelled + " pending_before=" + pending_before + " pending_after=" + pending_after + " exists_before=" + exists_before + " exists_after=" + exists_after + " info_exists=" + info_exists + " callback_kind=" + callback_kind + " callback_name=" + callback_name + " argc=" + info_argc + "\n");
+    return keep > 0 ? 0 : 1;
+}

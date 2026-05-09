@@ -1,0 +1,17 @@
+int noop(int x) {
+    return x;
+}
+
+int main() {
+    int ok = 0;
+    for (int i = 0; i < 1100; ++i) {
+        int id = call_later(1000, noop, i);
+        if (id > 0) ok++;
+    }
+
+    int pending = pending_timers();
+    int cleared = timer_clear_module();
+    int left = pending_timers();
+    print("timer_quota ok=" + ok + " pending=" + pending + " cleared=" + cleared + " left=" + left + "\n");
+    return (ok <= 1024 && pending == ok && cleared == ok && left == 0) ? 0 : 1;
+}

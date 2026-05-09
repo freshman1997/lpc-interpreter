@@ -3,9 +3,11 @@ param(
 )
 
 $Root = (Resolve-Path $Root).Path
-$compiler = Join-Path $Root "build\compiler\lpc_compiler.exe"
-$vm = Join-Path $Root "build\vm\lpc_vm.exe"
+$exe = if ($IsWindows) { ".exe" } else { "" }
+$compiler = Join-Path (Join-Path (Join-Path $Root "build") "compiler") ("lpc_compiler" + $exe)
+$vm = Join-Path (Join-Path (Join-Path $Root "build") "vm") ("lpc_vm" + $exe)
 $outRoot = Join-Path $Root "bin"
+$srcRoot = Join-Path $Root "lpc_src"
 
 $tests = @(
     "test_string",
@@ -57,19 +59,29 @@ $tests = @(
     "test_class_default",
     "test_class_field_init",
     "test_brace_literals",
-    "test_cross_module_call"
+    "test_cross_module_call",
+    "test_timer",
+    "test_regex",
+    "test_timer_stress",
+    "test_timer_quota",
+    "test_lifecycle",
+    "test_for_loop",
+    "test_ternary",
+    "test_switch",
+    "test_float",
+    "test_compare_edge"
 )
 
 $pass = 0
 $fail = 0
 
 foreach ($t in $tests) {
-    $lpc = Join-Path $Root ($t + ".lpc")
+    $lpc = Join-Path $srcRoot ($t + ".lpc")
     if (-not (Test-Path $lpc)) {
         continue
     }
 
-    $compileOutput = & $compiler $lpc --workspace-root $Root --out-root $outRoot 2>&1
+    $compileOutput = & $compiler $lpc --workspace-root $srcRoot --out-root $outRoot 2>&1
     if ($LASTEXITCODE -ne 0) {
         $fail++
         Write-Host "FAIL: $t"
@@ -79,8 +91,8 @@ foreach ($t in $tests) {
     }
 
     if ($t -eq "test_cross_module_call") {
-        $target = Join-Path $Root "test_cross_module_target.lpc"
-        $targetCompileOutput = & $compiler $target --workspace-root $Root --out-root $outRoot 2>&1
+        $target = Join-Path $srcRoot "test_cross_module_target.lpc"
+        $targetCompileOutput = & $compiler $target --workspace-root $srcRoot --out-root $outRoot 2>&1
         if ($LASTEXITCODE -ne 0) {
             $fail++
             Write-Host "FAIL: $t"

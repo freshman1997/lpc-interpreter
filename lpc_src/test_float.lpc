@@ -1,0 +1,36 @@
+int main() {
+    int errors = 0;
+
+    float a = 1.5;
+    float b = 2.5;
+    float c = a + b;
+    if (c != 4.0) { errors++; write("float add: expected 4.0 got " + to_string(c) + "\n"); }
+
+    float d = 10.0 - 3.5;
+    if (d != 6.5) { errors++; write("float sub: expected 6.5 got " + to_string(d) + "\n"); }
+
+    float e = 3.0 * 7.0;
+    if (e != 21.0) { errors++; write("float mul: expected 21.0 got " + to_string(e) + "\n"); }
+
+    float f = 22.0 / 4.0;
+    if (f != 5.5) { errors++; write("float div: expected 5.5 got " + to_string(f) + "\n"); }
+
+    float g = -3.14;
+    if (g >= 0.0) { errors++; write("float neg: expected negative got " + to_string(g) + "\n"); }
+
+    float h = 0.0;
+    if (h != 0.0) { errors++; write("float zero: expected 0.0\n"); }
+
+    float pi = 3.14159;
+    if (pi <= 3.0 || pi >= 4.0) { errors++; write("float range: expected between 3 and 4\n"); }
+
+    if (!(3.14 > 3.0)) { errors++; write("float gt: 3.14 > 3.0 expected true\n"); }
+    if (!(3.14 >= 3.14)) { errors++; write("float gte: 3.14 >= 3.14 expected true\n"); }
+    if (!(3.0 < 3.14)) { errors++; write("float lt: 3.0 < 3.14 expected true\n"); }
+    if (!(3.14 <= 3.14)) { errors++; write("float lte: 3.14 <= 3.14 expected true\n"); }
+    if (!(3.14 == 3.14)) { errors++; write("float eq: 3.14 == 3.14 expected true\n"); }
+    if (3.14 == 3.15) { errors++; write("float eq false: 3.14 == 3.15 expected false\n"); }
+    if (!(3.14 != 3.15)) { errors++; write("float neq: 3.14 != 3.15 expected true\n"); }
+
+    return errors;
+}
