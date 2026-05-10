@@ -136,15 +136,6 @@ void Vm::Sweep() {
     }
     for (std::size_t i = 0; i < class_fields_.size(); ++i) {
         if (class_marks_[i] == 0 && (i >= class_slot_free_.size() || class_slot_free_[i] == 0)) {
-#ifndef NDEBUG
-            if (i < class_module_names_.size() && !class_module_names_[i].empty()) {
-                auto mci_it = module_class_instances_.find(class_module_names_[i]);
-                if (mci_it != module_class_instances_.end()) {
-                    auto &inst_vec = mci_it->second;
-                    inst_vec.erase(std::remove(inst_vec.begin(), inst_vec.end(), i), inst_vec.end());
-                }
-            }
-#endif
             if (i < class_module_names_.size()) class_module_names_[i].clear();
             if (i < class_module_version_ids_.size()) class_module_version_ids_[i] = 0;
             class_fields_[i].Clear();

@@ -31,6 +31,7 @@ public:
     void Set(std::size_t idx, const Value &v) { data_[idx] = v; }
 
     void Clear();
+    void Reset(std::size_t nfields, Value fill = Value::Nil());
 
     Value *Data() { return data_; }
     const Value *Data() const { return data_; }
@@ -43,8 +44,13 @@ public:
     void InitFromVector(std::vector<Value> &&vec);
 
 private:
+    static constexpr std::size_t kInlineCapacity = 4;
     Value *data_ = nullptr;
     std::size_t nfields_ = 0;
+    Value inline_data_[kInlineCapacity]{};
+
+    bool UsingInlineData() const { return data_ == inline_data_; }
+    void ResetInlineData();
 };
 
 } // namespace vm

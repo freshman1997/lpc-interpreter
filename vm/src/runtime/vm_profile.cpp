@@ -102,6 +102,7 @@ static const char *OpcodeName(std::uint8_t op) {
     case lpc::Op::AddLocalTwoClassFieldsToLocal:return "AddLocalTwoClassFieldsToLocal";
     case lpc::Op::AddLocalToUpvalueAndLoad:return "AddLocalToUpvalueAndLoad";
     case lpc::Op::LoadLocalBitAndIConst:return "LoadLocalBitAndIConst";
+    case lpc::Op::JumpIfLocalBitAndIConstEqIConstFalse:return "JumpIfLocalBitAndIConstEqIConstFalse";
     default:                    return "Unknown";
     }
 }

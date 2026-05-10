@@ -99,6 +99,8 @@ RuntimeError Vm::LoadChunk(const Chunk &chunk) {
     mappings_.clear();
     class_fields_.clear();
     class_template_ids_.clear();
+    class_module_version_ids_.clear();
+    class_module_names_.clear();
     objects_.clear();
     object_marks_.clear();
     array_marks_.clear();
@@ -505,11 +507,21 @@ void Vm::UpgradeClassInstancesForModule(const std::string &module_name, std::uin
         }
     }
 
-    auto mci_it = module_class_instances_.find(module_name);
-    if (mci_it == module_class_instances_.end()) return;
+    auto &module_instances = module_class_instances_[module_name];
+    module_instances.clear();
+    for (std::size_t idx = 0; idx < class_fields_.size(); ++idx) {
+        if (idx >= class_slot_free_.size() || class_slot_free_[idx] != 0) continue;
+        if (idx >= class_module_names_.size() || class_module_names_[idx] != module_name) continue;
+        if (idx >= class_module_version_ids_.size() || class_module_version_ids_[idx] == 0) continue;
+        module_instances.push_back(idx);
+    }
 
-    for (std::size_t idx : mci_it->second) {
+    for (std::size_t idx : module_instances) {
         if (idx >= class_fields_.size()) continue;
+        if (idx >= class_slot_free_.size() || class_slot_free_[idx] != 0) continue;
+        if (idx >= class_module_names_.size() || class_module_names_[idx] != module_name) continue;
+        if (idx >= class_module_version_ids_.size() || class_module_version_ids_[idx] == 0) continue;
+        if (idx >= class_template_ids_.size()) continue;
         if (class_module_version_ids_[idx] == new_version_id) continue;
 
         std::uint16_t tmpl_idx = class_template_ids_[idx];

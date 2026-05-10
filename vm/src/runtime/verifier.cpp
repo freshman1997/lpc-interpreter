@@ -56,6 +56,10 @@ static bool IsLocalCompareJump(Op op) {
     return op == Op::JumpIfLocalLtFalse || op == Op::JumpIfLocalIConstLteFalse;
 }
 
+static bool IsLocalBitAndEqJump(Op op) {
+    return op == Op::JumpIfLocalBitAndIConstEqIConstFalse;
+}
+
 // 中文说明：下面这些分类只服务字节码校验器。
 // superinstruction 的栈效果和跳转目标必须在加载阶段验证，避免 VM 热路径重复做昂贵检查。
 static bool IsLocalLocalToLocal(Op op) {
@@ -299,6 +303,41 @@ static RuntimeError VerifyFunction(const Chunk &chunk, std::uint32_t fid) {
                 RuntimeError e;
                 e.code = RuntimeErrorCode::InvalidOperand;
                 e.message = "local compare jump target out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            continue;
+        }
+
+        if (IsLocalBitAndEqJump(op)) {
+            if (ip + 8 > f.code_end) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "truncated local bitand compare jump operands";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            std::uint16_t local = ReadU16(chunk.code, &ip);
+            std::uint16_t mask_idx = ReadU16(chunk.code, &ip);
+            std::uint16_t expected_idx = ReadU16(chunk.code, &ip);
+            if (local >= f.nlocals || mask_idx >= chunk.iconst.size() ||
+                expected_idx >= chunk.iconst.size()) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "local bitand compare jump operand out of range";
+                e.function = f.name;
+                e.pc = static_cast<int>(op_pc);
+                return e;
+            }
+            std::int16_t rel = ReadI16(chunk.code, &ip);
+            std::int64_t target = static_cast<std::int64_t>(ip) + rel;
+            if (target < static_cast<std::int64_t>(f.code_start) ||
+                target >= static_cast<std::int64_t>(f.code_end)) {
+                RuntimeError e;
+                e.code = RuntimeErrorCode::InvalidOperand;
+                e.message = "local bitand compare jump target out of range";
                 e.function = f.name;
                 e.pc = static_cast<int>(op_pc);
                 return e;

@@ -697,6 +697,55 @@ lpc_cg_return:
         }
 #endif
         lpc_cg_fallback:
+        if (LPC_LIKELY(op == Op::JumpIfLocalBitAndIConstEqIConstFalse)) {
+            if (LPC_UNLIKELY(fp->ip + 8 > code_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated local bitand compare jump operands";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            const std::uint8_t *p = code + fp->ip;
+            fp->ip += 8;
+            const std::uint16_t local_idx = static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8);
+            const std::uint16_t mask_idx = static_cast<std::uint16_t>(p[2]) | (static_cast<std::uint16_t>(p[3]) << 8);
+            const std::uint16_t expected_idx = static_cast<std::uint16_t>(p[4]) | (static_cast<std::uint16_t>(p[5]) << 8);
+            const std::int16_t rel = static_cast<std::int16_t>(
+                static_cast<std::uint16_t>(p[6]) | (static_cast<std::uint16_t>(p[7]) << 8));
+#ifndef NDEBUG
+            if (LPC_UNLIKELY(local_idx >= curf.nlocals || mask_idx >= iconst_size || expected_idx >= iconst_size)) {
+                RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "local bitand compare jump operand out of range";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+#endif
+            const Value lhs = value_stack_[fp->base + local_idx];
+            const Value mask = iconst_values[mask_idx];
+            const Value expected = iconst_values[expected_idx];
+            bool eq = false;
+            if (LPC_LIKELY(lhs.IsInlineInt64() && mask.IsInlineInt64() && expected.IsInlineInt64())) {
+                eq = (lhs.AsI64() & mask.AsI64()) == expected.AsI64();
+            } else if (LPC_LIKELY(lhs.IsInt64() && mask.IsInt64() && expected.IsInt64())) {
+                eq = (GetI64(lhs) & GetI64(mask)) == GetI64(expected);
+            } else if (LPC_UNLIKELY(lhs.IsNil() || mask.IsNil())) {
+                const std::int64_t a = lhs.IsNil() ? 0 : GetI64(lhs);
+                const std::int64_t b = mask.IsNil() ? 0 : GetI64(mask);
+                eq = expected.IsInt64() && ((a & b) == GetI64(expected));
+            } else {
+                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "BitAnd requires Int64";
+                if (catch_ctx.active) throw CatchSignal(); return e;
+            }
+            if (!eq) {
+                const std::int64_t next_ip = static_cast<std::int64_t>(fp->ip) + rel;
+#ifndef NDEBUG
+                if (LPC_UNLIKELY(next_ip < static_cast<std::int64_t>(curf.code_start) ||
+                    next_ip >= static_cast<std::int64_t>(curf.code_end))) {
+                    RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "jump target out of function range";
+                    if (catch_ctx.active) throw CatchSignal(); return e;
+                }
+#endif
+                fp->ip = static_cast<std::uint32_t>(next_ip);
+            }
+            fast_handled = true;
+            goto lpc_post_dispatch;
+        }
+
         if (LPC_LIKELY(op == Op::BitAndLocalIConstToLocal || op == Op::BitOrLocalIConstToLocal || op == Op::BitXorLocalIConstToLocal)) {
             if (LPC_UNLIKELY(fp->ip + 6 > code_size)) {
                 RuntimeError e; e.code = RuntimeErrorCode::InvalidOperand; e.message = "truncated bitwise local operands";
@@ -2291,58 +2340,62 @@ lpc_cg_return:
             const LpcClass &fields = class_fields_[cls_id - 1];
             const Value f1 = fields.At(field1_idx);
             const Value f2 = fields.At(field2_idx);
-            Value rhs = Value::Nil();
-            if (LPC_LIKELY(Value::BothInlineInt64(f1, f2))) {
-                rhs = MakeI64(f1.AsI64() + f2.AsI64());
-            } else if (LPC_UNLIKELY(f1.IsObjRef() || f2.IsObjRef())) {
-                LPC_COMMIT_SP();
-                std::string buf_a, buf_b;
-                std::string_view sv_a = ResolveStringView(f1, buf_a);
-                std::string_view sv_b = ResolveStringView(f2, buf_b);
-                std::string joined;
-                joined.reserve(sv_a.size() + sv_b.size());
-                joined.append(sv_a);
-                joined.append(sv_b);
-                rhs = InternString(joined);
-            } else if (LPC_UNLIKELY(f1.IsFloat64() || f2.IsFloat64())) {
-                const double a = f1.IsFloat64() ? f1.AsF64() : (f1.IsNil() ? 0.0 : static_cast<double>(GetI64(f1)));
-                const double b = f2.IsFloat64() ? f2.AsF64() : (f2.IsNil() ? 0.0 : static_cast<double>(GetI64(f2)));
-                rhs = Value::FromF64(a + b);
-            } else if (LPC_UNLIKELY(f1.IsNil() || f2.IsNil())) {
-                const std::int64_t a = f1.IsNil() ? 0 : GetI64(f1);
-                const std::int64_t b = f2.IsNil() ? 0 : GetI64(f2);
-                rhs = MakeI64(a + b);
+            if (LPC_LIKELY(lhs.IsInlineInt64() && f1.IsInlineInt64() && f2.IsInlineInt64())) {
+                value_stack_[fp->base + dst_idx] = MakeI64(lhs.AsI64() + f1.AsI64() + f2.AsI64());
             } else {
-                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "Add unsupported types";
-                if (catch_ctx.active) throw CatchSignal(); return e;
-            }
+                Value rhs = Value::Nil();
+                if (LPC_LIKELY(Value::BothInlineInt64(f1, f2))) {
+                    rhs = MakeI64(f1.AsI64() + f2.AsI64());
+                } else if (LPC_UNLIKELY(f1.IsObjRef() || f2.IsObjRef())) {
+                    LPC_COMMIT_SP();
+                    std::string buf_a, buf_b;
+                    std::string_view sv_a = ResolveStringView(f1, buf_a);
+                    std::string_view sv_b = ResolveStringView(f2, buf_b);
+                    std::string joined;
+                    joined.reserve(sv_a.size() + sv_b.size());
+                    joined.append(sv_a);
+                    joined.append(sv_b);
+                    rhs = InternString(joined);
+                } else if (LPC_UNLIKELY(f1.IsFloat64() || f2.IsFloat64())) {
+                    const double a = f1.IsFloat64() ? f1.AsF64() : (f1.IsNil() ? 0.0 : static_cast<double>(GetI64(f1)));
+                    const double b = f2.IsFloat64() ? f2.AsF64() : (f2.IsNil() ? 0.0 : static_cast<double>(GetI64(f2)));
+                    rhs = Value::FromF64(a + b);
+                } else if (LPC_UNLIKELY(f1.IsNil() || f2.IsNil())) {
+                    const std::int64_t a = f1.IsNil() ? 0 : GetI64(f1);
+                    const std::int64_t b = f2.IsNil() ? 0 : GetI64(f2);
+                    rhs = MakeI64(a + b);
+                } else {
+                    RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "Add unsupported types";
+                    if (catch_ctx.active) throw CatchSignal(); return e;
+                }
 
-            Value result = Value::Nil();
-            if (LPC_LIKELY(Value::BothInlineInt64(lhs, rhs))) {
-                result = MakeI64(lhs.AsI64() + rhs.AsI64());
-            } else if (LPC_UNLIKELY(lhs.IsObjRef() || rhs.IsObjRef())) {
-                LPC_COMMIT_SP();
-                std::string buf_a, buf_b;
-                std::string_view sv_a = ResolveStringView(lhs, buf_a);
-                std::string_view sv_b = ResolveStringView(rhs, buf_b);
-                std::string joined;
-                joined.reserve(sv_a.size() + sv_b.size());
-                joined.append(sv_a);
-                joined.append(sv_b);
-                result = InternString(joined);
-            } else if (LPC_UNLIKELY(lhs.IsFloat64() || rhs.IsFloat64())) {
-                const double a = lhs.IsFloat64() ? lhs.AsF64() : (lhs.IsNil() ? 0.0 : static_cast<double>(GetI64(lhs)));
-                const double b = rhs.IsFloat64() ? rhs.AsF64() : (rhs.IsNil() ? 0.0 : static_cast<double>(GetI64(rhs)));
-                result = Value::FromF64(a + b);
-            } else if (LPC_UNLIKELY(lhs.IsNil() || rhs.IsNil())) {
-                const std::int64_t a = lhs.IsNil() ? 0 : GetI64(lhs);
-                const std::int64_t b = rhs.IsNil() ? 0 : GetI64(rhs);
-                result = MakeI64(a + b);
-            } else {
-                RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "Add unsupported types";
-                if (catch_ctx.active) throw CatchSignal(); return e;
+                Value result = Value::Nil();
+                if (LPC_LIKELY(Value::BothInlineInt64(lhs, rhs))) {
+                    result = MakeI64(lhs.AsI64() + rhs.AsI64());
+                } else if (LPC_UNLIKELY(lhs.IsObjRef() || rhs.IsObjRef())) {
+                    LPC_COMMIT_SP();
+                    std::string buf_a, buf_b;
+                    std::string_view sv_a = ResolveStringView(lhs, buf_a);
+                    std::string_view sv_b = ResolveStringView(rhs, buf_b);
+                    std::string joined;
+                    joined.reserve(sv_a.size() + sv_b.size());
+                    joined.append(sv_a);
+                    joined.append(sv_b);
+                    result = InternString(joined);
+                } else if (LPC_UNLIKELY(lhs.IsFloat64() || rhs.IsFloat64())) {
+                    const double a = lhs.IsFloat64() ? lhs.AsF64() : (lhs.IsNil() ? 0.0 : static_cast<double>(GetI64(lhs)));
+                    const double b = rhs.IsFloat64() ? rhs.AsF64() : (rhs.IsNil() ? 0.0 : static_cast<double>(GetI64(rhs)));
+                    result = Value::FromF64(a + b);
+                } else if (LPC_UNLIKELY(lhs.IsNil() || rhs.IsNil())) {
+                    const std::int64_t a = lhs.IsNil() ? 0 : GetI64(lhs);
+                    const std::int64_t b = rhs.IsNil() ? 0 : GetI64(rhs);
+                    result = MakeI64(a + b);
+                } else {
+                    RuntimeError e; e.code = RuntimeErrorCode::TypeError; e.message = "Add unsupported types";
+                    if (catch_ctx.active) throw CatchSignal(); return e;
+                }
+                value_stack_[fp->base + dst_idx] = result;
             }
-            value_stack_[fp->base + dst_idx] = result;
             fast_handled = true;
 #endif
         } else if (LPC_LIKELY(op == Op::Inc)) {

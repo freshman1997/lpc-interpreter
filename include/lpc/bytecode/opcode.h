@@ -676,9 +676,15 @@ enum class Op : std::uint8_t {
     // 常见于位掩码操作如 flags & 0xFF。
     LoadLocalBitAndIConst = 93,
 
+    // Encoding: [opcode:u8] [local_index:u16] [mask_iconst_index:u16]
+    //           [expected_iconst_index:u16] [target_offset:i16]
+    // Stack: unchanged
+    // Semantics: if (!((locals[local] & iconst[mask]) == iconst[expected])) jump.
+    JumpIfLocalBitAndIConstEqIConstFalse = 94,
+
 };
 
-// Total: 74 opcodes (1..93, with gaps for removed/deprecated values)
+// Total: 75 opcodes (1..94, with gaps for removed/deprecated values)
 
 } // namespace lpc
 

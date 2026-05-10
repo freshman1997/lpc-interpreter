@@ -311,8 +311,9 @@ StoredValue PersistentStorage::ValueToStored(const Vm &vm, const Value &val) con
         } else if (DecodeObjectId(val) > 0) {
             stored.type = StoredValue::Object;
             std::size_t obj_id = DecodeObjectId(val);
-            if (obj_id < vm.objects().size() && !vm.objects()[obj_id].destroyed) {
-                auto &obj = vm.objects()[obj_id];
+            std::size_t obj_idx = obj_id - 1;
+            if (obj_idx < vm.objects().size() && !vm.objects()[obj_idx].destroyed) {
+                const auto &obj = vm.objects()[obj_idx];
                 stored.module_name = obj.module_name;
                 stored.module_version_id = obj.module_version_id;
                 const Chunk *chunk = vm.GetChunkForVersion(obj.module_version_id);

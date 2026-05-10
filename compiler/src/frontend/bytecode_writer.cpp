@@ -645,6 +645,44 @@ static bool LowerMirToNextVm(
             continue;
         }
         // Bitwise AND local & iconst: 避免三次调度。
+        if (i + 5 < n &&
+            mi.op == MirOp::LoadLocal &&
+            fn.code[i + 1].op == MirOp::LoadConst &&
+            fn.code[i + 2].op == MirOp::BitAnd &&
+            fn.code[i + 3].op == MirOp::LoadConst &&
+            fn.code[i + 4].op == MirOp::Eq &&
+            fn.code[i + 5].op == MirOp::JumpIfFalse &&
+            !jump_targets.count(i + 1) &&
+            !jump_targets.count(i + 2) &&
+            !jump_targets.count(i + 3) &&
+            !jump_targets.count(i + 4) &&
+            !jump_targets.count(i + 5) &&
+            mi.a >= 0 && mi.a <= 0xffff &&
+            fn.code[i + 1].a >= 0 &&
+            fn.code[i + 1].a < static_cast<int>(fn.iconsts.size()) &&
+            fn.code[i + 3].a >= 0 &&
+            fn.code[i + 3].a < static_cast<int>(fn.iconsts.size())) {
+            int mask_idx = ensure_iconst(fn.iconsts[fn.code[i + 1].a]);
+            int expected_idx = ensure_iconst(fn.iconsts[fn.code[i + 3].a]);
+            if (mask_idx > 0xffff || expected_idx > 0xffff) {
+                return fail("nextvm lowering iconst index out of range");
+            }
+            emit_u8(static_cast<std::uint8_t>(Op::JumpIfLocalBitAndIConstEqIConstFalse));
+            emit_u16(static_cast<std::uint16_t>(mi.a));
+            emit_u16(static_cast<std::uint16_t>(mask_idx));
+            emit_u16(static_cast<std::uint16_t>(expected_idx));
+            int patch_pos = static_cast<int>(out.size());
+            emit_u16(0);
+            patches.push_back({patch_pos, fn.code[i + 5].a});
+            for (int s = 0; s < 5; ++s) {
+                ++i;
+                pc_map[i] = static_cast<int>(out.size());
+                if (mir_pc_to_byte) {
+                    mir_pc_to_byte->push_back(static_cast<int>(out.size()));
+                }
+            }
+            continue;
+        }
         if (i + 2 < n &&
             mi.op == MirOp::LoadLocal &&
             fn.code[i + 1].op == MirOp::LoadConst &&

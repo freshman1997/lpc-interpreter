@@ -31,14 +31,12 @@ static Value MakeClassFieldDefault(Vm &vm, const ClassInfo::FieldDefault &def) {
     }
 }
 
-static LpcClass BuildDefaultClassFields(Vm &vm, const ClassInfo &ci) {
-    LpcClass fields(ci.nfields, vm.MakeI64(0));
+static void InitDefaultClassFields(Vm &vm, const ClassInfo &ci, LpcClass &fields) {
+    fields.Reset(ci.nfields, vm.MakeI64(0));
     for (std::size_t i = 0; i < ci.field_defaults.size() && i < fields.Size(); ++i) {
         fields.Set(i, MakeClassFieldDefault(vm, ci.field_defaults[i]));
     }
-    return fields;
 }
-
 
 bool Vm::ResolveClassTemplateIndex(const Value &class_handle, std::uint16_t *out_template_idx) const {
     if (!out_template_idx) return false;
@@ -115,22 +113,17 @@ Value Vm::AllocateClassHandle(std::uint16_t class_idx) {
         class_module_version_ids_[idx] = current_module_version_id_;
         class_module_names_[idx] = current_module_name_;
         class_slot_free_[idx] = 0;
-        class_fields_[idx] = BuildDefaultClassFields(*this, BoundChunk().classes[class_idx]);
-#ifndef NDEBUG
-        module_class_instances_[current_module_name_].push_back(idx);
-#endif
+        InitDefaultClassFields(*this, BoundChunk().classes[class_idx], class_fields_[idx]);
         return MakeClassHandle(idx + 1);
     }
-    class_fields_.push_back(BuildDefaultClassFields(*this, BoundChunk().classes[class_idx]));
+    class_fields_.emplace_back();
+    std::size_t idx = class_fields_.size() - 1;
+    InitDefaultClassFields(*this, BoundChunk().classes[class_idx], class_fields_[idx]);
     class_template_ids_.push_back(class_idx);
     class_module_version_ids_.push_back(current_module_version_id_);
     class_module_names_.push_back(current_module_name_);
     class_slot_free_.push_back(0);
-    std::size_t idx = class_fields_.size() - 1;
-#ifndef NDEBUG
-    module_class_instances_[current_module_name_].push_back(idx);
-#endif
-    return MakeClassHandle(class_fields_.size());
+    return MakeClassHandle(idx + 1);
 }
 
 Value Vm::AllocateClosureHandle(LpcClosure &&closure) {
